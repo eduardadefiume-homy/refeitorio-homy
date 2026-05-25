@@ -9,138 +9,161 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;color:#e8f0ff;overflow-x:hidden}
+html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;color:#e8f0ff;background:#050f22;overflow-x:hidden}
  
-body{
-  background-color:#030d1e;
-  background-image:url("How%20It%20Works.jpg");
-  background-size:cover;
-  background-position:center center;
-  background-attachment:fixed;
-  background-repeat:no-repeat;
-  -webkit-font-smoothing:antialiased;
-}
- 
-/* overlay MÍNIMO — só adiciona toque vermelho Homy, preserva 100% da imagem */
-body::before{
-  content:"";
-  position:fixed;inset:0;z-index:0;pointer-events:none;
+/* BG sutil */
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   background:
-    radial-gradient(ellipse 40% 35% at 0% 0%, rgba(192,40,28,0.25) 0%, transparent 50%),
-    radial-gradient(ellipse 30% 40% at 100% 100%, rgba(10,25,80,0.3) 0%, transparent 50%),
-    rgba(3,13,30,0.15);
+    radial-gradient(ellipse 60% 50% at 10% 20%, rgba(192,40,28,0.1) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 60% at 90% 80%, rgba(26,58,110,0.18) 0%, transparent 60%),
+    linear-gradient(180deg,rgba(5,15,34,0) 0%,rgba(5,15,34,0) 100%);
+}
+/* grade sutil */
+body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(30,80,200,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(30,80,200,0.04) 1px,transparent 1px);
+  background-size:56px 56px;
 }
  
 .header,.week-nav,.day-tabs-wrap,.cards-area{position:relative;z-index:1}
  
 /* HEADER */
-.header{
-  position:sticky;top:0;z-index:50;
-  background:rgba(3,10,24,0.9);
-  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
-  border-bottom:1px solid rgba(80,140,255,0.15);
-}
-.header-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:0.9rem;padding:0.7rem 1.4rem}
-.back-btn{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(80,140,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.2rem;text-decoration:none;flex-shrink:0;transition:background .15s}
-.back-btn:hover{background:rgba(80,140,255,0.15)}
-.header-logo{width:30px;height:30px;object-fit:contain;flex-shrink:0}
+.header{position:sticky;top:0;z-index:50;background:rgba(5,15,34,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.08)}
+.header-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:0.9rem;padding:0.8rem 1.4rem}
+.back-btn{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.3rem;text-decoration:none;flex-shrink:0;transition:background .15s}
+.back-btn:hover{background:rgba(255,255,255,0.1)}
+.header-logo{width:32px;height:32px;object-fit:contain;flex-shrink:0}
 .header-titles{flex:1}
-.header-title{font-family:"Barlow Condensed",sans-serif;font-size:1.05rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;line-height:1}
-.header-sub{font-size:0.63rem;color:rgba(143,170,210,0.55);letter-spacing:0.14em;text-transform:uppercase;margin-top:1px}
-.week-badge{font-size:0.6rem;font-weight:600;letter-spacing:0.06em;background:rgba(20,50,120,0.7);border:1px solid rgba(80,140,255,0.3);color:rgba(140,200,255,0.9);padding:4px 9px;border-radius:6px;white-space:nowrap}
+.header-title{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;line-height:1}
+.header-sub{font-size:0.7rem;color:rgba(143,170,210,0.55);letter-spacing:0.14em;text-transform:uppercase;margin-top:2px}
+.week-badge{font-size:0.65rem;font-weight:600;letter-spacing:0.06em;background:rgba(26,58,110,0.6);border:1px solid rgba(60,140,255,0.28);color:rgba(140,200,255,0.9);padding:5px 10px;border-radius:6px;white-space:nowrap}
  
 /* WEEK NAV */
-.week-nav{max-width:1100px;margin:0 auto;padding:0.9rem 1.4rem 0.5rem;display:flex;align-items:center;justify-content:space-between}
-.week-nav-btn{width:32px;height:32px;border-radius:8px;background:rgba(3,10,24,0.7);border:1px solid rgba(80,140,255,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:0.95rem;transition:background .15s;user-select:none;backdrop-filter:blur(8px)}
-.week-nav-btn:hover{background:rgba(20,50,120,0.5)}
-.week-label{font-size:0.78rem;font-weight:500;color:rgba(200,220,255,0.92);letter-spacing:0.05em;text-shadow:0 1px 10px rgba(0,0,0,0.9)}
+.week-nav{max-width:1100px;margin:0 auto;padding:1rem 1.4rem 0.6rem;display:flex;align-items:center;justify-content:space-between}
+.week-nav-btn{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1rem;transition:background .15s;user-select:none}
+.week-nav-btn:hover{background:rgba(26,58,110,0.4)}
+.week-label{font-size:0.85rem;font-weight:500;color:rgba(200,220,255,0.85);letter-spacing:0.05em}
  
 /* DAY TABS */
 .day-tabs-wrap{padding:0 1.4rem;max-width:1100px;margin:0 auto}
-.day-tabs{display:flex;gap:0.45rem;overflow-x:auto;padding-bottom:0.5rem;scrollbar-width:none}
+.day-tabs{display:flex;gap:0.5rem;overflow-x:auto;padding-bottom:0.5rem;scrollbar-width:none}
 .day-tabs::-webkit-scrollbar{display:none}
-.day-tab{
-  flex:1;min-width:80px;
-  display:flex;flex-direction:column;align-items:center;gap:2px;
-  padding:0.55rem 0.6rem;border-radius:11px;cursor:pointer;
-  border:1px solid rgba(80,140,255,0.18);
-  background:rgba(3,10,24,0.62);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  transition:all .18s;
-}
-.day-tab:hover{background:rgba(20,50,120,0.45);border-color:rgba(80,140,255,0.38)}
-.day-tab.active{background:rgba(192,40,28,0.32);border-color:rgba(192,40,28,0.65);box-shadow:0 0 20px rgba(192,40,28,0.25)}
-.day-name{font-size:0.6rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:rgba(143,170,210,0.65)}
-.day-tab.active .day-name{color:rgba(255,160,140,0.92)}
-.day-num{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:700;color:#fff;line-height:1}
-.day-today-dot{width:4px;height:4px;border-radius:50%;background:#40d090;margin:2px auto 0}
+.day-tab{flex:1;min-width:80px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0.6rem 0.6rem;border-radius:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);transition:all .18s}
+.day-tab:hover{background:rgba(26,58,110,0.3);border-color:rgba(60,140,255,0.25)}
+.day-tab.active{background:rgba(192,40,28,0.25);border-color:rgba(192,40,28,0.55);box-shadow:0 0 18px rgba(192,40,28,0.2)}
+.day-name{font-size:0.65rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:rgba(143,170,210,0.65)}
+.day-tab.active .day-name{color:rgba(255,160,140,0.9)}
+.day-num{font-family:"Barlow Condensed",sans-serif;font-size:1.4rem;font-weight:700;color:#fff;line-height:1}
+.day-today-dot{width:5px;height:5px;border-radius:50%;background:#40d090;margin:2px auto 0}
  
-/* CARDS AREA */
-.cards-area{max-width:1100px;margin:0 auto;padding:0.9rem 1.4rem 2.5rem}
+/* CARDS */
+.cards-area{max-width:1100px;margin:0 auto;padding:1rem 1.4rem 3rem}
 .day-panel{display:none}
 .day-panel.active{display:block;animation:panel-in 0.28s ease}
 @keyframes panel-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
  
-.day-header{display:flex;align-items:center;gap:0.7rem;margin-bottom:0.8rem}
-.day-header-date{
-  font-family:"Barlow Condensed",sans-serif;font-size:1.4rem;font-weight:700;
-  color:#fff;text-transform:uppercase;letter-spacing:0.04em;
-  text-shadow:0 2px 20px rgba(0,0,0,0.95);
-}
-.day-header-badge{font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;padding:3px 8px;border-radius:5px;background:rgba(64,208,144,0.15);color:#40d090;border:1px solid rgba(64,208,144,0.28)}
+.day-header{display:flex;align-items:center;gap:0.7rem;margin-bottom:0.9rem}
+.day-header-date{font-family:"Barlow Condensed",sans-serif;font-size:1.7rem;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.04em}
+.day-header-badge{font-size:0.65rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;padding:4px 10px;border-radius:5px;background:rgba(64,208,144,0.15);color:#40d090;border:1px solid rgba(64,208,144,0.28)}
  
-.nota-card{
-  border-radius:11px;border:1px solid rgba(255,200,80,0.15);
-  background:rgba(3,10,24,0.78);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  padding:0.65rem 0.9rem;display:flex;gap:0.55rem;align-items:flex-start;margin-bottom:0.85rem;
-}
-.nota-icon{font-size:0.85rem;flex-shrink:0;margin-top:1px}
-.nota-text{font-size:0.72rem;color:rgba(255,210,120,0.82);line-height:1.55}
+.nota-card{border-radius:11px;border:1px solid rgba(255,200,80,0.15);background:rgba(255,180,0,0.05);padding:0.75rem 1rem;display:flex;gap:0.6rem;align-items:flex-start;margin-bottom:1rem}
+.nota-icon{font-size:0.9rem;flex-shrink:0;margin-top:1px}
+.nota-text{font-size:0.82rem;color:rgba(255,210,120,0.82);line-height:1.55}
  
-.section-label{
-  font-size:0.6rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
-  color:rgba(200,160,255,0.65);margin:0.9rem 0 0.5rem;padding-left:2px;
-  text-shadow:0 1px 10px rgba(0,0,0,0.9);
-}
+.section-label{font-size:0.65rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:rgba(200,160,255,0.55);margin:1rem 0 0.6rem;padding-left:2px}
  
 /* GRID LADO A LADO */
-.options-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.7rem}
-.lanche-grid{display:grid;grid-template-columns:1fr;gap:0.7rem}
-.lanche-grid .option-card{border-color:rgba(140,80,220,0.38);background:rgba(20,5,50,0.72)}
+.options-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0.8rem}
+.lanche-grid{display:grid;grid-template-columns:1fr;gap:0.8rem}
  
+/* CARD CLICÁVEL */
 .option-card{
-  border-radius:14px;
-  border:1px solid rgba(80,140,255,0.15);
-  background:rgba(3,10,24,0.68);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-radius:16px;border:1px solid rgba(255,255,255,0.1);
+  background:rgba(255,255,255,0.05);
   overflow:hidden;display:flex;flex-direction:column;
-  transition:border-color .18s,background .18s,transform .12s;
-  box-shadow:0 4px 24px rgba(0,0,0,0.45),inset 0 1px 0 rgba(80,140,255,0.08);
+  cursor:pointer;
+  transition:border-color .18s,background .18s,transform .12s,box-shadow .18s;
+  box-shadow:0 2px 12px rgba(0,0,0,0.2);
 }
 .option-card:hover{
-  background:rgba(3,10,24,0.82);
-  border-color:rgba(80,140,255,0.3);
-  transform:translateY(-2px);
-  box-shadow:0 8px 30px rgba(0,0,0,0.5),0 0 20px rgba(80,140,255,0.1);
+  background:rgba(255,255,255,0.08);
+  border-color:rgba(255,255,255,0.2);
+  transform:translateY(-3px);
+  box-shadow:0 8px 24px rgba(0,0,0,0.3);
 }
+.option-card:active{transform:scale(0.98)}
  
-.option-header{display:flex;align-items:center;gap:0.65rem;padding:0.8rem 0.9rem 0.55rem}
-.option-tag{font-size:0.57rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:3px 8px;border-radius:5px;flex-shrink:0}
-.tag-principal{background:rgba(20,50,130,0.75);color:rgba(140,200,255,0.95);border:1px solid rgba(80,140,255,0.32)}
-.tag-light{background:rgba(16,100,80,0.65);color:rgba(80,220,160,0.95);border:1px solid rgba(20,160,120,0.35)}
-.tag-carne{background:rgba(192,40,28,0.48);color:rgba(255,160,140,0.95);border:1px solid rgba(192,40,28,0.4)}
-.tag-massa{background:rgba(100,60,10,0.65);color:rgba(255,200,100,0.95);border:1px solid rgba(180,120,20,0.35)}
-.tag-lanche{background:rgba(80,20,140,0.7);color:rgba(200,160,255,0.95);border:1px solid rgba(140,80,220,0.42)}
+.option-header{display:flex;align-items:center;gap:0.7rem;padding:1rem 1rem 0.7rem}
+.option-tag{font-size:0.62rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:4px 9px;border-radius:5px;flex-shrink:0}
+.tag-principal{background:rgba(26,58,110,0.7);color:rgba(140,200,255,0.95);border:1px solid rgba(60,140,255,0.3)}
+.tag-light{background:rgba(16,110,90,0.6);color:rgba(80,220,160,0.95);border:1px solid rgba(16,160,120,0.35)}
+.tag-carne{background:rgba(192,40,28,0.45);color:rgba(255,160,140,0.95);border:1px solid rgba(192,40,28,0.38)}
+.tag-massa{background:rgba(100,60,10,0.6);color:rgba(255,200,100,0.95);border:1px solid rgba(180,120,20,0.35)}
+.tag-lanche{background:rgba(80,20,140,0.65);color:rgba(200,160,255,0.95);border:1px solid rgba(140,80,220,0.4)}
  
-.option-name{font-size:0.9rem;font-weight:600;color:#fff;line-height:1.3;flex:1}
-.option-body{padding:0 0.9rem 0.8rem;display:flex;flex-direction:column;gap:0.22rem;flex:1}
-.option-detail{font-size:0.73rem;color:rgba(143,170,210,0.72);line-height:1.5;display:flex;align-items:flex-start;gap:0.35rem}
-.option-detail::before{content:"·";color:rgba(192,40,28,0.78);font-size:1rem;line-height:1.2;flex-shrink:0}
+.option-name{font-size:1.05rem;font-weight:600;color:#fff;line-height:1.3;flex:1}
+.option-body{padding:0 1rem 0.9rem;display:flex;flex-direction:column;gap:0.28rem;flex:1}
+.option-detail{font-size:0.82rem;color:rgba(143,170,210,0.72);line-height:1.55;display:flex;align-items:flex-start;gap:0.4rem}
+.option-detail::before{content:"·";color:rgba(192,40,28,0.75);font-size:1.1rem;line-height:1.2;flex-shrink:0}
+ 
+/* hint clicável */
+.option-hint{padding:0 1rem 0.8rem;font-size:0.68rem;color:rgba(100,150,255,0.45);letter-spacing:0.06em}
+ 
+/* ===== MODAL / POP-UP ===== */
+.modal-overlay{
+  position:fixed;inset:0;z-index:200;
+  background:rgba(3,8,20,0.82);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  display:flex;align-items:center;justify-content:center;
+  padding:1.5rem;
+  opacity:0;pointer-events:none;
+  transition:opacity 0.22s ease;
+}
+.modal-overlay.open{opacity:1;pointer-events:all}
+ 
+.modal{
+  background:#0b1a35;
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:22px;
+  width:100%;max-width:520px;
+  box-shadow:0 24px 80px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.08);
+  overflow:hidden;
+  transform:scale(0.92) translateY(16px);
+  transition:transform 0.25s cubic-bezier(.22,1,.36,1);
+}
+.modal-overlay.open .modal{transform:scale(1) translateY(0)}
+ 
+.modal-header{
+  display:flex;align-items:center;gap:0.8rem;
+  padding:1.4rem 1.4rem 1rem;
+  border-bottom:1px solid rgba(255,255,255,0.07);
+}
+.modal-tag{font-size:0.65rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:5px 11px;border-radius:6px;flex-shrink:0}
+.modal-title{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:700;color:#fff;line-height:1.2;flex:1}
+.modal-close{width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.1rem;flex-shrink:0;transition:background .15s}
+.modal-close:hover{background:rgba(192,40,28,0.3);color:#fff}
+ 
+.modal-body{padding:1.2rem 1.4rem 1.6rem;display:flex;flex-direction:column;gap:0.55rem}
+.modal-detail{
+  display:flex;align-items:flex-start;gap:0.7rem;
+  padding:0.7rem 0.9rem;
+  border-radius:10px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.06);
+}
+.modal-detail::before{content:"✓";color:#40d090;font-size:0.85rem;flex-shrink:0;margin-top:1px;font-weight:700}
+.modal-detail-text{font-size:0.95rem;color:rgba(200,220,255,0.88);line-height:1.5}
+ 
+.modal-note{
+  margin-top:0.4rem;padding:0.7rem 0.9rem;
+  border-radius:10px;background:rgba(255,180,0,0.05);
+  border:1px solid rgba(255,200,80,0.12);
+  font-size:0.78rem;color:rgba(255,210,120,0.75);line-height:1.5;
+}
 </style>
 </head>
 <body>
  
+<!-- HEADER -->
 <div class="header">
   <div class="header-inner">
     <a class="back-btn" href="index.html">&#8249;</a>
@@ -165,9 +188,30 @@ body::before{
  
 <div class="cards-area" id="cardsArea"></div>
  
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <span class="modal-tag" id="modalTag"></span>
+      <span class="modal-title" id="modalTitle"></span>
+      <div class="modal-close" id="modalClose">&#10005;</div>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+ 
 <script>
 const MESES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 const DIAS_KEY=["seg","ter","qua","qui","sex"];
+ 
+const NOTAS={
+  principal:"Prato completo com proteína, acompanhamentos e sobremesa.",
+  light:"Substitui o cardápio completo por opção de menor teor calórico.",
+  carne:"Substitui apenas a proteína. Todos os acompanhamentos são iguais ao Principal.",
+  massa:"Inclui somente a massa do dia, sem os demais acompanhamentos do Principal.",
+  lanche:"Opção exclusiva das sextas-feiras. Substitui o almoço.",
+};
+ 
 const CARDAPIO={
   seg:{label:"Segunda",opcoes:[
     {tag:"principal",tagClass:"tag-principal",nome:"Frango Grelhado ao Limão",detalhes:["Arroz branco e integral","Feijão carioca","Salada de alface e tomate","Sobremesa: fruta da estação"]},
@@ -203,6 +247,30 @@ const CARDAPIO={
   ]},
 };
  
+// MODAL
+function openModal(op){
+  document.getElementById("modalTag").textContent=op.tag;
+  document.getElementById("modalTag").className="modal-tag "+op.tagClass;
+  document.getElementById("modalTitle").textContent=op.nome;
+  const body=document.getElementById("modalBody");
+  body.innerHTML=op.detalhes.map(d=>"<div class=\"modal-detail\"><span class=\"modal-detail-text\">"+d+"</span></div>").join("");
+  if(NOTAS[op.tag]){
+    const note=document.createElement("div");
+    note.className="modal-note";
+    note.textContent="ℹ️  "+NOTAS[op.tag];
+    body.appendChild(note);
+  }
+  document.getElementById("modalOverlay").classList.add("open");
+  document.body.style.overflow="hidden";
+}
+function closeModal(){
+  document.getElementById("modalOverlay").classList.remove("open");
+  document.body.style.overflow="";
+}
+document.getElementById("modalClose").addEventListener("click",closeModal);
+document.getElementById("modalOverlay").addEventListener("click",function(e){if(e.target===this)closeModal();});
+document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal();});
+ 
 function getWeekDates(off=0){
   const today=new Date(),day=today.getDay(),mon=new Date(today);
   mon.setDate(today.getDate()-(day===0?6:day-1)+(off*7));
@@ -234,6 +302,17 @@ function buildUI(){
   setDay(def||"seg",dates);
 }
  
+function makeCard(op){
+  const card=document.createElement("div");
+  card.className="option-card";
+  card.innerHTML=
+    "<div class=\"option-header\"><span class=\"option-tag "+op.tagClass+"\">"+op.tag+"</span><span class=\"option-name\">"+op.nome+"</span></div>"+
+    "<div class=\"option-body\">"+op.detalhes.map(x=>"<div class=\"option-detail\">"+x+"</div>").join("")+"</div>"+
+    "<div class=\"option-hint\">Toque para ver detalhes</div>";
+  card.addEventListener("click",()=>openModal(op));
+  return card;
+}
+ 
 function setDay(key,dates){
   const idx=DIAS_KEY.indexOf(key),d=dates[idx],today=new Date();
   document.querySelectorAll(".day-tab").forEach(t=>t.classList.toggle("active",t.dataset.day===key));
@@ -245,19 +324,17 @@ function setDay(key,dates){
   panel.className="day-panel active";
   const isToday=d.toDateString()===today.toDateString()&&weekOffset===0;
   panel.innerHTML="<div class=\"day-header\"><span class=\"day-header-date\">"+data.label+", "+d.getDate()+" de "+MESES[d.getMonth()]+"</span>"+(isToday?"<span class=\"day-header-badge\">Hoje</span>":"")+"</div>";
+ 
   const nota=document.createElement("div");
   nota.className="nota-card";
-  nota.innerHTML="<span class=\"nota-icon\">ℹ️</span><span class=\"nota-text\"><strong>Carne</strong> substitui apenas a proteína · <strong>Light</strong> muda o cardápio completo · <strong>Massa</strong> inclui somente a massa do dia.</span>";
+  nota.innerHTML="<span class=\"nota-icon\">ℹ️</span><span class=\"nota-text\"><strong>Carne</strong> substitui apenas a proteína · <strong>Light</strong> muda o cardápio completo · <strong>Massa</strong> inclui somente a massa do dia · <strong>Toque em qualquer opção</strong> para ver mais detalhes.</span>";
   panel.appendChild(nota);
+ 
   const grid=document.createElement("div");
   grid.className="options-grid";
-  data.opcoes.forEach(op=>{
-    const card=document.createElement("div");
-    card.className="option-card";
-    card.innerHTML="<div class=\"option-header\"><span class=\"option-tag "+op.tagClass+"\">"+op.tag+"</span><span class=\"option-name\">"+op.nome+"</span></div><div class=\"option-body\">"+op.detalhes.map(x=>"<div class=\"option-detail\">"+x+"</div>").join("")+"</div>";
-    grid.appendChild(card);
-  });
+  data.opcoes.forEach(op=>grid.appendChild(makeCard(op)));
   panel.appendChild(grid);
+ 
   if(data.lanche){
     const lbl=document.createElement("div");
     lbl.className="section-label";
@@ -265,12 +342,7 @@ function setDay(key,dates){
     panel.appendChild(lbl);
     const lg=document.createElement("div");
     lg.className="lanche-grid";
-    data.lanche.forEach(op=>{
-      const card=document.createElement("div");
-      card.className="option-card";
-      card.innerHTML="<div class=\"option-header\"><span class=\"option-tag "+op.tagClass+"\">"+op.tag+"</span><span class=\"option-name\">"+op.nome+"</span></div><div class=\"option-body\">"+op.detalhes.map(x=>"<div class=\"option-detail\">"+x+"</div>").join("")+"</div>";
-      lg.appendChild(card);
-    });
+    data.lanche.forEach(op=>lg.appendChild(makeCard(op)));
     panel.appendChild(lg);
   }
   area.appendChild(panel);
