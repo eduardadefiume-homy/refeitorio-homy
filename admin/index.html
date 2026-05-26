@@ -720,43 +720,70 @@ document.querySelectorAll(".nav-item").forEach(item=>{
 });
 
 // --- LOGIN ---
+// MSAL config global
+const MSAL_CONFIG={
+  auth:{
+    clientId:"2e73e8be-484b-428e-a6c0-c75b1bf70d8a",
+    authority:"https://login.microsoftonline.com/a2850abc-334a-4805-b6b2-420b4aef68a9",
+    redirectUri:"https://eduardadefiume-homy.github.io/refeitorio-homy/admin/index.html",
+    navigateToLoginRequestUrl:true,
+  },
+  cache:{cacheLocation:"sessionStorage",storeAuthStateInCookie:true}
+};
+
+let msalApp=null;
+
+async function getMsalApp(){
+  if(msalApp)return msalApp;
+  msalApp=new msal.PublicClientApplication(MSAL_CONFIG);
+  await msalApp.initialize();
+  return msalApp;
+}
+
+// Handle redirect response on page load
+(async()=>{
+  try{
+    const app=await getMsalApp();
+    const result=await app.handleRedirectPromise();
+    if(result&&result.account){
+      SP._msalInstance=app;
+      SP._account=result.account;
+      document.getElementById("loginScreen").classList.add("hide");
+      document.getElementById("app").classList.add("show");
+      document.getElementById("userInfo").textContent=result.account.name||result.account.username;
+      initApp();
+      return;
+    }
+    // Check existing session
+    const accounts=app.getAllAccounts();
+    if(accounts.length>0){
+      SP._msalInstance=app;
+      SP._account=accounts[0];
+      document.getElementById("loginScreen").classList.add("hide");
+      document.getElementById("app").classList.add("show");
+      document.getElementById("userInfo").textContent=accounts[0].name||accounts[0].username;
+      initApp();
+    }
+  }catch(e){
+    console.log("Init:",e.message);
+  }
+})();
+
 document.getElementById("btnLogin").addEventListener("click",async function(){
   const btn=this;
   btn.disabled=true;
-  btn.innerHTML="⏳ Aguarde...";
+  btn.innerHTML="⏳ Redirecionando...";
   try{
-    // Inicializa MSAL
-    if(!SP._msalInstance){
-      const msalConfig={
-        auth:{
-          clientId:"2e73e8be-484b-428e-a6c0-c75b1bf70d8a",
-          authority:"https://login.microsoftonline.com/a2850abc-334a-4805-b6b2-420b4aef68a9",
-          redirectUri:window.location.href.split("?")[0],
-        },
-        cache:{cacheLocation:"sessionStorage"}
-      };
-      SP._msalInstance=new msal.PublicClientApplication(msalConfig);
-      await SP._msalInstance.initialize();
-    }
-    // Tenta login popup
-    const result=await SP._msalInstance.loginPopup({
+    const app=await getMsalApp();
+    SP._msalInstance=app;
+    // Use redirect instead of popup
+    await app.loginRedirect({
       scopes:["https://graph.microsoft.com/Sites.ReadWrite.All","User.Read"],
       prompt:"select_account"
     });
-    SP._account=result.account;
-    document.getElementById("loginScreen").classList.add("hide");
-    document.getElementById("app").classList.add("show");
-    document.getElementById("userInfo").textContent=result.account.name||result.account.username;
-    initApp();
   }catch(e){
     console.error("Login error:",e);
-    if(e.errorCode==="popup_window_error"){
-      toast("Popup bloqueado! Habilite popups para este site no navegador.","error");
-    } else if(e.errorCode==="user_cancelled"){
-      toast("Login cancelado.","info");
-    } else {
-      toast("Erro: "+( e.message||e.errorCode),"error");
-    }
+    toast("Erro: "+(e.message||e.errorCode||"desconhecido"),"error");
     btn.disabled=false;
     btn.innerHTML="🔐 Entrar com conta Homy";
   }
