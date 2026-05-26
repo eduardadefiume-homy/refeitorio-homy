@@ -746,23 +746,27 @@ async function getMsalApp(){
     const app=await getMsalApp();
     const result=await app.handleRedirectPromise();
     if(result&&result.account){
-      SP._msalInstance=app;
-      SP._account=result.account;
+      if(typeof SP!=="undefined"){
+        SP._msalInstance=app;
+        SP._account=result.account;
+      }
       document.getElementById("loginScreen").classList.add("hide");
       document.getElementById("app").classList.add("show");
       document.getElementById("userInfo").textContent=result.account.name||result.account.username;
-      initApp();
+      try{ initApp(); }catch(initError){ console.error("Erro ao iniciar painel:",initError); }
       return;
     }
     // Check existing session
     const accounts=app.getAllAccounts();
     if(accounts.length>0){
-      SP._msalInstance=app;
-      SP._account=accounts[0];
+      if(typeof SP!=="undefined"){
+        SP._msalInstance=app;
+        SP._account=accounts[0];
+      }
       document.getElementById("loginScreen").classList.add("hide");
       document.getElementById("app").classList.add("show");
       document.getElementById("userInfo").textContent=accounts[0].name||accounts[0].username;
-      initApp();
+      try{ initApp(); }catch(initError){ console.error("Erro ao iniciar painel:",initError); }
     }
   }catch(e){
     console.log("Init:",e.message);
@@ -774,6 +778,10 @@ document.getElementById("btnLogin").addEventListener("click",async function(){
   btn.disabled=true;
   btn.innerHTML="⏳ Entrando...";
   try{
+    if(typeof msal==="undefined"){
+      throw new Error("Biblioteca MSAL não carregou. Verifique internet/CDN do msal-browser.");
+    }
+
     const app=await getMsalApp();
 
     const result=await app.loginPopup({
@@ -781,16 +789,29 @@ document.getElementById("btnLogin").addEventListener("click",async function(){
       prompt:"select_account"
     });
 
-    if(result&&result.account){
+    if(!result || !result.account){
+      throw new Error("A Microsoft autenticou, mas não retornou uma conta.");
+    }
+
+    if(typeof SP!=="undefined"){
       SP._msalInstance=app;
       SP._account=result.account;
+    }
 
-      document.getElementById("loginScreen").classList.add("hide");
-      document.getElementById("app").classList.add("show");
+    document.getElementById("loginScreen").classList.add("hide");
+    document.getElementById("app").classList.add("show");
+
+    if(document.getElementById("userInfo")){
       document.getElementById("userInfo").textContent=result.account.name||result.account.username;
+    }
 
+    toast("Login realizado com sucesso!","success");
+
+    try{
       initApp();
-      toast("Login realizado com sucesso!","success");
+    }catch(initError){
+      console.error("Erro ao iniciar painel:",initError);
+      toast("Login OK, mas o painel encontrou erro ao carregar dados: "+(initError.message||initError),"error");
     }
 
   }catch(e){
@@ -801,8 +822,13 @@ document.getElementById("btnLogin").addEventListener("click",async function(){
   }
 });
 
-document.getElementById("btnLogout").addEventListener("click",()=>{
-  SP._msalInstance.logoutPopup();
+document.getElementById("btnLogout").addEventListener("click",async()=>{
+  try{
+    const app=await getMsalApp();
+    await app.logoutPopup();
+  }catch(e){
+    console.warn("Logout:",e);
+  }
   document.getElementById("loginScreen").classList.remove("hide");
   document.getElementById("app").classList.remove("show");
 });
