@@ -191,6 +191,12 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
   .nav-label{display:none}
   .sidebar-footer{display:none}
 }
+
+.week-controls{display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap}
+.week-date-badge{font-size:0.72rem;font-weight:600;background:rgba(20,45,85,0.72);border:1px solid rgba(60,140,255,0.25);color:rgba(180,220,255,0.95);padding:6px 10px;border-radius:7px}
+.week-btn{padding:0.48rem 0.72rem;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(210,225,255,0.9);font-family:"Barlow",sans-serif;font-size:0.75rem;font-weight:600;cursor:pointer}
+.week-btn:hover{background:rgba(255,255,255,0.11)}
+
 </style>
 </head>
 <body>
@@ -266,7 +272,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="topbar-right">
         <div class="semana-badge" id="semanaBadge">Semana —</div>
         <a href="../index.html" style="text-decoration:none">
-          <button class="btn-secondary">← Voltar ao app</button>
+          
         </a>
       </div>
     </div>
@@ -856,17 +862,97 @@ window.loginMicrosoftDireto = async function(){
   }
 };
 
+
+// --- CONTROLE DE SEMANA V10 ---
+let semanaOffsetGlobal = 0;
+
+function getMondayByOffset(offset){
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  const day = d.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diffToMonday + (offset * 7));
+  return d;
+}
+
+function formatDateBR(date){
+  return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+}
+
+function getSemanaIdByOffset(offset){
+  const monday = getMondayByOffset(offset);
+  const tmp = new Date(Date.UTC(monday.getFullYear(), monday.getMonth(), monday.getDate()));
+  const dayNum = tmp.getUTCDay() || 7;
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+  return tmp.getUTCFullYear() + "-W" + String(weekNo).padStart(2,"0");
+}
+
+function getSemanaIdAtualSelecionada(){
+  return getSemanaIdByOffset(semanaOffsetGlobal);
+}
+
+function updateSemanaUI(){
+  const monday = getMondayByOffset(semanaOffsetGlobal);
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate()+4);
+
+  const semanaId = getSemanaIdAtualSelecionada();
+
+  if(document.getElementById("semanaBadge")){
+    document.getElementById("semanaBadge").textContent = "Semana " + semanaId.replace("-W"," / ");
+  }
+
+  if(document.getElementById("semanaPeriodo")){
+    document.getElementById("semanaPeriodo").textContent = formatDateBR(monday) + " à " + formatDateBR(friday);
+  }
+
+  if(document.getElementById("semanaLabel")){
+    document.getElementById("semanaLabel").textContent = semanaId + " · " + formatDateBR(monday) + " à " + formatDateBR(friday);
+  }
+}
+
+function reloadCurrentModule(){
+  const active = document.querySelector(".nav-item.active");
+  const mod = active ? active.getAttribute("data-module") : "dashboard";
+  loadModule(mod || "dashboard");
+}
+
+function bindSemanaControls(){
+  const ant = document.getElementById("btnSemanaAnterior");
+  const prox = document.getElementById("btnSemanaProxima");
+
+  if(ant && !ant.dataset.bound){
+    ant.dataset.bound = "1";
+    ant.addEventListener("click",()=>{
+      semanaOffsetGlobal--;
+      updateSemanaUI();
+      reloadCurrentModule();
+    });
+  }
+
+  if(prox && !prox.dataset.bound){
+    prox.dataset.bound = "1";
+    prox.addEventListener("click",()=>{
+      semanaOffsetGlobal++;
+      updateSemanaUI();
+      reloadCurrentModule();
+    });
+  }
+}
+
 // --- INIT ---
 async function initApp(){
-  const semanaId=getSemanaId();
-  document.getElementById("semanaBadge").textContent=formatSemana(semanaId);
-  document.getElementById("semanaLabel").textContent=semanaId;
+  bindSemanaControls();
+  updateSemanaUI();
   loadModule("dashboard");
 }
 
 // --- LOAD MODULE ---
 function loadModule(mod){
-  const semanaId=getSemanaId();
+  updateSemanaUI();
+  const semanaId=getSemanaIdAtualSelecionada();
   if(mod==="dashboard") loadDashboard(semanaId);
   if(mod==="pedidos") loadPedidos(semanaId);
   if(mod==="colaboradores") loadColaboradores();
@@ -899,7 +985,7 @@ async function loadDashboard(semanaId){
       document.getElementById("prazoHora").value=dt.toTimeString().slice(0,5);
     }
   }catch(e){
-    toast("Erro ao carregar dashboard: "+e.message,"error");
+    toast("Erro ao carregar dashboard: "+(e.message||e)+" — verifique permissões/API do SharePoint.","error");
   }
 }
 
@@ -1043,7 +1129,7 @@ async function loadPedidos(semanaId){
       rows+="<td><span class='badge "+(confirmado?"badge-green":"badge-yellow")+"'>"+(confirmado?"Confirmado":"Pendente")+"</span></td>";
       rows+="<td><div class='table-actions'>";
       rows+=`<div class="btn-icon" title="Editar" onclick="editarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div>`;
-      rows+=`<div class="btn-icon danger" title="Remover" onclick="removerPedido('${pid}')">🗑️</div>`;
+      rows+=`<div class="btn-icon" title="Editar" onclick="editarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div><div class="btn-icon danger" title="Remover" onclick="removerPedido('${pid}')">🗑️</div>`;
       rows+="</div></td></tr>";
     });
     tbody.innerHTML=rows;
@@ -1112,5 +1198,6 @@ async function loadExtras(semanaId){
 }
 </script>
 <!-- FIX V9 FECHAMENTO SCRIPT BODY HTML -->
+<!-- ADMIN REFEITORIO V10 SEMANA FILTRO PEDIDOS EDITAR -->
 </body>
 </html>
