@@ -772,15 +772,27 @@ async function getMsalApp(){
 document.getElementById("btnLogin").addEventListener("click",async function(){
   const btn=this;
   btn.disabled=true;
-  btn.innerHTML="⏳ Redirecionando...";
+  btn.innerHTML="⏳ Entrando...";
   try{
     const app=await getMsalApp();
-    console.log("MSAL app ready, starting redirect...");
-    await app.loginRedirect({
-      scopes:["https://graph.microsoft.com/Sites.ReadWrite.All","User.Read"],
+
+    const result=await app.loginPopup({
+      scopes:["User.Read"],
       prompt:"select_account"
     });
-    console.log("loginRedirect called");
+
+    if(result&&result.account){
+      SP._msalInstance=app;
+      SP._account=result.account;
+
+      document.getElementById("loginScreen").classList.add("hide");
+      document.getElementById("app").classList.add("show");
+      document.getElementById("userInfo").textContent=result.account.name||result.account.username;
+
+      initApp();
+      toast("Login realizado com sucesso!","success");
+    }
+
   }catch(e){
     console.error("Login error:",e);
     alert("Erro de login: "+(e.message||e.errorCode||JSON.stringify(e)));
