@@ -981,8 +981,8 @@ async function loadPedidos(semanaId){
       rows+="<td>"+prato+"</td>";
       rows+="<td><span class='badge "+(confirmado?"badge-green":"badge-yellow")+"'>"+(confirmado?"Confirmado":"Pendente")+"</span></td>";
       rows+="<td><div class='table-actions'>";
-      rows+="<div class='btn-icon' title='Editar' onclick="editarPedido('"+pid+"','"+nome+"','"+dia+"','"+opcao+"')">✏️</div>";
-      rows+="<div class='btn-icon danger' title='Remover' onclick="removerPedido('"+pid+"')">🗑️</div>";
+      rows+=`<div class="btn-icon" title="Editar" onclick="editarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div>`;
+      rows+=`<div class="btn-icon danger" title="Remover" onclick="removerPedido('${pid}')">🗑️</div>`;
       rows+="</div></td></tr>";
     });
     tbody.innerHTML=rows;
@@ -1010,7 +1010,7 @@ async function loadColaboradores(){
       rows+="<td>"+dept+"</td>";
       rows+="<td><span class='badge badge-blue'>"+tipo+"</span></td>";
       rows+="<td><span class='badge badge-green'>Ativo</span></td>";
-      rows+="<td><div class='table-actions'><div class='btn-icon danger' title='Desativar' onclick="desativarColab('"+cid+"')">🗑️</div></div></td>";
+      rows+=`<td><div class="table-actions"><div class="btn-icon danger" title="Desativar" onclick="desativarColab('${cid}')">🗑️</div></div></td>`;
       rows+="</tr>";
     });
     tbody.innerHTML=rows;
@@ -1041,7 +1041,7 @@ async function loadExtras(semanaId){
       rows+="<td>"+dia+"</td>";
       rows+="<td><span class='badge badge-blue'>"+opcao+"</span></td>";
       rows+="<td style='font-size:0.78rem;color:rgba(143,170,210,0.6)'>"+obs+"</td>";
-      rows+="<td><div class='table-actions'><div class='btn-icon danger' onclick="removerExtra('"+eid+"')">🗑️</div></div></td>";
+      rows+=`<td><div class="table-actions"><div class="btn-icon danger" onclick="removerExtra('${eid}')">🗑️</div></div></td>`;
       rows+="</tr>";
     });
     tbody.innerHTML=rows;
