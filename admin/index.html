@@ -675,6 +675,49 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
   </div>
 </div>
 
+
+<!-- MODAL EDITAR PEDIDO -->
+<div class="modal-overlay" id="modalEditarPedido">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Editar pedido</div>
+      <button class="modal-close" type="button" onclick="fecharModalEditarPedido()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editPedidoId">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Colaborador</label>
+          <input class="form-input" id="editPedidoNome" disabled>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dia</label>
+          <select class="form-select" id="editPedidoDia">
+            <option value="segunda">Segunda</option>
+            <option value="terca">Terça</option>
+            <option value="quarta">Quarta</option>
+            <option value="quinta">Quinta</option>
+            <option value="sexta">Sexta</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Opção</label>
+          <select class="form-select" id="editPedidoOpcao">
+            <option value="principal">Principal</option>
+            <option value="fitness">Fitness</option>
+            <option value="vegetariano">Vegetariano</option>
+            <option value="lanche">Lanche</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" type="button" onclick="fecharModalEditarPedido()">Cancelar</button>
+      <button class="btn-success" type="button" onclick="salvarEdicaoPedido()">Salvar alteração</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="../sharepoint.js"></script>
@@ -942,6 +985,100 @@ function bindSemanaControls(){
   }
 }
 
+
+
+// --- SP UPDATE GENÉRICO V11 ---
+if(typeof SP!=="undefined" && !SP.updateItem){
+  SP.updateItem = async function(lista,itemId,fields){
+    const token = await this.getToken();
+    const siteId = await this.getSiteId();
+    const listId = await this.getListId(lista);
+
+    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,{
+      method:"PATCH",
+      headers:{
+        "Authorization":"Bearer "+token,
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify(fields)
+    });
+
+    if(!resp.ok){
+      const err = await resp.text();
+      throw new Error(err);
+    }
+
+    return true;
+  };
+}
+
+if(typeof SP!=="undefined" && !SP.updatePedido){
+  SP.updatePedido = async function(itemId,fields){
+    return this.updateItem("Pedidos",itemId,fields);
+  };
+}
+
+// --- EDITAR PEDIDO V11 ---
+let pedidoEditandoAtual = null;
+
+function abrirModalEditarPedido(pid,nome,dia,opcao){
+  pedidoEditandoAtual = {pid,nome,dia,opcao};
+
+  document.getElementById("editPedidoId").value = pid || "";
+  document.getElementById("editPedidoNome").value = nome || "";
+  document.getElementById("editPedidoDia").value = dia || "segunda";
+  document.getElementById("editPedidoOpcao").value = opcao || "principal";
+
+  document.getElementById("modalEditarPedido").classList.add("open");
+}
+
+function fecharModalEditarPedido(){
+  document.getElementById("modalEditarPedido").classList.remove("open");
+}
+
+async function salvarEdicaoPedido(){
+  const pid = document.getElementById("editPedidoId").value;
+  const dia = document.getElementById("editPedidoDia").value;
+  const opcao = document.getElementById("editPedidoOpcao").value;
+
+  if(!pid){
+    toast("Pedido inválido para edição.","error");
+    return;
+  }
+
+  try{
+    const payload = {
+      Dia: dia,
+      dia: dia,
+      Opcao: opcao,
+      opcao: opcao
+    };
+
+    if(SP.updatePedido){
+      await SP.updatePedido(pid,payload);
+    }else if(SP.updateItem){
+      await SP.updateItem("Pedidos",pid,payload);
+    }else if(SP.patchListItem){
+      await SP.patchListItem("Pedidos",pid,payload);
+    }else{
+      throw new Error("Função de atualização do SharePoint não encontrada no objeto SP.");
+    }
+
+    fecharModalEditarPedido();
+    toast("Pedido alterado com sucesso!","success");
+    reloadCurrentModule();
+
+  }catch(e){
+    console.error("Erro ao editar pedido:",e);
+    toast("Erro ao editar pedido: "+(e.message||e),"error");
+  }
+}
+
+// Mantém compatibilidade com botões antigos
+function editarPedido(pid,nome,dia,opcao){
+  abrirModalEditarPedido(pid,nome,dia,opcao);
+}
+
 // --- INIT ---
 async function initApp(){
   bindSemanaControls();
@@ -976,7 +1113,17 @@ async function loadDashboard(semanaId){
     const checkins=await SP.getCheckIn(semanaId,hoje);
     document.getElementById("stat-checkin").textContent=checkins.filter(c=>c.retirou||c.Retirou).length;
 
-    const liberado=await SP.isCardapioLiberado();
+    let liberado=false;
+    try{
+      const valoresLiberacao = await Promise.all([
+        SP.getConfig ? SP.getConfig("cardapio_liberado") : null,
+        SP.getConfig ? SP.getConfig("marcacao_liberada") : null,
+        SP.getConfig ? SP.getConfig("pedidos_liberados") : null
+      ]);
+      liberado = valoresLiberacao.some(v => String(v||"").toLowerCase()==="sim" || String(v||"").toLowerCase()==="true");
+    }catch(_){
+      liberado=await SP.isCardapioLiberado();
+    }
     document.getElementById("toggleMarcacao").checked=liberado;
     const prazo=await SP.getPrazoMarcacao();
     if(prazo){
@@ -990,7 +1137,15 @@ async function loadDashboard(semanaId){
 }
 
 document.getElementById("toggleMarcacao").addEventListener("change",async function(){
-  await SP.setConfig("cardapio_liberado",this.checked?"sim":"nao","Controla se colaboradores podem marcar refeição");
+  const valor = this.checked ? "sim" : "nao";
+
+  // Mantém compatibilidade com o app do refeitório e com versões antigas do painel
+  await Promise.all([
+    SP.setConfig("cardapio_liberado", valor, "Controla se colaboradores podem marcar refeição"),
+    SP.setConfig("marcacao_liberada", valor, "Controla se colaboradores podem marcar refeição"),
+    SP.setConfig("pedidos_liberados", valor, "Controla se colaboradores podem marcar refeição")
+  ]);
+
   toast(this.checked?"Marcação liberada!":"Marcação bloqueada!",this.checked?"success":"info");
 });
 
@@ -1128,8 +1283,8 @@ async function loadPedidos(semanaId){
       rows+="<td>"+prato+"</td>";
       rows+="<td><span class='badge "+(confirmado?"badge-green":"badge-yellow")+"'>"+(confirmado?"Confirmado":"Pendente")+"</span></td>";
       rows+="<td><div class='table-actions'>";
-      rows+=`<div class="btn-icon" title="Editar" onclick="editarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div>`;
-      rows+=`<div class="btn-icon" title="Editar" onclick="editarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div><div class="btn-icon danger" title="Remover" onclick="removerPedido('${pid}')">🗑️</div>`;
+      rows+=`<div class="btn-icon" title="Editar" onclick="abrirModalEditarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div>`;
+      rows+=`<div class="btn-icon" title="Editar" onclick="abrirModalEditarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div><div class="btn-icon danger" title="Remover" onclick="removerPedido('${pid}')">🗑️</div>`;
       rows+="</div></td></tr>";
     });
     tbody.innerHTML=rows;
@@ -1199,5 +1354,6 @@ async function loadExtras(semanaId){
 </script>
 <!-- FIX V9 FECHAMENTO SCRIPT BODY HTML -->
 <!-- ADMIN REFEITORIO V10 SEMANA FILTRO PEDIDOS EDITAR -->
+<!-- ADMIN REFEITORIO V11 EDITAR PEDIDO E LIBERACAO COMPATIVEL -->
 </body>
 </html>
