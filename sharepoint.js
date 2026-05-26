@@ -17,6 +17,19 @@ const SP = {
   _siteId: null,
   _listIds: {},
 
+
+  // --- HELPERS DE CAMPOS ---
+  pick(obj, ...keys) {
+    for (const key of keys) {
+      if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
+    }
+    return null;
+  },
+
+  isTrueValue(value) {
+    return value === true || value === 1 || String(value).toLowerCase() === "sim" || String(value).toLowerCase() === "true";
+  },
+
   // --- INICIALIZAR MSAL ---
   async init() {
     if (this._msalInstance) return true;
@@ -134,15 +147,25 @@ const SP = {
   // COLABORADORES
   // ============================================================
   async getColaboradores() {
-    return this.getItems("Colaboradores", "fields/ativo eq true");
+    const items = await this.getItems("Colaboradores");
+    return items.filter(i =>
+      i.Ativo === true ||
+      i.Ativo === "Sim" ||
+      i.Ativo === "sim" ||
+      i.Ativo === 1 ||
+      i.ativo === true ||
+      i.ativo === "Sim" ||
+      i.ativo === "sim" ||
+      i.ativo === 1
+    );
   },
   async createColaborador(dados) {
     return this.createItem("Colaboradores", {
       Title: dados.nome,
-      nome: dados.nome,
-      departamento: dados.departamento,
-      email: dados.email || "",
-      ativo: true,
+      Nome: dados.nome,
+      Departamento: dados.departamento,
+      Email: dados.email || "",
+      Ativo: true,
       tipo: dados.tipo || "colaborador"
     });
   },
@@ -150,7 +173,7 @@ const SP = {
     return this.updateItem("Colaboradores", id, dados);
   },
   async desativarColaborador(id) {
-    return this.updateItem("Colaboradores", id, { ativo: false });
+    return this.updateItem("Colaboradores", id, { Ativo: false });
   },
 
   // ============================================================
@@ -158,14 +181,14 @@ const SP = {
   // ============================================================
   async getCardapio(semanaId) {
     const items = await this.getItems("Card\u00e1pio");
-    return items.filter(i => i.semana_id === semanaId);
+    return items.filter(i => this.pick(i,"Semana_id","semana_id","Semana","semana") === semanaId);
   },
   async saveCardapio(semanaId, dia, opcao, nomePrato, detalhes) {
     return this.createItem("Card\u00e1pio", {
       Title: `${semanaId}-${dia}-${opcao}`,
-      semana_id: semanaId,
-      dia,
-      opcao,
+      Semana_id: semanaId,
+      Dia: dia,
+      Opcao: opcao,
       Nome_Prato: nomePrato,
       Detalhes: detalhes
     });
@@ -182,22 +205,22 @@ const SP = {
   // ============================================================
   async getPedidos(semanaId) {
     const items = await this.getItems("Pedidos");
-    return items.filter(i => i.semana_id === semanaId);
+    return items.filter(i => this.pick(i,"Semana_id","semana_id","Semana","semana") === semanaId);
   },
   async getPedidoColaborador(semanaId, colaboradorId) {
     const items = await this.getPedidos(semanaId);
-    return items.filter(i => i.colaborador_id === String(colaboradorId));
+    return items.filter(i => String(this.pick(i,"Colaborador_id","colaborador_id","ColaboradorId")) === String(colaboradorId));
   },
   async savePedido(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato) {
     return this.createItem("Pedidos", {
       Title: `${semanaId}-${colaboradorId}-${dia}`,
-      semana_id: semanaId,
-      colaborador_id: String(colaboradorId),
-      colaborador_nome: colaboradorNome,
-      dia,
-      opcao,
+      Semana_id: semanaId,
+      Colaborador_id: String(colaboradorId),
+      Colaborador_nome: colaboradorNome,
+      Dia: dia,
+      Opcao: opcao,
       Nome_Prato: nomePrato,
-      confirmado: false,
+      Confirmado: false,
       Data_Hora: new Date().toISOString()
     });
   },
@@ -214,7 +237,7 @@ const SP = {
   async getConfig(chave) {
     const items = await this.getItems("Configura\u00e7\u00f5es");
     const item = items.find(i => i.chave === chave || i.Title === chave);
-    return item ? item.valor || item.Valor : null;
+    return item ? this.pick(item,"Valor","valor") : null;
   },
   async setConfig(chave, valor, descricao = "") {
     const items = await this.getItems("Configura\u00e7\u00f5es");
@@ -242,11 +265,14 @@ const SP = {
   // ============================================================
   async getCheckIn(semanaId, dia) {
     const items = await this.getItems("CheckIn");
-    return items.filter(i => i.semana_id === semanaId && i.dia === dia);
+    return items.filter(i =>
+      this.pick(i,"Semana_id","semana_id","Semana","semana") === semanaId &&
+      this.pick(i,"Dia","dia") === dia
+    );
   },
   async registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
     const existing = await this.getCheckIn(semanaId, dia);
-    const found = existing.find(i => i.colaborador_id === String(colaboradorId));
+    const found = existing.find(i => String(this.pick(i,"Colaborador_id","colaborador_id","ColaboradorId")) === String(colaboradorId));
     if (found) {
       return this.updateItem("CheckIn", found.id, {
         Retirou: true,
@@ -256,10 +282,10 @@ const SP = {
     }
     return this.createItem("CheckIn", {
       Title: `${semanaId}-${colaboradorId}-${dia}`,
-      semana_id: semanaId,
-      colaborador_id: String(colaboradorId),
-      colaborador_nome: colaboradorNome,
-      dia,
+      Semana_id: semanaId,
+      Colaborador_id: String(colaboradorId),
+      Colaborador_nome: colaboradorNome,
+      Dia: dia,
       Retirou: true,
       Data_Hora_Retirada: new Date().toISOString(),
       Confirmado_Por: confirmadoPor
@@ -271,16 +297,19 @@ const SP = {
   // ============================================================
   async getExtras(semanaId, dia = null) {
     const items = await this.getItems("Extras");
-    return items.filter(i => i.semana_id === semanaId && (!dia || i.dia === dia));
+    return items.filter(i =>
+      this.pick(i,"Semana_id","semana_id","Semana","semana") === semanaId &&
+      (!dia || this.pick(i,"Dia","dia") === dia)
+    );
   },
   async addExtra(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor) {
     return this.createItem("Extras", {
       Title: `${semanaId}-${dia}-${nome}`,
-      semana_id: semanaId,
-      dia,
+      Semana_id: semanaId,
+      Dia: dia,
       Nome: nome,
       tipo,
-      opcao,
+      Opcao: opcao,
       Observacao: observacao,
       Adicionado_Por: adicionadoPor
     });
@@ -324,3 +353,5 @@ const SP = {
 
 // Exporta globalmente
 window.SP = SP;
+
+// SHAREPOINT.JS AJUSTADO - V2 NOMES COLUNAS SHAREPOINT
