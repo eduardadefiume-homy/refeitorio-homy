@@ -725,7 +725,7 @@ const MSAL_CONFIG={
   auth:{
     clientId:"2e73e8be-484b-428e-a6c0-c75b1bf70d8a",
     authority:"https://login.microsoftonline.com/a2850abc-334a-4805-b6b2-420b4aef68a9",
-    redirectUri:"https://eduardadefiume-homy.github.io/refeitorio-homy/admin/index.html",
+    redirectUri:window.location.origin + window.location.pathname,
     navigateToLoginRequestUrl:true,
   },
   cache:{cacheLocation:"sessionStorage",storeAuthStateInCookie:true}
