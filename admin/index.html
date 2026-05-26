@@ -197,6 +197,10 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 .week-btn{padding:0.48rem 0.72rem;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(210,225,255,0.9);font-family:"Barlow",sans-serif;font-size:0.75rem;font-weight:600;cursor:pointer}
 .week-btn:hover{background:rgba(255,255,255,0.11)}
 
+
+.action-row{display:flex;align-items:center;justify-content:space-between;gap:0.8rem;flex-wrap:wrap;margin-bottom:1rem}
+.action-group{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
+
 </style>
 </head>
 <body>
@@ -444,7 +448,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="module" id="mod-extras">
         <div class="section-header">
           <div class="section-title">➕ Extras / Visitantes</div>
-          <button class="btn-primary" id="btnNovoExtra">+ Adicionar extra</button>
+          <button class="btn-primary" id="btnNovoExtra" id="btnAdicionarExtra" type="button" onclick="abrirModalExtra()" id="btnAdicionarExtra" type="button" onclick="abrirModalExtra()">+ Adicionar extra</button>
         </div>
 
         <div class="alert alert-warning">⚠️ Extras são refeições fora da lista de colaboradores: visitantes, motoristas, investigadores fixos e marmitas especiais.</div>
@@ -1079,6 +1083,167 @@ function editarPedido(pid,nome,dia,opcao){
   abrirModalEditarPedido(pid,nome,dia,opcao);
 }
 
+
+// --- EXTRAS E PEDIDOS MANUAIS V12 ---
+if(typeof SP!=="undefined" && !SP.addItem){
+  SP.addItem = async function(lista,fields){
+    const token = await this.getToken();
+    const siteId = await this.getSiteId();
+    const listId = await this.getListId(lista);
+
+    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`,{
+      method:"POST",
+      headers:{
+        "Authorization":"Bearer "+token,
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({fields})
+    });
+
+    if(!resp.ok){
+      const err = await resp.text();
+      throw new Error(err);
+    }
+
+    return await resp.json();
+  };
+}
+
+function abrirModalExtra(){
+  document.getElementById("modalExtra").classList.add("open");
+}
+
+function fecharModalExtra(){
+  document.getElementById("modalExtra").classList.remove("open");
+}
+
+async function salvarExtraManual(){
+  const nome = document.getElementById("extraNome").value.trim();
+  const tipo = document.getElementById("extraTipo").value;
+  const dia = document.getElementById("extraDia").value;
+  const opcao = document.getElementById("extraOpcao").value;
+  const obs = document.getElementById("extraObs").value.trim();
+  const semanaId = getSemanaIdAtualSelecionada ? getSemanaIdAtualSelecionada() : getSemanaId();
+
+  if(!nome){
+    toast("Informe o nome do extra/visitante.","error");
+    return;
+  }
+
+  try{
+    await SP.addItem("Extras",{
+      Title:nome,
+      Nome:nome,
+      nome:nome,
+      Tipo:tipo,
+      tipo:tipo,
+      Dia:dia,
+      dia:dia,
+      Opcao:opcao,
+      opcao:opcao,
+      Observacao:obs,
+      observacao:obs,
+      Semana:semanaId,
+      semana:semanaId
+    });
+
+    fecharModalExtra();
+    toast("Extra adicionado com sucesso!","success");
+    reloadCurrentModule();
+
+  }catch(e){
+    console.error("Erro ao salvar extra:",e);
+    toast("Erro ao salvar extra: "+(e.message||e),"error");
+  }
+}
+
+async function abrirModalPedidoManual(){
+  const select = document.getElementById("pedidoManualColaborador");
+  select.innerHTML = "<option value=''>Carregando colaboradores...</option>";
+
+  document.getElementById("modalPedidoManual").classList.add("open");
+
+  try{
+    const colabs = await SP.getColaboradores();
+    select.innerHTML = "";
+    colabs.forEach(c=>{
+      const id = c.id || c.ID || c.fields?.id || c.fields?.ID;
+      const nome = c.nome || c.Nome || c.Title || c.fields?.Nome || c.fields?.Title || "Sem nome";
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = nome;
+      opt.dataset.nome = nome;
+      select.appendChild(opt);
+    });
+
+    if(!colabs.length){
+      select.innerHTML = "<option value=''>Nenhum colaborador encontrado</option>";
+    }
+  }catch(e){
+    console.error("Erro ao carregar colaboradores:",e);
+    select.innerHTML = "<option value=''>Erro ao carregar colaboradores</option>";
+  }
+}
+
+function fecharModalPedidoManual(){
+  document.getElementById("modalPedidoManual").classList.remove("open");
+}
+
+async function salvarPedidoManual(){
+  const select = document.getElementById("pedidoManualColaborador");
+  const colaboradorId = select.value;
+  const colaboradorNome = select.options[select.selectedIndex]?.dataset?.nome || select.options[select.selectedIndex]?.textContent || "";
+  const dia = document.getElementById("pedidoManualDia").value;
+  const opcao = document.getElementById("pedidoManualOpcao").value;
+  const semanaId = getSemanaIdAtualSelecionada ? getSemanaIdAtualSelecionada() : getSemanaId();
+
+  if(!colaboradorId){
+    toast("Selecione um colaborador.","error");
+    return;
+  }
+
+  try{
+    await SP.addItem("Pedidos",{
+      Title:colaboradorNome,
+      Colaborador:colaboradorNome,
+      colaborador:colaboradorNome,
+      ColaboradorId:colaboradorId,
+      colaborador_id:colaboradorId,
+      Dia:dia,
+      dia:dia,
+      Opcao:opcao,
+      opcao:opcao,
+      Semana:semanaId,
+      semana:semanaId,
+      Confirmado:true,
+      confirmado:true
+    });
+
+    fecharModalPedidoManual();
+    toast("Pedido manual adicionado com sucesso!","success");
+    reloadCurrentModule();
+
+  }catch(e){
+    console.error("Erro ao salvar pedido manual:",e);
+    toast("Erro ao salvar pedido manual: "+(e.message||e),"error");
+  }
+}
+
+// reforço: se o botão existir sem onclick por cache/parsing, conecta aqui também
+setTimeout(()=>{
+  const btnExtra=document.getElementById("btnAdicionarExtra");
+  if(btnExtra && !btnExtra.dataset.boundV12){
+    btnExtra.dataset.boundV12="1";
+    btnExtra.addEventListener("click",abrirModalExtra);
+  }
+
+  const btnPedido=document.getElementById("btnAdicionarPedido");
+  if(btnPedido && !btnPedido.dataset.boundV12){
+    btnPedido.dataset.boundV12="1";
+    btnPedido.addEventListener("click",abrirModalPedidoManual);
+  }
+},500);
+
 // --- INIT ---
 async function initApp(){
   bindSemanaControls();
@@ -1146,7 +1311,7 @@ document.getElementById("toggleMarcacao").addEventListener("change",async functi
     SP.setConfig("pedidos_liberados", valor, "Controla se colaboradores podem marcar refeição")
   ]);
 
-  toast(this.checked?"Marcação liberada!":"Marcação bloqueada!",this.checked?"success":"info");
+  toast(this.checked?"Marcação liberada no admin. Se o app continuar bloqueado, o index.html principal precisa ler a mesma chave de configuração.":"Marcação bloqueada!",this.checked?"success":"info");
 });
 
 document.getElementById("toggleCardapio").addEventListener("change",async function(){
@@ -1355,5 +1520,6 @@ async function loadExtras(semanaId){
 <!-- FIX V9 FECHAMENTO SCRIPT BODY HTML -->
 <!-- ADMIN REFEITORIO V10 SEMANA FILTRO PEDIDOS EDITAR -->
 <!-- ADMIN REFEITORIO V11 EDITAR PEDIDO E LIBERACAO COMPATIVEL -->
+<!-- ADMIN REFEITORIO V12 EXTRAS PEDIDO MANUAL -->
 </body>
 </html>
