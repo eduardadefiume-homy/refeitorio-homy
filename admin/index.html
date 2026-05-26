@@ -208,8 +208,9 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="login-title">Painel Administrador</div>
       <div class="login-line"></div>
       <div class="login-sub">Refeitório · Homy Química</div>
-      <button class="login-btn" id="btnLogin">🔐 Entrar com conta Homy</button>
+      <button class="login-btn" id="btnLogin" onclick="loginMicrosoftDireto()">🔐 Entrar com conta Homy</button>
       <div class="login-badge">Acesso restrito — conta @homyquimica.com.br</div>
+<div id="loginStatus" style="margin-top:10px;font-size:12px;color:#8faad0;max-width:420px;text-align:center;line-height:1.4"></div>
     </div>
   </div>
 </div>
@@ -773,16 +774,46 @@ async function getMsalApp(){
   }
 })();
 
-document.getElementById("btnLogin").addEventListener("click",async function(){
-  const btn=this;
-  btn.disabled=true;
-  btn.innerHTML="⏳ Entrando...";
+
+
+document.getElementById("btnLogout").addEventListener("click",async()=>{
   try{
+    const app=await getMsalApp();
+    await app.logoutPopup();
+  }catch(e){
+    console.warn("Logout:",e);
+  }
+  document.getElementById("loginScreen").classList.remove("hide");
+  document.getElementById("app").classList.remove("show");
+});
+
+
+// --- LOGIN DIRETO ROBUSTO V8 ---
+function setLoginStatus(msg, tipo){
+  const el=document.getElementById("loginStatus");
+  if(!el)return;
+  const cor = tipo==="erro" ? "#ff7070" : tipo==="ok" ? "#70ffb0" : "#8faad0";
+  el.style.color=cor;
+  el.textContent=msg;
+}
+
+window.loginMicrosoftDireto = async function(){
+  const btn=document.getElementById("btnLogin");
+  try{
+    setLoginStatus("Clique recebido. Preparando login Microsoft...","info");
+
+    if(btn){
+      btn.disabled=true;
+      btn.innerHTML="⏳ Abrindo Microsoft...";
+    }
+
     if(typeof msal==="undefined"){
-      throw new Error("Biblioteca MSAL não carregou. Verifique internet/CDN do msal-browser.");
+      throw new Error("MSAL não carregou. O script da Microsoft não foi carregado pela página.");
     }
 
     const app=await getMsalApp();
+
+    setLoginStatus("MSAL carregado. Abrindo popup de login...","info");
 
     const result=await app.loginPopup({
       scopes:["User.Read"],
@@ -790,8 +821,10 @@ document.getElementById("btnLogin").addEventListener("click",async function(){
     });
 
     if(!result || !result.account){
-      throw new Error("A Microsoft autenticou, mas não retornou uma conta.");
+      throw new Error("Login retornou sem conta autenticada.");
     }
+
+    setLoginStatus("Login OK: "+(result.account.username || result.account.name),"ok");
 
     if(typeof SP!=="undefined"){
       SP._msalInstance=app;
@@ -805,33 +838,23 @@ document.getElementById("btnLogin").addEventListener("click",async function(){
       document.getElementById("userInfo").textContent=result.account.name||result.account.username;
     }
 
-    toast("Login realizado com sucesso!","success");
-
     try{
       initApp();
     }catch(initError){
-      console.error("Erro ao iniciar painel:",initError);
-      toast("Login OK, mas o painel encontrou erro ao carregar dados: "+(initError.message||initError),"error");
+      console.error("Erro ao carregar painel após login:",initError);
+      toast("Login OK, mas houve erro ao carregar dados: "+(initError.message||initError),"error");
     }
 
   }catch(e){
-    console.error("Login error:",e);
-    alert("Erro de login: "+(e.message||e.errorCode||JSON.stringify(e)));
-    btn.disabled=false;
-    btn.innerHTML="🔐 Entrar com conta Homy";
+    console.error("ERRO LOGIN DIRETO V8:",e);
+    setLoginStatus("Erro: "+(e.message||e.errorCode||JSON.stringify(e)),"erro");
+    alert("Erro de login:\\n"+(e.message||e.errorCode||JSON.stringify(e)));
+    if(btn){
+      btn.disabled=false;
+      btn.innerHTML="🔐 Entrar com conta Homy";
+    }
   }
-});
-
-document.getElementById("btnLogout").addEventListener("click",async()=>{
-  try{
-    const app=await getMsalApp();
-    await app.logoutPopup();
-  }catch(e){
-    console.warn("Logout:",e);
-  }
-  document.getElementById("loginScreen").classList.remove("hide");
-  document.getElementById("app").classList.remove("show");
-});
+};
 
 // --- INIT ---
 async function initApp(){
