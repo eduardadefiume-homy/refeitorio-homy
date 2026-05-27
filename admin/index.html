@@ -456,7 +456,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <div class="section-title">👥 Colaboradores</div>
           <div style="display:flex;gap:0.6rem">
             <button class="btn-secondary" id="btnImportarExcel">📥 Importar Excel</button>
-            <button class="btn-primary" id="btnNovoColab">+ Novo colaborador</button>
+            <button class="btn-primary" id="btnNovoColaborador" type="button" onclick="abrirModalColaborador()">+ Novo colaborador</button>
           </div>
         </div>
         <input type="file" id="excelInput" accept=".xlsx,.xls,.csv" style="display:none">
@@ -758,6 +758,51 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     <div class="modal-footer">
       <button class="btn-secondary" type="button" onclick="fecharModalEditarPedido()">Cancelar</button>
       <button class="btn-success" type="button" onclick="salvarEdicaoPedido()">Salvar alteração</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- MODAL NOVO COLABORADOR -->
+<div class="modal-overlay" id="modalColaborador">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Novo colaborador</div>
+      <button class="modal-close" type="button" onclick="fecharModalColaborador(event)">×</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Nome</label>
+          <input class="form-input" id="colabNome" placeholder="Nome completo">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Departamento</label>
+          <input class="form-input" id="colabDepartamento" placeholder="Ex.: TI, Comercial, RH">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">E-mail</label>
+          <input class="form-input" id="colabEmail" placeholder="nome@homyquimica.com.br">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Tipo</label>
+          <select class="form-select" id="colabTipo">
+            <option value="colaborador">Colaborador</option>
+            <option value="terceiro">Terceiro</option>
+            <option value="temporario">Temporário</option>
+            <option value="visitante">Visitante</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-secondary" type="button" onclick="fecharModalColaborador(event)">Cancelar</button>
+      <button class="btn-success" type="button" onclick="salvarNovoColaborador()">Salvar colaborador</button>
     </div>
   </div>
 </div>
@@ -1723,5 +1768,150 @@ document.addEventListener("keydown", function(event){
 </script>
 
 <!-- ADMIN REFEITORIO V14 MODAL EXTRA FECHAMENTO CORRIGIDO -->
+
+<script>
+// --- COLABORADORES V15: NOVO COLABORADOR ---
+function abrirModalColaborador(){
+  const modal = document.getElementById("modalColaborador");
+  if(!modal) return;
+
+  modal.style.display = "flex";
+  modal.style.opacity = "";
+  modal.style.pointerEvents = "";
+  modal.removeAttribute("aria-hidden");
+  modal.classList.add("open");
+
+  const nome = document.getElementById("colabNome");
+  if(nome) setTimeout(()=>nome.focus(),100);
+}
+
+function fecharModalColaborador(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const modal = document.getElementById("modalColaborador");
+  if(!modal) return;
+
+  modal.classList.remove("open");
+  modal.classList.remove("show");
+  modal.classList.remove("active");
+  modal.style.display = "none";
+  modal.style.opacity = "0";
+  modal.style.pointerEvents = "none";
+  modal.setAttribute("aria-hidden","true");
+}
+
+function limparModalColaborador(){
+  ["colabNome","colabDepartamento","colabEmail"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.value="";
+  });
+
+  const tipo=document.getElementById("colabTipo");
+  if(tipo) tipo.value="colaborador";
+}
+
+async function salvarNovoColaborador(){
+  const nome = (document.getElementById("colabNome")?.value || "").trim();
+  const departamento = (document.getElementById("colabDepartamento")?.value || "").trim();
+  const email = (document.getElementById("colabEmail")?.value || "").trim();
+  const tipo = document.getElementById("colabTipo")?.value || "colaborador";
+
+  if(!nome){
+    toast("Informe o nome do colaborador.","error");
+    return;
+  }
+
+  try{
+    if(typeof SP === "undefined"){
+      throw new Error("Objeto SP não carregado. Verifique o sharepoint.js.");
+    }
+
+    if(SP.createColaborador){
+      await SP.createColaborador({
+        nome,
+        departamento,
+        email,
+        tipo
+      });
+    }else if(SP.createItem){
+      await SP.createItem("Colaboradores",{
+        Title:nome,
+        Nome:nome,
+        Departamento:departamento,
+        Email:email,
+        Ativo:true,
+        tipo:tipo
+      });
+    }else if(SP.addItem){
+      await SP.addItem("Colaboradores",{
+        Title:nome,
+        Nome:nome,
+        Departamento:departamento,
+        Email:email,
+        Ativo:true,
+        tipo:tipo
+      });
+    }else{
+      throw new Error("Nenhuma função de criação disponível no SP.");
+    }
+
+    limparModalColaborador();
+    fecharModalColaborador();
+    toast("Colaborador cadastrado com sucesso!","success");
+
+    if(typeof reloadCurrentModule === "function"){
+      reloadCurrentModule();
+    }else if(typeof loadModule === "function"){
+      loadModule("colaboradores");
+    }
+
+  }catch(e){
+    console.error("Erro ao salvar colaborador:",e);
+    toast("Erro ao salvar colaborador: "+(e.message||e),"error");
+  }
+}
+
+document.addEventListener("click", function(event){
+  const target = event.target;
+
+  if(target && target.closest && target.closest("#modalColaborador .modal-close")){
+    fecharModalColaborador(event);
+    return;
+  }
+
+  if(target && target.closest && target.closest("#modalColaborador button")){
+    const btn = target.closest("button");
+    const txt = (btn.textContent || "").trim().toLowerCase();
+    if(txt.includes("cancelar")){
+      fecharModalColaborador(event);
+      return;
+    }
+  }
+
+  if(target && target.id === "modalColaborador"){
+    fecharModalColaborador(event);
+  }
+}, true);
+
+document.addEventListener("keydown", function(event){
+  if(event.key === "Escape"){
+    fecharModalColaborador(event);
+  }
+});
+
+// Segurança extra: se o botão existir, conecta também via JS
+setTimeout(()=>{
+  const btn = document.getElementById("btnNovoColaborador");
+  if(btn && !btn.dataset.boundColabV15){
+    btn.dataset.boundColabV15 = "1";
+    btn.addEventListener("click", abrirModalColaborador);
+  }
+},500);
+</script>
+
+<!-- ADMIN REFEITORIO V15 NOVO COLABORADOR -->
 </body>
 </html>
