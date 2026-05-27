@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Marcar Refeição · Homy</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="sharepoint.js?v=final"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;color:#e8f0ff;background:#050f22;overflow-x:hidden}
@@ -28,11 +30,11 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 .back-btn:hover{background:rgba(255,255,255,0.1)}
 .back-btn-view{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.3rem;flex-shrink:0;transition:background .15s}
 .back-btn-view:hover{background:rgba(255,255,255,0.1)}
-.header-logo{width:32px;height:32px;object-fit:contain;flex-shrink:0}
+.header-logo{display:block!important;opacity:1!important;visibility:visible!important;width:32px;height:32px;object-fit:contain;flex-shrink:0}
 .header-titles{flex:1}
 .header-title{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;line-height:1}
 .header-sub{font-size:0.7rem;color:rgba(143,170,210,0.55);letter-spacing:0.14em;text-transform:uppercase;margin-top:2px}
-.prazo-badge{font-size:0.62rem;font-weight:600;background:rgba(255,150,0,0.15);border:1px solid rgba(255,150,0,0.3);color:rgba(255,180,80,0.9);padding:5px 10px;border-radius:6px;white-space:nowrap}
+.prazo-badge{font-size:0.82rem;font-weight:700;background:rgba(255,150,0,0.15);border:1px solid rgba(255,150,0,0.3);color:rgba(255,180,80,0.95);padding:8px 14px;border-radius:8px;white-space:nowrap;min-width:max-content}
 
 /* CONTENT */
 .content{max-width:900px;margin:0 auto;padding:1.2rem 1.4rem 3rem;flex:1;width:100%}
@@ -460,5 +462,65 @@ function showView(id){
   window.scrollTo(0,0);
 }
 </script>
+
+<script>
+// --- PRAZO DINÂMICO ADMIN → MARCAR REFEIÇÃO ---
+function formatarPrazoRefeitorio(valor){
+  if(!valor) return "Prazo não definido";
+
+  const data = new Date(valor);
+  if(isNaN(data.getTime())) return "Prazo não definido";
+
+  const dias = [
+    "domingo",
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado"
+  ];
+
+  const diaSemana = dias[data.getDay()];
+  const hora = String(data.getHours()).padStart(2,"0") + "h";
+
+  return `Até ${diaSemana} às ${hora}`;
+}
+
+async function carregarPrazoMarcacao(){
+  const badge = document.getElementById("prazoBadge");
+  if(!badge) return;
+
+  try{
+    if(typeof SP === "undefined"){
+      badge.textContent = "Prazo indisponível";
+      console.error("SP não carregou. Verifique se sharepoint.js está na raiz.");
+      return;
+    }
+
+    await SP.init();
+
+    const prazo = await SP.getPrazoMarcacao();
+    badge.textContent = formatarPrazoRefeitorio(prazo);
+
+  }catch(e){
+    console.error("Erro ao carregar prazo de marcação:", e);
+    badge.textContent = "Entrar para ver prazo";
+
+    try{
+      await SP.login();
+      const prazo = await SP.getPrazoMarcacao();
+      badge.textContent = formatarPrazoRefeitorio(prazo);
+    }catch(loginError){
+      console.error("Erro ao autenticar para carregar prazo:", loginError);
+      badge.textContent = "Prazo indisponível";
+    }
+  }
+}
+
+window.addEventListener("load", carregarPrazoMarcacao);
+</script>
+
+<!-- MARCAR REFEICAO V2 PRAZO DINAMICO LOGO FIXO -->
 </body>
 </html>
