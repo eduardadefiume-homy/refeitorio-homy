@@ -188,7 +188,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
         <div class="header-title" id="v2Title">Marcar Refeição</div>
         <div class="header-sub" id="v2Sub">Escolha por dia</div>
       </div>
-      <div class="prazo-badge">⏱ Até sex 18h</div>
+      <div class="prazo-badge" id="prazoBadge">Carregando prazo...</div>
     </div>
   </div>
 
@@ -212,7 +212,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
         <div class="header-title">Confirmar Pedido</div>
         <div class="header-sub" id="v3Sub"></div>
       </div>
-      <div class="prazo-badge">⏱ Até sex 18h</div>
+      <div class="prazo-badge" id="prazoBadge">Carregando prazo...</div>
     </div>
   </div>
   <div class="content">
@@ -235,222 +235,384 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   </div>
 </div>
 
+
 <script>
-// --- DADOS ---
-const DIAS_SEMANA=[
-  {key:"seg",label:"Segunda-feira",data:"26/05"},
-  {key:"ter",label:"Terça-feira",data:"27/05"},
-  {key:"qua",label:"Quarta-feira",data:"28/05"},
-  {key:"qui",label:"Quinta-feira",data:"29/05"},
-  {key:"sex",label:"Sexta-feira",data:"30/05"},
+// --- MARCAR REFEIÇÃO V18: DADOS REAIS DO SHAREPOINT ---
+const DIAS_SEMANA = [
+  {key:"seg", label:"Segunda-feira", dia:"segunda"},
+  {key:"ter", label:"Terça-feira", dia:"terca"},
+  {key:"qua", label:"Quarta-feira", dia:"quarta"},
+  {key:"qui", label:"Quinta-feira", dia:"quinta"},
+  {key:"sex", label:"Sexta-feira", dia:"sexta"}
 ];
 
-const CARDAPIO={
-  seg:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Frango Grelhado ao Limão",detalhes:["Arroz branco e integral","Feijão carioca","Salada de alface e tomate","Sobremesa: fruta da estação"],aviso:null},
-    {tag:"light",tagClass:"tag-light",nome:"Salada Completa com Atum",detalhes:["Folhas verdes, tomate cereja, pepino","Proteína: atum ao natural","Molho de azeite e limão","Sem carboidrato simples"],aviso:"Substitui o cardápio completo por opção mais leve."},
-    {tag:"carne",tagClass:"tag-carne",nome:"Bife Acebolado",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao Principal"],aviso:"Só muda a proteína. Demais acompanhamentos permanecem."},
-    {tag:"massa",tagClass:"tag-massa",nome:"Espaguete ao Sugo",detalhes:["Somente a massa do dia","Molho de tomate com manjericão"],aviso:"Inclui somente a massa. Sem os demais acompanhamentos."},
-  ],
-  ter:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Carne Assada com Legumes",detalhes:["Arroz com brócolis","Feijão preto","Couve refogada","Sobremesa: pudim"],aviso:null},
-    {tag:"light",tagClass:"tag-light",nome:"Peito de Peru Grelhado",detalhes:["Salada de quinoa e legumes","Vinagrete de pimenta","Baixo teor calórico"],aviso:"Substitui o cardápio completo por opção mais leve."},
-    {tag:"carne",tagClass:"tag-carne",nome:"Frango à Parmegiana",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao Principal"],aviso:"Só muda a proteína. Demais acompanhamentos permanecem."},
-    {tag:"massa",tagClass:"tag-massa",nome:"Penne ao Alho e Óleo",detalhes:["Somente a massa do dia","Com lascas de alho dourado"],aviso:"Inclui somente a massa. Sem os demais acompanhamentos."},
-  ],
-  qua:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Peixe Grelhado com Ervas",detalhes:["Arroz branco","Lentilha refogada","Salada de rúcula","Sobremesa: gelatina"],aviso:null},
-    {tag:"light",tagClass:"tag-light",nome:"Sopa de Legumes Detox",detalhes:["Caldo de legumes frescos","Cenoura, abobrinha, chuchu","Sem adição de gordura","Opção vegana"],aviso:"Substitui o cardápio completo por opção mais leve."},
-    {tag:"carne",tagClass:"tag-carne",nome:"Costelinha de Porco",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao Principal"],aviso:"Só muda a proteína. Demais acompanhamentos permanecem."},
-    {tag:"massa",tagClass:"tag-massa",nome:"Nhoque ao Molho Branco",detalhes:["Somente a massa do dia","Molho bechamel leve"],aviso:"Inclui somente a massa. Sem os demais acompanhamentos."},
-  ],
-  qui:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Frango Caipira ao Molho",detalhes:["Arroz integral","Feijão verde","Farofa de mandioca","Sobremesa: banana caramelada"],aviso:null},
-    {tag:"light",tagClass:"tag-light",nome:"Wrap de Frango Grelhado",detalhes:["Tortilla integral, cream cheese light","Alface, tomate e cenoura ralada","Rico em proteína, baixo em carboidrato"],aviso:"Substitui o cardápio completo por opção mais leve."},
-    {tag:"carne",tagClass:"tag-carne",nome:"Alcatra Grelhada",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao Principal"],aviso:"Só muda a proteína. Demais acompanhamentos permanecem."},
-    {tag:"massa",tagClass:"tag-massa",nome:"Lasanha de Frango",detalhes:["Somente a massa do dia","Molho branco e tomate"],aviso:"Inclui somente a massa. Sem os demais acompanhamentos."},
-  ],
-  sex:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Frango Grelhado com Ervas",detalhes:["Arroz branco e integral","Feijão carioca","Salada de folhas","Sobremesa: fruta da estação"],aviso:null},
-    {tag:"light",tagClass:"tag-light",nome:"Salada Caesar com Frango",detalhes:["Alface romana, croutons integrais","Frango grelhado fatiado","Molho caesar light"],aviso:"Substitui o cardápio completo por opção mais leve."},
-    {tag:"carne",tagClass:"tag-carne",nome:"Bife à Milanesa",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao Principal"],aviso:"Só muda a proteína. Demais acompanhamentos permanecem."},
-    {tag:"massa",tagClass:"tag-massa",nome:"Espaguete à Carbonara",detalhes:["Somente a massa do dia","Molho cremoso com ervas"],aviso:"Inclui somente a massa. Sem os demais acompanhamentos."},
-    {tag:"lanche",tagClass:"tag-lanche",nome:"Lanche do Dia 🍔",detalhes:["Pão de hambúrguer artesanal","Hambúrguer bovino 150g","Queijo, alface, tomate e cebola","Batata rústica assada + refri"],aviso:"Opção exclusiva da sexta. Substitui o almoço completo."},
-  ],
+const TAG_CLASS = {
+  principal:"tag-principal",
+  light:"tag-light",
+  fitness:"tag-light",
+  vegetariano:"tag-light",
+  carne:"tag-carne",
+  massa:"tag-massa",
+  lanche:"tag-lanche"
 };
 
-const FUNCIONARIOS=[
-  {nome:"Ana Paula Rodrigues",dept:"Comercial",confirmado:false},
-  {nome:"Bruno Henrique Costa",dept:"Faturamento",confirmado:false},
-  {nome:"Carlos Eduardo Martins",dept:"RH",confirmado:true},
-  {nome:"Daniela Souza Lima",dept:"TI",confirmado:false},
-  {nome:"Eduardo Ferreira Santos",dept:"Comercial",confirmado:false},
-  {nome:"Fernanda Oliveira Mendes",dept:"PCP/Produção",confirmado:true},
-  {nome:"Gabriel Alves Pereira",dept:"Faturamento",confirmado:false},
-  {nome:"Helena Costa Silva",dept:"Sala Administrativa",confirmado:false},
-  {nome:"Igor Nascimento Rocha",dept:"Almoxarifado",confirmado:false},
-  {nome:"Julia Campos Neves",dept:"Comercial",confirmado:false},
-  {nome:"Larissa Melo Carvalho",dept:"TI",confirmado:false},
-  {nome:"Marcos Vinicius Teixeira",dept:"PCP/Produção",confirmado:false},
-  {nome:"Maria Eduarda Garcia Defiume",dept:"TI",confirmado:false},
-  {nome:"Natalia Freitas Pinto",dept:"Faturamento",confirmado:false},
-  {nome:"Otávio Ribeiro Gomes",dept:"Comercial",confirmado:false},
-  {nome:"Patricia Andrade Lopes",dept:"Sala Administrativa",confirmado:false},
-  {nome:"Rafael Moreira Castro",dept:"RH",confirmado:false},
-  {nome:"Sabrina Torres Dias",dept:"Comercial",confirmado:true},
-  {nome:"Thiago Batista Cunha",dept:"Faturamento",confirmado:false},
-  {nome:"Vanessa Lima Araújo",dept:"PCP/Produção",confirmado:false},
-].sort((a,b)=>a.nome.localeCompare(b.nome));
+let FUNCIONARIOS = [];
+let CARDAPIO = {};
+let PEDIDOS_EXISTENTES = [];
+let SEMANA_ID = null;
+
+let funcSelecionado = null;
+let stepAtual = 0;
+let pedidos = {};
 
 function getInitials(nome){
-  const p=nome.trim().split(" ");
-  return(p[0][0]+(p.length>1?p[p.length-1][0]:"")).toUpperCase();
+  const p = String(nome || "").trim().split(/\s+/).filter(Boolean);
+  if(!p.length) return "?";
+  return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
 }
 
-// STATE
-let funcSelecionado=null;
-let stepAtual=0;
-let pedidos={}; // {seg: {tag,nome}, ter:..., ...}
+function normalizarDia(valor){
+  const v = String(valor || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  if(v.startsWith("seg")) return "seg";
+  if(v.startsWith("ter")) return "ter";
+  if(v.startsWith("qua")) return "qua";
+  if(v.startsWith("qui")) return "qui";
+  if(v.startsWith("sex")) return "sex";
+  return v;
+}
+
+function getSemanaAtual(){
+  if(typeof SP !== "undefined" && SP.getSemanaId) return SP.getSemanaId(new Date());
+
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(),0,4);
+  const weekNum = 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  return `${d.getFullYear()}-W${String(weekNum).padStart(2,"0")}`;
+}
+
+function getWeekDatesLocal(semanaId){
+  if(typeof SP !== "undefined" && SP.getWeekDates) return SP.getWeekDates(semanaId);
+
+  const [year, week] = semanaId.split("-W").map(Number);
+  const jan4 = new Date(year,0,4);
+  const start = new Date(jan4);
+  start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (week - 1) * 7);
+  return Array.from({length:5}, (_,i)=>{
+    const d = new Date(start);
+    d.setDate(start.getDate()+i);
+    return d;
+  });
+}
+
+function formatDataCurta(date){
+  return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+}
+
+function mapColaborador(item){
+  return {
+    id: item.id || item.ID || item.Id || item.Nome || item.Title,
+    nome: item.Nome || item.Title || item.nome || "Sem nome",
+    dept: item.Departamento || item.departamento || "",
+    email: item.Email || item.email || "",
+    tipo: item.tipo || "colaborador",
+    confirmado: false
+  };
+}
+
+function mapCardapio(items){
+  const map = {seg:[], ter:[], qua:[], qui:[], sex:[]};
+
+  items.forEach(item=>{
+    const key = normalizarDia(item.Dia || item.dia);
+    if(!map[key]) return;
+
+    const tag = String(item.Opcao || item.opcao || "principal").toLowerCase();
+    map[key].push({
+      tag,
+      tagClass: TAG_CLASS[tag] || "tag-principal",
+      nome: item.Nome_Prato || item.nome_prato || item.Title || "Prato não informado",
+      detalhes: item.Detalhes ? String(item.Detalhes).split(/\n|;/).map(x=>x.trim()).filter(Boolean) : [],
+      aviso: null
+    });
+  });
+
+  Object.keys(map).forEach(k=>{
+    if(!map[k].length){
+      map[k].push({
+        tag:"principal",
+        tagClass:"tag-principal",
+        nome:"Cardápio não cadastrado",
+        detalhes:["Procure a Luana/TI para cadastrar o cardápio desta semana."],
+        aviso:null
+      });
+    }
+  });
+
+  return map;
+}
+
+async function carregarDadosSharePoint(){
+  try{
+    if(typeof SP === "undefined"){
+      throw new Error("sharepoint.js não carregado.");
+    }
+
+    await SP.init();
+
+    SEMANA_ID = getSemanaAtual();
+    const datas = getWeekDatesLocal(SEMANA_ID);
+
+    DIAS_SEMANA.forEach((d,i)=>{
+      d.data = formatDataCurta(datas[i]);
+    });
+
+    const [colabs, cardapio, pedidosSemana] = await Promise.all([
+      SP.getColaboradores(),
+      SP.getCardapio(SEMANA_ID),
+      SP.getPedidos(SEMANA_ID)
+    ]);
+
+    PEDIDOS_EXISTENTES = pedidosSemana || [];
+    CARDAPIO = mapCardapio(cardapio || []);
+
+    FUNCIONARIOS = (colabs || []).map(mapColaborador).map(f=>{
+      f.confirmado = PEDIDOS_EXISTENTES.some(p =>
+        String(p.Colaborador_id || p.colaborador_id || p.ColaboradorId || "") === String(f.id) ||
+        String(p.Colaborador_nome || p.colaborador_nome || p.Title || "").toLowerCase() === String(f.nome).toLowerCase()
+      );
+      return f;
+    }).sort((a,b)=>a.nome.localeCompare(b.nome));
+
+    renderFuncs(FUNCIONARIOS);
+
+  }catch(e){
+    console.error("Erro ao carregar dados do SharePoint:", e);
+    const count = document.getElementById("searchCount");
+    if(count) count.textContent = "Erro ao carregar colaboradores. Verifique login/permissão no SharePoint.";
+    renderFuncs([]);
+  }
+}
 
 // --- VIEW 1: LISTA FUNCIONÁRIOS ---
 function renderFuncs(lista){
-  const grid=document.getElementById("funcGrid");
-  grid.innerHTML="";
-  document.getElementById("searchCount").textContent=lista.length+" colaborador"+(lista.length!==1?"es":"")+" encontrado"+(lista.length!==1?"s":"");
+  const grid = document.getElementById("funcGrid");
+  if(!grid) return;
+
+  grid.innerHTML = "";
+  document.getElementById("searchCount").textContent = lista.length+" colaborador"+(lista.length!==1?"es":"")+" encontrado"+(lista.length!==1?"s":"");
+
   lista.forEach(func=>{
-    const card=document.createElement("div");
-    card.className="func-card"+(func.confirmado?" confirmado":"");
-    card.innerHTML=
+    const card = document.createElement("div");
+    card.className = "func-card" + (func.confirmado ? " confirmado" : "");
+    card.innerHTML =
       '<div class="func-avatar">'+getInitials(func.nome)+'</div>'+
       '<div class="func-info">'+
       '<div class="func-name">'+func.nome+'</div>'+
-      '<div class="func-dept">'+func.dept+'</div>'+
+      '<div class="func-dept">'+(func.dept || "")+'</div>'+
       '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+(func.confirmado?"Confirmado":"Pendente")+'</span>'+
       '</div>';
+
     if(!func.confirmado){
       card.addEventListener("click",()=>selecionarFunc(func));
     }
+
     grid.appendChild(card);
   });
 }
 
 document.getElementById("searchInput").addEventListener("input",function(){
-  const q=this.value.toLowerCase().trim();
-  renderFuncs(q?FUNCIONARIOS.filter(f=>f.nome.toLowerCase().includes(q)):FUNCIONARIOS);
+  const q = this.value.toLowerCase().trim();
+  renderFuncs(q ? FUNCIONARIOS.filter(f => f.nome.toLowerCase().includes(q) || String(f.dept||"").toLowerCase().includes(q)) : FUNCIONARIOS);
 });
-renderFuncs(FUNCIONARIOS);
 
 function selecionarFunc(func){
-  funcSelecionado=func;
-  pedidos={};
-  stepAtual=0;
-  document.getElementById("v2Title").textContent=func.nome.split(" ")[0];
-  document.getElementById("v2Sub").textContent="Escolha sua refeição por dia";
-  document.getElementById("v3Sub").textContent=func.nome;
+  funcSelecionado = func;
+  pedidos = {};
+  stepAtual = 0;
+
+  document.getElementById("v2Title").textContent = func.nome.split(" ")[0];
+  document.getElementById("v2Sub").textContent = "Escolha sua refeição por dia";
+  document.getElementById("v3Sub").textContent = func.nome;
+
   showView("view2");
   renderStep();
 }
 
 // --- VIEW 2: STEPS ---
 function buildStepsHeader(){
-  const el=document.getElementById("stepsHeader");
-  el.innerHTML="";
+  const el = document.getElementById("stepsHeader");
+  el.innerHTML = "";
+
   DIAS_SEMANA.forEach((dia,i)=>{
-    if(i>0){const conn=document.createElement("div");conn.className="step-connector";el.appendChild(conn);}
+    if(i>0){
+      const conn=document.createElement("div");
+      conn.className="step-connector";
+      el.appendChild(conn);
+    }
+
     const item=document.createElement("div");
     const done=pedidos[dia.key]!=null;
     const active=i===stepAtual;
+
     item.className="step-item"+(active?" active":"")+(done&&!active?" done":"");
     item.innerHTML='<div class="step-dot">'+(done&&!active?"✓":(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
-    item.addEventListener("click",()=>{if(done||active){stepAtual=i;renderStep();}});
+    item.addEventListener("click",()=>{ if(done||active){ stepAtual=i; renderStep(); }});
     el.appendChild(item);
   });
 }
 
 function renderStep(){
   buildStepsHeader();
-  const dia=DIAS_SEMANA[stepAtual];
-  const opcoes=CARDAPIO[dia.key];
-  const selecionada=pedidos[dia.key];
-  const isLast=stepAtual===DIAS_SEMANA.length-1;
 
-  const btnNext=document.getElementById("btnNext");
-  const btnPrev=document.getElementById("btnPrev");
-  btnPrev.style.display=stepAtual===0?"none":"block";
-  btnNext.textContent=isLast?"Ver resumo →":"Próximo →";
-  btnNext.disabled=!selecionada;
-  btnNext.className="btn-nav btn-next"+(isLast?" btn-confirm":"");
+  const dia = DIAS_SEMANA[stepAtual];
+  const opcoes = CARDAPIO[dia.key] || [];
+  const selecionada = pedidos[dia.key];
+  const isLast = stepAtual === DIAS_SEMANA.length - 1;
 
-  const content=document.getElementById("dayContent");
-  content.innerHTML=
+  const btnNext = document.getElementById("btnNext");
+  const btnPrev = document.getElementById("btnPrev");
+
+  btnPrev.style.display = stepAtual === 0 ? "none" : "block";
+  btnNext.textContent = isLast ? "Ver resumo →" : "Próximo →";
+  btnNext.disabled = !selecionada;
+  btnNext.className = "btn-nav btn-next" + (isLast ? " btn-confirm" : "");
+
+  const content = document.getElementById("dayContent");
+  content.innerHTML =
     '<div class="day-title">'+dia.label+'</div>'+
-    '<div class="day-subtitle">'+dia.data+'/2026 — Escolha uma opção</div>'+
+    '<div class="day-subtitle">'+(dia.data || "")+'/2026 — Escolha uma opção</div>'+
     '<div class="opcoes-grid" id="opcoesGrid"></div>';
 
-  const grid=document.getElementById("opcoesGrid");
+  const grid = document.getElementById("opcoesGrid");
+
   opcoes.forEach(op=>{
-    const card=document.createElement("div");
-    const sel=selecionada&&selecionada.tag===op.tag;
-    card.className="opcao-card"+(sel?" selected":"");
-    card.innerHTML=
+    const card = document.createElement("div");
+    const sel = selecionada && selecionada.tag === op.tag && selecionada.nome === op.nome;
+
+    card.className = "opcao-card" + (sel ? " selected" : "");
+    card.innerHTML =
       '<div class="opcao-top">'+
         '<span class="opcao-tag '+op.tagClass+'">'+op.tag+'</span>'+
         '<div class="check">✓</div>'+
       '</div>'+
       '<div class="opcao-nome">'+op.nome+'</div>'+
-      (op.detalhes&&op.detalhes.length?
-        '<div class="opcao-detalhes">'+op.detalhes.map(function(d){return '<div class="opcao-detalhe">'+d+'</div>';}).join('')+'</div>'
-        :'')+
-      (op.aviso?'<div class="opcao-aviso">ℹ️ '+op.aviso+'</div>':"");
+      (op.detalhes&&op.detalhes.length ?
+        '<div class="opcao-detalhes">'+op.detalhes.map(d=>'<div class="opcao-detalhe">'+d+'</div>').join('')+'</div>'
+        : '')+
+      (op.aviso ? '<div class="opcao-aviso">ℹ️ '+op.aviso+'</div>' : "");
+
     card.addEventListener("click",()=>{
-      pedidos[dia.key]={tag:op.tag,tagClass:op.tagClass,nome:op.nome};
+      pedidos[dia.key] = {
+        tag: op.tag,
+        tagClass: op.tagClass,
+        nome: op.nome,
+        dia: dia.dia
+      };
       renderStep();
     });
+
     grid.appendChild(card);
   });
 }
 
 document.getElementById("btnNext").addEventListener("click",()=>{
-  if(stepAtual<DIAS_SEMANA.length-1){stepAtual++;renderStep();}
-  else{showView("view3");renderResumo();}
+  if(stepAtual < DIAS_SEMANA.length - 1){
+    stepAtual++;
+    renderStep();
+  }else{
+    showView("view3");
+    renderResumo();
+  }
 });
+
 document.getElementById("btnPrev").addEventListener("click",()=>{
-  if(stepAtual>0){stepAtual--;renderStep();}
+  if(stepAtual > 0){
+    stepAtual--;
+    renderStep();
+  }
 });
+
 document.getElementById("btnVoltarView1").addEventListener("click",()=>showView("view1"));
-document.getElementById("btnVoltarView2").addEventListener("click",()=>{showView("view2");renderStep();});
+document.getElementById("btnVoltarView2").addEventListener("click",()=>{showView("view2"); renderStep();});
 
 // --- VIEW 3: RESUMO ---
 function renderResumo(){
-  const wrap=document.getElementById("resumoWrap");
-  wrap.innerHTML="";
+  const wrap = document.getElementById("resumoWrap");
+  wrap.innerHTML = "";
+
   DIAS_SEMANA.forEach(dia=>{
-    const p=pedidos[dia.key];
-    const row=document.createElement("div");
-    row.className="resumo-dia";
-    row.innerHTML=
+    const p = pedidos[dia.key];
+    const row = document.createElement("div");
+    row.className = "resumo-dia";
+    row.innerHTML =
       '<div class="resumo-dia-label">'+dia.label.split("-")[0].trim()+'</div>'+
       '<div class="resumo-dia-opcao">'+
-      (p?'<span class="opcao-tag '+p.tagClass+'" style="font-size:0.55rem;padding:2px 7px">'+p.tag+'</span><span class="resumo-dia-nome">'+p.nome+'</span>':'<span style="color:rgba(143,170,210,0.4);font-size:0.85rem">Não marcado</span>')+
+      (p ? '<span class="opcao-tag '+p.tagClass+'" style="font-size:0.55rem;padding:2px 7px">'+p.tag+'</span><span class="resumo-dia-nome">'+p.nome+'</span>' : '<span style="color:rgba(143,170,210,0.4);font-size:0.85rem">Não marcado</span>')+
       '</div>';
     wrap.appendChild(row);
   });
 }
 
-document.getElementById("btnConfirmar").addEventListener("click",()=>{
-  // aqui futuramente vai salvar no SharePoint
-  const nomeFirst=funcSelecionado.nome.split(" ")[0];
-  document.getElementById("modalText").textContent=
-    nomeFirst+", seu pedido da semana foi confirmado com sucesso! Qualquer alteração deverá ser solicitada à Luana.";
-  document.getElementById("modalOverlay").classList.add("open");
-  // marca como confirmado
-  const idx=FUNCIONARIOS.findIndex(f=>f.nome===funcSelecionado.nome);
-  if(idx>=0)FUNCIONARIOS[idx].confirmado=true;
+document.getElementById("btnConfirmar").addEventListener("click", async ()=>{
+  if(!funcSelecionado){
+    alert("Selecione um colaborador.");
+    return;
+  }
+
+  const selecionados = Object.keys(pedidos);
+  if(!selecionados.length){
+    alert("Selecione pelo menos uma refeição.");
+    return;
+  }
+
+  const btn = document.getElementById("btnConfirmar");
+  btn.disabled = true;
+  btn.textContent = "Salvando pedido...";
+
+  try{
+    if(typeof SP === "undefined"){
+      throw new Error("sharepoint.js não carregado.");
+    }
+
+    await SP.init();
+
+    for(const key of selecionados){
+      const diaInfo = DIAS_SEMANA.find(d => d.key === key);
+      const pedido = pedidos[key];
+
+      await SP.savePedido(
+        SEMANA_ID,
+        funcSelecionado.id,
+        funcSelecionado.nome,
+        diaInfo.dia,
+        pedido.tag,
+        pedido.nome
+      );
+    }
+
+    const nomeFirst = funcSelecionado.nome.split(" ")[0];
+    document.getElementById("modalText").textContent =
+      nomeFirst + ", seu pedido da semana foi confirmado com sucesso! Qualquer alteração deverá ser solicitada à Luana.";
+
+    document.getElementById("modalOverlay").classList.add("open");
+
+    const idx = FUNCIONARIOS.findIndex(f => String(f.id) === String(funcSelecionado.id));
+    if(idx >= 0) FUNCIONARIOS[idx].confirmado = true;
+
+  }catch(e){
+    console.error("Erro ao salvar pedido:", e);
+    alert("Erro ao salvar pedido no SharePoint: " + (e.message || e));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = "✓ Confirmar pedido da semana";
+  }
 });
 
 document.getElementById("modalBtn").addEventListener("click",()=>{
   document.getElementById("modalOverlay").classList.remove("open");
-  document.getElementById("searchInput").value="";
+  document.getElementById("searchInput").value = "";
   renderFuncs(FUNCIONARIOS);
   showView("view1");
 });
@@ -461,6 +623,8 @@ function showView(id){
   document.getElementById(id).classList.add("active");
   window.scrollTo(0,0);
 }
+
+window.addEventListener("load", carregarDadosSharePoint);
 </script>
 
 <script>
@@ -522,5 +686,6 @@ window.addEventListener("load", carregarPrazoMarcacao);
 </script>
 
 <!-- MARCAR REFEICAO V2 PRAZO DINAMICO LOGO FIXO -->
+<!-- MARCAR REFEICAO V18 SALVA PEDIDOS SHAREPOINT -->
 </body>
 </html>
