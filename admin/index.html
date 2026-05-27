@@ -1913,5 +1913,73 @@ setTimeout(()=>{
 </script>
 
 <!-- ADMIN REFEITORIO V15 NOVO COLABORADOR -->
+
+<script>
+// --- FIX V16: SALVAR COLABORADOR LENDO CAMPOS DO MODAL CORRETO ---
+function getCampoColaborador(id){
+  const modal = document.getElementById("modalColaborador");
+  if(!modal) return "";
+  const el = modal.querySelector("#" + id);
+  return el ? el.value : "";
+}
+
+async function salvarNovoColaborador(){
+  const nome = String(getCampoColaborador("colabNome") || "").trim();
+  const departamento = String(getCampoColaborador("colabDepartamento") || "").trim();
+  const email = String(getCampoColaborador("colabEmail") || "").trim();
+  const tipo = String(getCampoColaborador("colabTipo") || "colaborador").trim();
+
+  if(!nome){
+    toast("Informe o nome do colaborador.","error");
+    return;
+  }
+
+  try{
+    if(typeof SP === "undefined"){
+      throw new Error("Objeto SP não carregado. Verifique o sharepoint.js.");
+    }
+
+    const payload = {
+      Title:nome,
+      Nome:nome,
+      Departamento:departamento,
+      Email:email,
+      Ativo:true,
+      tipo:tipo || "colaborador"
+    };
+
+    if(SP.createColaborador){
+      await SP.createColaborador({
+        nome:nome,
+        departamento:departamento,
+        email:email,
+        tipo:tipo || "colaborador"
+      });
+    }else if(SP.createItem){
+      await SP.createItem("Colaboradores", payload);
+    }else if(SP.addItem){
+      await SP.addItem("Colaboradores", payload);
+    }else{
+      throw new Error("Nenhuma função de criação disponível no SP.");
+    }
+
+    limparModalColaborador();
+    fecharModalColaborador();
+    toast("Colaborador cadastrado com sucesso!","success");
+
+    if(typeof reloadCurrentModule === "function"){
+      reloadCurrentModule();
+    }else if(typeof loadModule === "function"){
+      loadModule("colaboradores");
+    }
+
+  }catch(e){
+    console.error("Erro ao salvar colaborador:",e);
+    toast("Erro ao salvar colaborador: "+(e.message||e),"error");
+  }
+}
+</script>
+
+<!-- ADMIN REFEITORIO V16 SALVAR COLABORADOR CORRIGIDO -->
 </body>
 </html>
