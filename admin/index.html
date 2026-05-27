@@ -2203,5 +2203,289 @@ window.addEventListener("load", function(){
 </script>
 
 <!-- ADMIN REFEITORIO V19 IMPORTAR EXCEL COLABORADORES -->
+
+<input type="file" id="inputPdfCardapioVascon" accept=".pdf,application/pdf" style="display:none">
+
+
+<!-- MODAL EDITAR CARDÁPIO MANUAL V20 -->
+<div class="modal-overlay" id="modalCardapioManualV20">
+  <div class="modal-box" style="max-width:720px">
+    <div class="modal-header">
+      <div class="modal-title">Editar cardápio manual</div>
+      <button class="modal-close" type="button" onclick="fecharModalCardapioManualV20(event)">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info">Cadastre uma opção de cardápio por vez. Ela será salva na lista Cardapio do SharePoint para a semana atual.</div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Dia</label>
+          <select class="form-select" id="manualCardapioDiaV20">
+            <option value="segunda">Segunda</option>
+            <option value="terca">Terça</option>
+            <option value="quarta">Quarta</option>
+            <option value="quinta">Quinta</option>
+            <option value="sexta">Sexta</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Opção</label>
+          <select class="form-select" id="manualCardapioOpcaoV20">
+            <option value="principal">Principal</option>
+            <option value="light">Light</option>
+            <option value="carne">Carne</option>
+            <option value="massa">Massa</option>
+            <option value="lanche">Lanche</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Nome do prato</label>
+        <input class="form-input" id="manualCardapioNomeV20" placeholder="Ex.: Frango grelhado com arroz e feijão">
+      </div>
+
+      <div class="form-group" style="margin-top:0.8rem">
+        <label class="form-label">Detalhes</label>
+        <textarea class="form-textarea" id="manualCardapioDetalhesV20" placeholder="Acompanhamentos, observações, salada, sobremesa..."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-secondary" type="button" onclick="fecharModalCardapioManualV20(event)">Cancelar</button>
+      <button class="btn-success" type="button" onclick="salvarCardapioManualV20()">Salvar no SharePoint</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// --- ADMIN V20: BOTÕES PEDIDOS/CARDÁPIO FUNCIONAIS ---
+function getSemanaAtualAdminV20(){
+  if(typeof SP !== "undefined" && SP.getSemanaId) return SP.getSemanaId(new Date());
+
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(),0,4);
+  const weekNum = 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  return `${d.getFullYear()}-W${String(weekNum).padStart(2,"0")}`;
+}
+
+async function exportarPedidosExcelV20(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  try{
+    if(typeof XLSX === "undefined"){
+      throw new Error("Biblioteca XLSX não carregou. Atualize a página.");
+    }
+
+    if(typeof SP === "undefined"){
+      throw new Error("Objeto SP não carregado. Verifique sharepoint.js.");
+    }
+
+    await SP.init();
+
+    const semanaId = getSemanaAtualAdminV20();
+    const pedidos = await SP.getPedidos(semanaId);
+
+    if(!pedidos || !pedidos.length){
+      toast("Nenhum pedido encontrado para exportar.","info");
+      return;
+    }
+
+    const linhas = pedidos.map(p => ({
+      Semana_id: p.Semana_id || "",
+      Colaborador_id: p.Colaborador_id || "",
+      Colaborador_nome: p.Colaborador_nome || "",
+      Dia: p.Dia || "",
+      Opcao: p.Opcao || "",
+      Nome_Prato: p.Nome_Prato || "",
+      Confirmado: p.Confirmado === true ? "Sim" : "Não",
+      Data_Hora: p.Data_Hora || ""
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pedidos");
+
+    XLSX.writeFile(wb, `pedidos-refeitorio-${semanaId}.xlsx`);
+    toast("Excel de pedidos exportado com sucesso!","success");
+
+  }catch(e){
+    console.error("Erro ao exportar pedidos:", e);
+    toast("Erro ao exportar Excel: " + (e.message || e), "error");
+  }
+}
+
+function abrirUploadPdfCardapioV20(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const input = document.getElementById("inputPdfCardapioVascon");
+  if(!input){
+    toast("Input de PDF não encontrado.","error");
+    return;
+  }
+
+  input.value = "";
+  input.click();
+}
+
+async function processarPdfCardapioV20(file){
+  if(!file) return;
+
+  if(!file.name.toLowerCase().endsWith(".pdf")){
+    toast("Selecione um arquivo PDF.","error");
+    return;
+  }
+
+  toast("PDF selecionado: " + file.name + ". A extração automática ainda precisa ser conectada.","info");
+}
+
+function abrirModalCardapioManualV20(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const modal = document.getElementById("modalCardapioManualV20");
+  if(!modal) return;
+
+  modal.style.display = "flex";
+  modal.style.opacity = "";
+  modal.style.pointerEvents = "";
+  modal.removeAttribute("aria-hidden");
+  modal.classList.add("open");
+
+  const nome = document.getElementById("manualCardapioNomeV20");
+  if(nome) setTimeout(()=>nome.focus(),100);
+}
+
+function fecharModalCardapioManualV20(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const modal = document.getElementById("modalCardapioManualV20");
+  if(!modal) return;
+
+  modal.classList.remove("open");
+  modal.classList.remove("show");
+  modal.classList.remove("active");
+  modal.style.display = "none";
+  modal.style.opacity = "0";
+  modal.style.pointerEvents = "none";
+  modal.setAttribute("aria-hidden","true");
+}
+
+async function salvarCardapioManualV20(){
+  const dia = document.getElementById("manualCardapioDiaV20")?.value || "";
+  const opcao = document.getElementById("manualCardapioOpcaoV20")?.value || "";
+  const nome = (document.getElementById("manualCardapioNomeV20")?.value || "").trim();
+  const detalhes = (document.getElementById("manualCardapioDetalhesV20")?.value || "").trim();
+
+  if(!nome){
+    toast("Informe o nome do prato.","error");
+    return;
+  }
+
+  try{
+    if(typeof SP === "undefined"){
+      throw new Error("Objeto SP não carregado.");
+    }
+
+    await SP.init();
+
+    const semanaId = getSemanaAtualAdminV20();
+
+    if(SP.saveCardapio){
+      await SP.saveCardapio(semanaId, dia, opcao, nome, detalhes);
+    }else if(SP.createItem){
+      await SP.createItem("Cardapio", {
+        Title: `${semanaId}-${dia}-${opcao}`,
+        Semana_id: semanaId,
+        Dia: dia,
+        Opcao: opcao,
+        Nome_Prato: nome,
+        Detalhes: detalhes
+      });
+    }else{
+      throw new Error("Nenhuma função para salvar cardápio disponível no SP.");
+    }
+
+    document.getElementById("manualCardapioNomeV20").value = "";
+    document.getElementById("manualCardapioDetalhesV20").value = "";
+    fecharModalCardapioManualV20();
+    toast("Cardápio salvo no SharePoint!","success");
+
+    if(typeof loadCardapio === "function"){
+      await loadCardapio();
+    }else if(typeof loadModule === "function"){
+      loadModule("cardapio");
+    }
+
+  }catch(e){
+    console.error("Erro ao salvar cardápio manual:", e);
+    toast("Erro ao salvar cardápio: " + (e.message || e), "error");
+  }
+}
+
+document.addEventListener("change", function(event){
+  if(event.target && event.target.id === "inputPdfCardapioVascon"){
+    processarPdfCardapioV20(event.target.files[0]);
+  }
+});
+
+document.addEventListener("click", function(event){
+  const btn = event.target && event.target.closest ? event.target.closest("button") : null;
+  if(!btn) return;
+
+  const texto = (btn.textContent || "").trim().toLowerCase();
+
+  if(texto.includes("exportar excel")){
+    exportarPedidosExcelV20(event);
+    return;
+  }
+
+  if(texto.includes("subir pdf")){
+    abrirUploadPdfCardapioV20(event);
+    return;
+  }
+
+  if(texto.includes("editar manual")){
+    abrirModalCardapioManualV20(event);
+    return;
+  }
+}, true);
+
+document.addEventListener("click", function(event){
+  const target = event.target;
+
+  if(target && target.closest && target.closest("#modalCardapioManualV20 .modal-close")){
+    fecharModalCardapioManualV20(event);
+    return;
+  }
+
+  if(target && target.id === "modalCardapioManualV20"){
+    fecharModalCardapioManualV20(event);
+  }
+}, true);
+
+document.addEventListener("keydown", function(event){
+  if(event.key === "Escape"){
+    fecharModalCardapioManualV20(event);
+  }
+});
+</script>
+
+<!-- ADMIN REFEITORIO V20 PEDIDOS CARDAPIO BOTOES FUNCIONAIS -->
 </body>
 </html>
