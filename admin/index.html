@@ -242,6 +242,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 .action-group{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
 
 </style>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -2028,5 +2029,179 @@ window.addEventListener("load", function(){
 </script>
 
 <!-- ADMIN REFEITORIO V18 LINKS SHAREPOINT CONFIGURACOES -->
+
+<input type="file" id="inputImportarColaboradoresExcel" accept=".xlsx,.xls,.csv" style="display:none">
+
+
+<script>
+// --- ADMIN V19: IMPORTAR COLABORADORES VIA EXCEL ---
+function normalizarCabecalhoExcel(valor){
+  return String(valor || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9]/g,"");
+}
+
+function obterValorLinha(row, nomesPossiveis){
+  const mapa = {};
+  Object.keys(row || {}).forEach(k => {
+    mapa[normalizarCabecalhoExcel(k)] = row[k];
+  });
+
+  for(const nome of nomesPossiveis){
+    const chave = normalizarCabecalhoExcel(nome);
+    if(mapa[chave] !== undefined && mapa[chave] !== null && String(mapa[chave]).trim() !== ""){
+      return String(mapa[chave]).trim();
+    }
+  }
+
+  return "";
+}
+
+function abrirImportacaoColaboradoresExcel(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const input = document.getElementById("inputImportarColaboradoresExcel");
+  if(!input){
+    toast("Campo de importação não encontrado.","error");
+    return;
+  }
+
+  input.value = "";
+  input.click();
+}
+
+async function importarColaboradoresExcelArquivo(file){
+  if(!file) return;
+
+  if(typeof XLSX === "undefined"){
+    toast("Biblioteca de Excel não carregou. Atualize a página e tente novamente.","error");
+    return;
+  }
+
+  try{
+    if(typeof SP === "undefined"){
+      throw new Error("Objeto SP não carregado. Verifique sharepoint.js.");
+    }
+
+    toast("Lendo planilha...","info");
+
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type:"array" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval:"" });
+
+    if(!rows.length){
+      toast("A planilha está vazia.","error");
+      return;
+    }
+
+    const colaboradores = rows.map(row => {
+      const nome = obterValorLinha(row, ["Nome", "Colaborador", "Funcionario", "Funcionário", "Nome completo"]);
+      const departamento = obterValorLinha(row, ["Departamento", "Setor", "Área", "Area"]);
+      const email = obterValorLinha(row, ["Email", "E-mail", "E_mail", "Mail"]);
+      let tipo = obterValorLinha(row, ["tipo", "Tipo"]);
+
+      if(!tipo) tipo = "colaborador";
+
+      return {
+        nome,
+        departamento,
+        email,
+        tipo
+      };
+    }).filter(c => c.nome);
+
+    if(!colaboradores.length){
+      toast("Nenhum colaborador com coluna Nome foi encontrado.","error");
+      return;
+    }
+
+    const confirmar = confirm(
+      "Foram encontrados " + colaboradores.length +
+      " colaboradores para importar. Deseja cadastrar no SharePoint?"
+    );
+
+    if(!confirmar) return;
+
+    let ok = 0;
+    let falhas = 0;
+
+    for(const c of colaboradores){
+      try{
+        if(SP.createColaborador){
+          await SP.createColaborador(c);
+        }else if(SP.createItem){
+          await SP.createItem("Colaboradores", {
+            Title: c.nome,
+            Nome: c.nome,
+            Departamento: c.departamento || "",
+            Email: c.email || "",
+            Ativo: true,
+            tipo: c.tipo || "colaborador"
+          });
+        }else{
+          throw new Error("Nenhuma função de criação disponível no SP.");
+        }
+        ok++;
+      }catch(e){
+        console.error("Falha ao importar colaborador:", c, e);
+        falhas++;
+      }
+    }
+
+    toast("Importação concluída: " + ok + " cadastrados" + (falhas ? " e " + falhas + " falhas." : "."), falhas ? "error" : "success");
+
+    if(typeof loadColaboradores === "function"){
+      await loadColaboradores();
+    }else if(typeof loadModule === "function"){
+      loadModule("colaboradores");
+    }
+
+  }catch(e){
+    console.error("Erro na importação Excel:", e);
+    toast("Erro ao importar Excel: " + (e.message || e), "error");
+  }
+}
+
+document.addEventListener("change", function(event){
+  if(event.target && event.target.id === "inputImportarColaboradoresExcel"){
+    importarColaboradoresExcelArquivo(event.target.files[0]);
+  }
+});
+
+document.addEventListener("click", function(event){
+  const btn = event.target && event.target.closest ? event.target.closest("button") : null;
+  if(!btn) return;
+
+  const texto = (btn.textContent || "").trim().toLowerCase();
+
+  if(texto.includes("importar excel")){
+    abrirImportacaoColaboradoresExcel(event);
+  }
+}, true);
+
+window.addEventListener("load", function(){
+  const botoes = Array.from(document.querySelectorAll("button"));
+  botoes.forEach(btn => {
+    const texto = (btn.textContent || "").trim().toLowerCase();
+    if(texto.includes("importar excel")){
+      btn.type = "button";
+      if(!btn.dataset.importExcelBound){
+        btn.dataset.importExcelBound = "1";
+        btn.addEventListener("click", abrirImportacaoColaboradoresExcel);
+      }
+    }
+  });
+});
+</script>
+
+<!-- ADMIN REFEITORIO V19 IMPORTAR EXCEL COLABORADORES -->
 </body>
 </html>
