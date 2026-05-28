@@ -160,11 +160,15 @@ const SP = {
 
   // ============================================================
   // COLABORADORES
-  // Colunas: Nome, Departamento, Email, Ativo, tipo, Centro_Custo
+  // Colunas: Nome, Departamento, Email, Ativo, tipo, Centro_Custo, Centro_Custo
   // ============================================================
   async getColaboradores() {
     const items = await this.getItems("Colaboradores");
     return items.filter(i => this.isTrue(this.pick(i, "Ativo")));
+  }
+
+  async getTodosColaboradores() {
+    return this.getItems("Colaboradores");
   },
 
   async createColaborador(dados) {
