@@ -623,6 +623,23 @@ const SP = {
     return this.deleteItem("Extras", id);
   },
 
+
+  // ============================================================
+  // ALIASES DE COMPATIBILIDADE
+  // Mantém compatibilidade com funções antigas usadas no admin/index.html
+  // ============================================================
+  async addItem(listName, fields) {
+    return this.createItem(listName, fields);
+  },
+
+  async patchListItem(listName, itemId, fields) {
+    return this.updateItem(listName, itemId, fields);
+  },
+
+  async removeItem(listName, itemId) {
+    return this.deleteItem(listName, itemId);
+  },
+
   // ============================================================
   // UTILITÁRIOS
   // ============================================================
