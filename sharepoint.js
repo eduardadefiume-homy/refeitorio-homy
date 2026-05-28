@@ -337,7 +337,7 @@ const SP = {
   // Valor_Desconto_Funcionario, Observacao, Ativo
   // ============================================================
   async getValoresRefeicao(apenasAtivos = true) {
-    const items = await this.getItems("Valores_Refeicao");
+    const items = await this.getItems("Valores de Refeição");
 
     if (!apenasAtivos) return items;
 
@@ -358,7 +358,7 @@ const SP = {
   },
 
   async createValorRefeicao(dados) {
-    return this.createItem("Valores_Refeicao", {
+    return this.createItem("Valores de Refeição", {
       Title: dados.title || dados.Title || "Valor refeição",
       Data_Inicio: dados.dataInicio || dados.Data_Inicio,
       Data_Fim: dados.dataFim || dados.Data_Fim,
@@ -393,17 +393,17 @@ const SP = {
     if (dados.ativo !== undefined) fields.Ativo = dados.ativo;
     if (dados.Ativo !== undefined) fields.Ativo = dados.Ativo;
 
-    return this.updateItem("Valores_Refeicao", id, fields);
+    return this.updateItem("Valores de Refeição", id, fields);
   },
 
   // ============================================================
-  // AUSENCIAS_REFEITORIO
+  // AUSENCIAS DO REFEITORIO
   // Lista: Ausencias_Refeitorio
   // Colunas: Title, Colaborador_id, Colaborador_nome, Data_Inicio,
   // Data_Fim, Motivo, Observacao, Ativo, Criado_Por
   // ============================================================
   async getAusencias(apenasAtivas = true) {
-    const items = await this.getItems("Ausencias_Refeitorio");
+    const items = await this.getItems("Ausencias do Refeitorio");
 
     if (!apenasAtivas) return items;
 
@@ -437,7 +437,7 @@ const SP = {
     const colaboradorNome = dados.colaboradorNome || dados.Colaborador_nome || "";
     const motivo = dados.motivo || dados.Motivo || "Ausência";
 
-    return this.createItem("Ausencias_Refeitorio", {
+    return this.createItem("Ausencias do Refeitorio", {
       Title: dados.title || dados.Title || `${colaboradorNome} - ${motivo}`,
       Colaborador_id: String(dados.colaboradorId || dados.Colaborador_id || ""),
       Colaborador_nome: colaboradorNome,
@@ -480,11 +480,11 @@ const SP = {
     if (dados.criadoPor !== undefined) fields.Criado_Por = dados.criadoPor;
     if (dados.Criado_Por !== undefined) fields.Criado_Por = dados.Criado_Por;
 
-    return this.updateItem("Ausencias_Refeitorio", id, fields);
+    return this.updateItem("Ausencias do Refeitorio", id, fields);
   },
 
   async deleteAusencia(id) {
-    return this.deleteItem("Ausencias_Refeitorio", id);
+    return this.deleteItem("Ausencias do Refeitorio", id);
   },
 
   // ============================================================
@@ -688,16 +688,16 @@ const SP = {
   },
 
   // ============================================================
-  // VALORES REFEIÇÃO
+  // VALORES DE REFEIÇÃO
   // ============================================================
 
   async getValoresRefeicao() {
-    const items = await this.getItems("Valores_Refeicao");
+    const items = await this.getItems("Valores de Refeição");
     return items;
   },
 
   async createValorRefeicao(dados) {
-    return this.createItem("Valores_Refeicao", {
+    return this.createItem("Valores de Refeição", {
       Title: dados.title || "",
       Data_Inicio: dados.dataInicio,
       Data_Fim: dados.dataFim,
@@ -727,7 +727,7 @@ const SP = {
     if (dados.ativo !== undefined)
       fields.Ativo = dados.ativo;
 
-    return this.updateItem("Valores_Refeicao", id, fields);
+    return this.updateItem("Valores de Refeição", id, fields);
   }
 
 };
