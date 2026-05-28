@@ -1,0 +1,61 @@
+# Arquitetura Modular — Refeitório Homy
+
+Esta versão NÃO remove nada do que já existe.
+
+## O que foi preservado
+
+- `index.html` principal
+- `sharepoint.js`
+- `admin/index.html`
+- `admin/admin-extensions.js`
+- backups em `admin/legacy/`
+
+## Nova arquitetura criada
+
+```txt
+admin/
+├── index.html                    # Admin atual preservado
+├── index-modular.base.html        # Base segura para evolução
+├── admin-extensions.js            # Mantido por compatibilidade
+├── css/
+│   └── admin.css
+├── js/
+│   ├── admin-core.js
+│   ├── admin-state.js
+│   ├── admin-utils.js
+│   ├── admin-dashboard.js
+│   ├── admin-cardapio.js
+│   ├── admin-pedidos.js
+│   ├── admin-operacao-dia.js
+│   ├── admin-colaboradores.js
+│   ├── admin-extras.js
+│   ├── admin-relatorios.js
+│   ├── admin-valores.js
+│   ├── admin-ausencias.js
+│   └── admin-configuracoes.js
+└── legacy/
+    ├── index.legacy-atual.html
+    ├── admin-extensions.legacy-atual.js
+    └── sharepoint.legacy-atual.js
+```
+
+## Regra de evolução
+
+Não mexer em tudo de uma vez.
+
+A migração deve acontecer por etapas:
+
+1. Manter `admin/index.html` funcionando.
+2. Migrar primeiro `Colaboradores`, porque falta Centro de Custo, editar e excluir.
+3. Migrar `Valores`, para cadastrar Valor Vascon e Valor Desconto Funcionário.
+4. Migrar `Ausências`, para férias, afastamentos e bloqueios por período.
+5. Migrar `Relatórios`, usando filtros por período, centro de custo e colaborador.
+6. Migrar `Cardápio`, garantindo Principal, Light, Carne, Massa e Lanche.
+7. Migrar `Pedidos`, `Extras` e `Operação do Dia`, com editar/excluir em tudo.
+
+## Decisão técnica
+
+O arquivo genérico `admin-extensions.js` foi mantido por compatibilidade, mas a arquitetura correta daqui para frente é separar por domínio.
+
+Nada foi apagado.
+Nada foi substituído de forma destrutiva.
