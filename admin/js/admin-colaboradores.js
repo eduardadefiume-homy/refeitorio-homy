@@ -1,6 +1,6 @@
 // ============================================================
-// admin-colaboradores.js — CRUD de colaboradores
-// Correção: renderização robusta da tabela Colaboradores
+// admin-colaboradores.js — CRUD correto de colaboradores
+// Correção: editar atualiza item existente; excluir remove de verdade
 // ============================================================
 
 window.AdminColaboradores = {
@@ -9,9 +9,7 @@ window.AdminColaboradores = {
 
   async carregar() {
     try {
-      if (!window.SP) {
-        throw new Error("SP não encontrado. Verifique o carregamento do sharepoint.js.");
-      }
+      if (!window.SP) throw new Error("SP não encontrado.");
 
       const getFn = typeof SP.getTodosColaboradores === "function"
         ? "getTodosColaboradores"
@@ -21,7 +19,7 @@ window.AdminColaboradores = {
       this.renderizarTabela();
     } catch (erro) {
       console.error("Erro ao carregar colaboradores:", erro);
-      this.renderizarErro(erro);
+      this.renderizarMensagem(`Erro ao carregar colaboradores: ${erro.message || erro}`, true);
     }
   },
 
@@ -33,18 +31,19 @@ window.AdminColaboradores = {
       document.querySelector("#colaboradores tbody") ||
       document.querySelector("#module-colaboradores tbody") ||
       Array.from(document.querySelectorAll("tbody")).find(tb =>
-        tb.innerText && tb.innerText.toLowerCase().includes("carregando colaboradores")
+        (tb.innerText || "").toLowerCase().includes("colaborador")
       )
     );
   },
 
-  renderizarErro(erro) {
+  renderizarMensagem(msg, erro = false) {
     const tbody = this.encontrarTbody();
     if (!tbody) return;
+
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" style="text-align:center;color:#ff6060;padding:2rem;">
-          Erro ao carregar colaboradores: ${erro.message || erro}
+        <td colspan="6" style="text-align:center;${erro ? "color:#ff6060;" : "opacity:.55;"}padding:2rem;">
+          ${msg}
         </td>
       </tr>
     `;
@@ -54,37 +53,22 @@ window.AdminColaboradores = {
     const tbody = this.encontrarTbody();
 
     if (!tbody) {
-      console.warn("Tabela de colaboradores não encontrada no HTML atual.");
+      console.warn("Tabela de colaboradores não encontrada.");
       return;
     }
 
-    const busca = (document.getElementById("buscaColaborador")?.value || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
-
-    const normalizar = valor => String(valor || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
+    const busca = this.normalizar(document.getElementById("buscaColaborador")?.value || "");
 
     const filtrados = this.lista.filter(c => {
-      const nome = normalizar(c.Nome || c.Title || "");
-      const departamento = normalizar(c.Departamento || "");
-      const centro = normalizar(c.Centro_Custo || "");
-      return !busca || nome.includes(busca) || departamento.includes(busca) || centro.includes(busca);
+      const nome = this.normalizar(c.Nome || c.Title || "");
+      const departamento = this.normalizar(c.Departamento || "");
+      const centro = this.normalizar(c.Centro_Custo || "");
+      const email = this.normalizar(c.Email || "");
+      return !busca || nome.includes(busca) || departamento.includes(busca) || centro.includes(busca) || email.includes(busca);
     });
 
     if (!filtrados.length) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="6" style="text-align:center;opacity:.55;padding:2rem;">
-            Nenhum colaborador encontrado.
-          </td>
-        </tr>
-      `;
+      this.renderizarMensagem("Nenhum colaborador encontrado.");
       return;
     }
 
@@ -94,16 +78,16 @@ window.AdminColaboradores = {
         : String(c.Ativo).toLowerCase() !== "false";
 
       return `
-        <tr>
-          <td>${c.Nome || c.Title || ""}</td>
-          <td>${c.Departamento || ""}</td>
-          <td>${c.Centro_Custo || "-"}</td>
-          <td><span class="badge badge-blue">${c.tipo || c.Tipo || "Colaborador"}</span></td>
+        <tr data-colaborador-id="${c.id}">
+          <td>${this.escape(c.Nome || c.Title || "")}</td>
+          <td>${this.escape(c.Departamento || "")}</td>
+          <td>${this.escape(c.Centro_Custo || "-")}</td>
+          <td><span class="badge badge-blue">${this.escape(c.tipo || c.Tipo || "Colaborador")}</span></td>
           <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${ativo ? "ATIVO" : "INATIVO"}</span></td>
           <td>
             <div class="table-actions">
-              <button class="btn-icon" title="Editar" onclick="AdminColaboradores.abrirEditar('${c.id}')">✏️</button>
-              <button class="btn-icon danger" title="Desativar" onclick="AdminColaboradores.desativar('${c.id}')">🗑️</button>
+              <button type="button" class="btn-icon" title="Editar" onclick="AdminColaboradores.abrirEditar('${c.id}')">✏️</button>
+              <button type="button" class="btn-icon danger" title="Excluir" onclick="AdminColaboradores.excluir('${c.id}')">🗑️</button>
             </div>
           </td>
         </tr>
@@ -111,9 +95,41 @@ window.AdminColaboradores = {
     }).join("");
   },
 
+  normalizar(valor) {
+    return String(valor || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  },
+
+  escape(valor) {
+    return String(valor ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  },
+
   abrirNovo() {
     this.editandoId = null;
     this.preencherModal({});
+    this.setTituloModal("NOVO COLABORADOR");
+    this.abrirModal();
+  },
+
+  abrirEditar(id) {
+    const c = this.lista.find(x => String(x.id) === String(id));
+
+    if (!c) {
+      alert("Colaborador não encontrado para edição.");
+      return;
+    }
+
+    this.editandoId = String(id);
+    this.preencherModal(c);
+    this.setTituloModal("EDITAR COLABORADOR");
     this.abrirModal();
   },
 
@@ -121,6 +137,7 @@ window.AdminColaboradores = {
     const modal =
       document.getElementById("modalColaborador") ||
       document.getElementById("modalNovoColaborador");
+
     if (modal) modal.classList.add("open");
   },
 
@@ -128,94 +145,120 @@ window.AdminColaboradores = {
     const modal =
       document.getElementById("modalColaborador") ||
       document.getElementById("modalNovoColaborador");
+
     if (modal) modal.classList.remove("open");
+    this.editandoId = null;
   },
 
-  abrirEditar(id) {
-    const c = this.lista.find(x => String(x.id) === String(id));
-    if (!c) {
-      alert("Colaborador não encontrado para edição.");
-      return;
-    }
-
-    this.editandoId = id;
-    this.preencherModal(c);
-    this.abrirModal();
-  },
-
-  preencherModal(c) {
-    const set = (ids, value) => {
-      for (const id of ids) {
-        const el = document.getElementById(id);
-        if (el) {
-          el.value = value || "";
-          return;
-        }
-      }
-    };
-
-    set(["colabNome", "nomeColaborador"], c.Nome || c.Title || "");
-    set(["colabDepartamento", "departamentoColaborador"], c.Departamento || "");
-    set(["colabEmail", "emailColaborador"], c.Email || "");
-    set(["colabTipo", "tipoColaborador"], c.tipo || c.Tipo || "Colaborador");
-    set(["colabCentroCusto", "centroCustoColaborador"], c.Centro_Custo || "");
-
+  setTituloModal(texto) {
     const titulo =
       document.getElementById("modalColaboradorTitulo") ||
       document.querySelector("#modalColaborador .modal-title") ||
-      document.querySelector("#modalNovoColaborador .modal-title");
+      document.querySelector("#modalNovoColaborador .modal-title") ||
+      Array.from(document.querySelectorAll(".modal-title,h2,h3")).find(el =>
+        (el.innerText || "").toUpperCase().includes("COLABORADOR")
+      );
 
-    if (titulo) titulo.textContent = this.editandoId ? "EDITAR COLABORADOR" : "NOVO COLABORADOR";
+    if (titulo) titulo.textContent = texto;
+  },
+
+  preencherModal(c) {
+    this.setCampo(["colabNome", "nomeColaborador"], c.Nome || c.Title || "");
+    this.setCampo(["colabDepartamento", "departamentoColaborador"], c.Departamento || "");
+    this.setCampo(["colabEmail", "emailColaborador"], c.Email || "");
+    this.setCampo(["colabTipo", "tipoColaborador"], c.tipo || c.Tipo || "Colaborador");
+    this.setCampo(["colabCentroCusto", "centroCustoColaborador"], c.Centro_Custo || "");
+  },
+
+  setCampo(ids, valor) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.value = valor || "";
+        return;
+      }
+    }
+  },
+
+  getCampo(ids) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) return el.value.trim();
+    }
+    return "";
   },
 
   obterDadosFormulario() {
-    const val = ids => {
-      for (const id of ids) {
-        const el = document.getElementById(id);
-        if (el) return el.value.trim();
-      }
-      return "";
-    };
-
-    const centroCusto = val(["colabCentroCusto", "centroCustoColaborador"]);
+    const centroCusto = this.getCampo(["colabCentroCusto", "centroCustoColaborador"]);
 
     return {
-      nome: val(["colabNome", "nomeColaborador"]),
-      departamento: val(["colabDepartamento", "departamentoColaborador"]),
-      email: val(["colabEmail", "emailColaborador"]),
-      tipo: val(["colabTipo", "tipoColaborador"]) || "Colaborador",
+      nome: this.getCampo(["colabNome", "nomeColaborador"]),
+      departamento: this.getCampo(["colabDepartamento", "departamentoColaborador"]),
+      email: this.getCampo(["colabEmail", "emailColaborador"]),
+      tipo: this.getCampo(["colabTipo", "tipoColaborador"]) || "Colaborador",
       centroCusto,
       Centro_Custo: centroCusto
     };
   },
 
   async salvar() {
-    const dados = this.obterDadosFormulario();
+    try {
+      const dados = this.obterDadosFormulario();
 
-    if (!dados.nome) {
-      alert("Informe o nome do colaborador.");
-      return;
+      if (!dados.nome) {
+        alert("Informe o nome do colaborador.");
+        return;
+      }
+
+      if (!dados.centroCusto) {
+        alert("Informe o Centro de Custo do colaborador.");
+        return;
+      }
+
+      if (this.editandoId) {
+        await SP.updateColaborador(this.editandoId, dados);
+        alert("Colaborador atualizado com sucesso.");
+      } else {
+        await SP.createColaborador(dados);
+        alert("Colaborador cadastrado com sucesso.");
+      }
+
+      this.fecharModal();
+      await this.carregar();
+    } catch (erro) {
+      console.error("Erro ao salvar colaborador:", erro);
+      alert(`Erro ao salvar colaborador: ${erro.message || erro}`);
     }
+  },
 
-    if (!dados.centroCusto) {
-      alert("Informe o Centro de Custo do colaborador.");
-      return;
+  async excluir(id) {
+    const colaborador = this.lista.find(x => String(x.id) === String(id));
+    const nome = colaborador ? (colaborador.Nome || colaborador.Title || "") : "";
+
+    const ok = confirm(
+      `Deseja EXCLUIR definitivamente este colaborador${nome ? `: ${nome}` : ""}?\n\n` +
+      "Use isto somente para cadastros duplicados ou criados por engano."
+    );
+
+    if (!ok) return;
+
+    try {
+      if (typeof SP.deleteColaborador === "function") {
+        await SP.deleteColaborador(id);
+      } else {
+        await SP.deleteItem("Colaboradores", id);
+      }
+
+      await this.carregar();
+      alert("Colaborador excluído com sucesso.");
+    } catch (erro) {
+      console.error("Erro ao excluir colaborador:", erro);
+      alert(`Erro ao excluir colaborador: ${erro.message || erro}`);
     }
-
-    if (this.editandoId) {
-      await SP.updateColaborador(this.editandoId, dados);
-      alert("Colaborador atualizado com sucesso.");
-    } else {
-      await SP.createColaborador(dados);
-      alert("Colaborador cadastrado com sucesso.");
-    }
-
-    this.fecharModal();
-    await this.carregar();
   },
 
   async desativar(id) {
-    const ok = confirm("Deseja desativar este colaborador? Ele não será removido do histórico.");
+    const ok = confirm("Deseja apenas desativar este colaborador?");
     if (!ok) return;
 
     await SP.desativarColaborador(id);
@@ -223,29 +266,34 @@ window.AdminColaboradores = {
   }
 };
 
-// Compatibilidade com funções antigas do HTML
+// Sobrescreve funções antigas do HTML para impedir duplicação
 window.abrirModalColaborador = () => AdminColaboradores.abrirNovo();
 window.salvarColaborador = () => AdminColaboradores.salvar();
 window.carregarColaboradores = () => AdminColaboradores.carregar();
+window.fecharModalColaborador = () => AdminColaboradores.fecharModal();
 
-// Reforço: quando clicar na aba Colaboradores, recarrega a tabela
 document.addEventListener("click", function(e) {
   const alvo = e.target.closest("[onclick], .nav-item, button, a");
   if (!alvo) return;
 
-  const texto = (alvo.innerText || alvo.getAttribute("onclick") || "").toLowerCase();
+  const texto = `${alvo.innerText || ""} ${alvo.getAttribute("onclick") || ""}`.toLowerCase();
+
   if (texto.includes("colaboradores")) {
     setTimeout(() => AdminColaboradores.carregar(), 250);
   }
 });
 
-// Se a tela já abrir na aba colaboradores ou após o carregamento inicial
+document.addEventListener("input", function(e) {
+  if (e.target && e.target.id === "buscaColaborador") {
+    AdminColaboradores.renderizarTabela();
+  }
+});
+
 document.addEventListener("DOMContentLoaded", function() {
   setTimeout(() => {
-    const ativo = document.querySelector(".nav-item.active, .module.active");
-    const texto = ativo ? ativo.innerText.toLowerCase() : "";
-    if (texto.includes("colaboradores")) {
+    const textoPagina = (document.body.innerText || "").toLowerCase();
+    if (textoPagina.includes("colaboradores")) {
       AdminColaboradores.carregar();
     }
-  }, 800);
+  }, 1000);
 });
