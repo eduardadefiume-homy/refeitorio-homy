@@ -673,16 +673,6 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">TIPO DE RELATÓRIO</label>
-          <select id="tipoRelatorio" class="form-select" onchange="AdminRelatorios.gerar()">
-            <option value="resumo-dia">Resumo por dia</option>
-            <option value="centro-custo">Por centro de custo</option>
-            <option value="colaborador">Quantidade por colaborador</option>
-            <option value="completo">Completo gerencial</option>
-          </select>
-        </div>
-
         <div class="form-group" style="grid-column:1/-1">
           <label class="form-label">Nome completo *</label>
           <input class="form-input" id="colabNome" placeholder="Nome Sobrenome">
@@ -2697,6 +2687,8 @@ document.addEventListener("keydown", function(event){
 
 <script src="js/admin-valores.js"></script>
 <script src="js/admin-colaboradores.js"></script>
-<script src="js/admin-relatorios.js"></script>
+
+<script src="js/admin-operacao-dia.js"></script>
 </body>
+
 </html>
