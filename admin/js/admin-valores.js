@@ -1,15 +1,18 @@
 // ============================================================
-// admin-valores.js — Cadastro de valores da refeição
-// Valor Vascon e valor descontado dos funcionários
+// admin-valores.js — Cadastro financeiro refeições
 // ============================================================
 
 window.AdminValores = {
+  lista: [],
+
   async carregar() {
-    if (!SP.getValoresRefeicao) {
-      console.warn("SP.getValoresRefeicao ainda não encontrado no sharepoint.js.");
-      return [];
+    if (!window.SP || !SP.getValoresRefeicao) {
+      console.warn("Funções de valores ainda não encontradas.");
+      return;
     }
-    return SP.getValoresRefeicao();
+
+    this.lista = await SP.getValoresRefeicao();
+    console.log("Valores carregados:", this.lista);
   },
 
   async salvar(dados) {
