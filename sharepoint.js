@@ -202,6 +202,10 @@ const SP = {
     return this.updateItem("Colaboradores", id, { Ativo: false });
   },
 
+  async deleteColaborador(id) {
+    return this.deleteItem("Colaboradores", id);
+  },
+
   // ============================================================
   // CARDAPIO
   // Colunas: Semana_id, Dia, Opcao, Nome_Prato, Detalhes
