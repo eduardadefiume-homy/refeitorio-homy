@@ -1,6 +1,5 @@
 // ============================================================
-// admin-relatorios.js — Relatórios por tipo + seletor forçado
-// Correção: aparece sempre a opção de escolher relatório
+// admin-relatorios.js — Relatórios somente na aba Relatórios + Excel .xlsx real
 // ============================================================
 
 window.AdminRelatorios = {
@@ -15,20 +14,62 @@ window.AdminRelatorios = {
     "colaborador": "Quantidade por colaborador"
   },
 
+  estaNaAbaRelatorios() {
+    const ativo = document.querySelector(".module.active, .nav-item.active");
+    const textoAtivo = (ativo?.innerText || "").toLowerCase();
+
+    if (textoAtivo.includes("relatórios") || textoAtivo.includes("relatorios")) return true;
+
+    const titulo = document.querySelector(".topbar-title, h1, h2");
+    const textoTitulo = (titulo?.innerText || "").toLowerCase();
+
+    return textoTitulo.includes("relatórios") || textoTitulo.includes("relatorios");
+  },
+
   async init() {
+    this.configurarBotoesGlobais();
+
+    if (!this.estaNaAbaRelatorios()) return;
+
     this.criarSeletorForcado();
-    this.configurarBotoes();
     await this.gerar();
   },
 
+  configurarBotoesGlobais() {
+    document.addEventListener("click", e => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+
+      const texto = (btn.innerText || "").toLowerCase();
+
+      if (texto.includes("exportar") && this.estaNaAbaRelatorios()) {
+        e.preventDefault();
+        this.exportarExcel();
+      }
+
+      if ((texto.includes("gerar relatório") || texto.includes("gerar relatorio")) && this.estaNaAbaRelatorios()) {
+        e.preventDefault();
+        this.gerar();
+      }
+    }, true);
+
+    document.addEventListener("click", e => {
+      const item = e.target.closest(".nav-item, [onclick]");
+      if (!item) return;
+
+      const txt = `${item.innerText || ""} ${item.getAttribute("onclick") || ""}`.toLowerCase();
+      if (txt.includes("relatórios") || txt.includes("relatorios")) {
+        setTimeout(() => this.init(), 300);
+      }
+    });
+  },
+
   criarSeletorForcado() {
+    if (!this.estaNaAbaRelatorios()) return;
     if (document.getElementById("tipoRelatorioBox")) return;
 
-    const referencia =
-      this.encontrarTituloRelatorios() ||
-      document.querySelector(".content") ||
-      document.querySelector("main") ||
-      document.body;
+    const titulo = this.encontrarTituloRelatorios();
+    const container = titulo?.closest(".module") || document.querySelector(".module.active") || document.querySelector(".content") || document.body;
 
     const box = document.createElement("div");
     box.id = "tipoRelatorioBox";
@@ -54,51 +95,27 @@ window.AdminRelatorios = {
         </select>
       </div>
       <div style="font-size:.78rem;color:#75b7ff;line-height:1.45;">
-        Escolha o tipo de relatório, defina o período e clique em <b>Gerar relatório</b>.
-        A exportação baixa somente o tipo selecionado.
+        Escolha o tipo, defina o período e clique em <b>Gerar relatório</b>. A exportação baixa somente o tipo escolhido em Excel real.
       </div>
     `;
 
-    const container = referencia.closest(".module") || referencia.parentElement || document.body;
-
     const formGrid = Array.from(container.querySelectorAll(".form-grid")).find(el =>
-      el.innerText.toLowerCase().includes("data inicial") ||
-      el.innerText.toLowerCase().includes("data final") ||
-      el.querySelector('input[type="date"]')
+      el.innerText.toLowerCase().includes("data inicial") || el.querySelector('input[type="date"]')
     );
 
-    if (formGrid) {
-      formGrid.insertAdjacentElement("afterend", box);
-    } else {
-      referencia.insertAdjacentElement("afterend", box);
-    }
+    if (formGrid) formGrid.insertAdjacentElement("afterend", box);
+    else container.prepend(box);
+
+    document.querySelectorAll("button").forEach(btn => {
+      const texto = (btn.innerText || "").toLowerCase();
+      if (texto.includes("csv") || texto.includes("exportar")) btn.innerHTML = "📥 Exportar Excel";
+    });
   },
 
   encontrarTituloRelatorios() {
     return Array.from(document.querySelectorAll("h1,h2,h3,.section-title,.topbar-title")).find(el => {
       const t = (el.innerText || "").toLowerCase();
-      return t.includes("relatórios gerenciais") || t.includes("relatorios gerenciais");
-    });
-  },
-
-  configurarBotoes() {
-    document.querySelectorAll("button").forEach(btn => {
-      const texto = (btn.innerText || "").toLowerCase();
-
-      if (texto.includes("csv") || texto.includes("excel") || texto.includes("exportar")) {
-        btn.innerHTML = "📥 Exportar Excel";
-        btn.onclick = event => {
-          event.preventDefault();
-          AdminRelatorios.exportarExcel();
-        };
-      }
-
-      if (texto.includes("gerar relatório") || texto.includes("gerar relatorio")) {
-        btn.onclick = event => {
-          event.preventDefault();
-          AdminRelatorios.gerar();
-        };
-      }
+      return t.includes("relatórios") || t.includes("relatorios");
     });
   },
 
@@ -117,16 +134,13 @@ window.AdminRelatorios = {
   },
 
   async safe(fn, fallback) {
-    try {
-      return await fn();
-    } catch (e) {
-      console.warn("Falha ao carregar dado do relatório:", e);
-      return fallback;
-    }
+    try { return await fn(); }
+    catch (e) { console.warn("Falha ao carregar relatório:", e); return fallback; }
   },
 
   getFiltros() {
-    const inputsDate = Array.from(document.querySelectorAll('input[type="date"]'));
+    const container = document.querySelector(".module.active") || document.body;
+    const inputsDate = Array.from(container.querySelectorAll('input[type="date"]'));
 
     const dataInicio =
       document.getElementById("relDataInicio")?.value ||
@@ -145,9 +159,7 @@ window.AdminRelatorios = {
     const nfCampo =
       document.getElementById("nfVasconRecebida") ||
       document.getElementById("valorNfVascon") ||
-      Array.from(document.querySelectorAll("input")).find(i =>
-        (i.placeholder || "").toLowerCase().includes("1234")
-      );
+      Array.from(container.querySelectorAll("input")).find(i => (i.placeholder || "").toLowerCase().includes("1234"));
 
     const nfVascon = Number(String(nfCampo?.value || "0").replace(",", ".")) || 0;
 
@@ -155,10 +167,10 @@ window.AdminRelatorios = {
   },
 
   async gerar() {
+    if (!this.estaNaAbaRelatorios()) return;
+
     try {
       this.criarSeletorForcado();
-      this.configurarBotoes();
-
       await this.carregarDados();
 
       const filtros = this.getFiltros();
@@ -178,7 +190,6 @@ window.AdminRelatorios = {
 
       this.ultimoResultado = resultado;
       this.renderizar(resultado);
-
       return resultado;
     } catch (erro) {
       console.error("Erro ao gerar relatório:", erro);
@@ -192,9 +203,7 @@ window.AdminRelatorios = {
 
     return this.pedidos.filter(p => {
       const status = this.normalizar(p.Status || "");
-      if (["cancelado", "bloqueado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar"].includes(status)) {
-        return false;
-      }
+      if (["cancelado", "bloqueado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar"].includes(status)) return false;
 
       const data = this.dataPedido(p);
       if (!data) return false;
@@ -223,19 +232,9 @@ window.AdminRelatorios = {
       const semanaNum = Number(match[2]);
       const segunda = this.dataInicioSemanaISO(ano, semanaNum);
 
-      const mapa = {
-        "segunda": 0,
-        "terca": 1,
-        "terça": 1,
-        "quarta": 2,
-        "quinta": 3,
-        "sexta": 4,
-        "sabado": 5,
-        "sábado": 5,
-        "domingo": 6
-      };
-
+      const mapa = { segunda: 0, terca: 1, terça: 1, quarta: 2, quinta: 3, sexta: 4, sabado: 5, sábado: 5, domingo: 6 };
       const idx = mapa[this.normalizar(dia)];
+
       if (idx !== undefined) {
         const d = new Date(segunda);
         d.setDate(d.getDate() + idx);
@@ -263,13 +262,11 @@ window.AdminRelatorios = {
 
     const candidatos = this.valores.filter(v => {
       const ativo = typeof SP?.isTrue === "function" ? SP.isTrue(v.Ativo) : String(v.Ativo).toLowerCase() !== "false";
-
       const vi = v.Data_Inicio ? new Date(v.Data_Inicio) : null;
       const vf = v.Data_Fim ? new Date(v.Data_Fim) : null;
 
       if (!ativo) return false;
       if (!vi || !vf) return true;
-
       return vi <= fim && vf >= ini;
     });
 
@@ -332,13 +329,7 @@ window.AdminRelatorios = {
       const centro = p.Centro_Custo || this.centroCustoDoColaborador(p) || "Sem centro de custo";
 
       if (!mapa[centro]) {
-        mapa[centro] = {
-          "Centro de Custo": centro,
-          "Quantidade": 0,
-          "Valor Vascon": 0,
-          "Desconto Funcionários": 0,
-          "Rateio NF": 0
-        };
+        mapa[centro] = { "Centro de Custo": centro, "Quantidade": 0, "Valor Vascon": 0, "Desconto Funcionários": 0, "Rateio NF": 0 };
       }
 
       mapa[centro]["Quantidade"] += 1;
@@ -359,13 +350,7 @@ window.AdminRelatorios = {
       const chave = `${nome}|${centro}`;
 
       if (!mapa[chave]) {
-        mapa[chave] = {
-          "Colaborador": nome,
-          "Centro de Custo": centro,
-          "Quantidade": 0,
-          "Valor de cada refeição": valores.valorDesconto,
-          "Desconto em folha": 0
-        };
+        mapa[chave] = { "Colaborador": nome, "Centro de Custo": centro, "Quantidade": 0, "Valor de cada refeição": valores.valorDesconto, "Desconto em folha": 0 };
       }
 
       mapa[chave]["Quantidade"] += 1;
@@ -393,7 +378,6 @@ window.AdminRelatorios = {
 
     for (const p of pedidos) {
       const opcao = this.normalizar(p.Opcao || "");
-
       if (opcao.includes("principal")) base.Principal++;
       else if (opcao.includes("light") || opcao.includes("ligth")) base.Light++;
       else if (opcao.includes("carne")) base.Carne++;
@@ -405,12 +389,12 @@ window.AdminRelatorios = {
   },
 
   renderizar(resultado) {
+    const op = resultado.totais.opcoes;
+
     this.setTextoPossivel(["relTotalRefeicoes", "statRelRefeicoes"], resultado.totais.total);
     this.setTextoPossivel(["relCustoVascon", "statRelVascon"], this.moeda(resultado.totais.valorVascon));
     this.setTextoPossivel(["relDescontoFuncionarios", "statRelDesconto"], this.moeda(resultado.totais.desconto));
     this.setTextoPossivel(["relDiferencaNf", "statRelDiferenca"], resultado.totais.diferencaNf === null ? "-" : this.moeda(resultado.totais.diferencaNf));
-
-    const op = resultado.totais.opcoes;
     this.setTextoPossivel(["relPrincipal"], op.Principal);
     this.setTextoPossivel(["relLight", "relLigth"], op.Light);
     this.setTextoPossivel(["relCarne"], op.Carne);
@@ -421,7 +405,9 @@ window.AdminRelatorios = {
   },
 
   renderizarPreviewSelecionado(resultado) {
-    const area = document.querySelector(".content") || this.encontrarTituloRelatorios()?.closest(".module") || document.body;
+    if (!this.estaNaAbaRelatorios()) return;
+
+    const area = document.querySelector(".module.active") || document.querySelector(".content") || document.body;
     let bloco = document.getElementById("relatorioSelecionadoPreview");
 
     if (!bloco) {
@@ -440,9 +426,7 @@ window.AdminRelatorios = {
       <div class="section-title" style="margin-bottom:.8rem;">📌 ${titulo}</div>
       <div class="table-wrap">
         <table class="table">
-          <thead>
-            <tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>
-          </thead>
+          <thead><tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr></thead>
           <tbody>
             ${
               linhas.length
@@ -461,25 +445,90 @@ window.AdminRelatorios = {
     return resultado.resumoDia;
   },
 
-  async exportarExcel() {
-    if (!this.ultimoResultado) {
-      await this.gerar();
-    }
+  async carregarExcelJS() {
+    if (window.ExcelJS) return;
 
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  },
+
+  async exportarExcel() {
+    if (!this.ultimoResultado) await this.gerar();
     const resultado = this.ultimoResultado;
     if (!resultado) return;
+
+    await this.carregarExcelJS();
 
     const tipo = resultado.filtros.tipo;
     const titulo = this.tipos[tipo] || "Relatório";
     const linhas = this.linhasDoTipo(resultado);
+    const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
 
-    // Exporta mesmo com zero pedidos, mantendo cabeçalho e estrutura.
-    const html = this.gerarHtmlExcel(titulo, resultado, linhas);
-    const blob = new Blob(["\ufeff" + html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(titulo.substring(0, 31));
 
-    const nomeArquivo =
-      `relatorio-refeitorio-${this.slug(titulo)}-${resultado.filtros.dataInicio}-a-${resultado.filtros.dataFim}.xls`;
+    const totalCols = Math.max(colunas.length, 6);
 
+    ws.mergeCells(1, 1, 1, totalCols);
+    ws.getCell("A1").value = `RELATÓRIO REFEITÓRIO HOMY — ${titulo.toUpperCase()}`;
+    ws.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
+    ws.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
+    ws.getCell("A1").alignment = { horizontal: "center" };
+
+    ws.mergeCells(2, 1, 2, totalCols);
+    ws.getCell("A2").value = `Período: ${this.dataBR(resultado.filtros.dataInicio)} a ${this.dataBR(resultado.filtros.dataFim)}`;
+    ws.getCell("A2").font = { bold: true, color: { argb: "FFFFFFFF" } };
+    ws.getCell("A2").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC0281C" } };
+    ws.getCell("A2").alignment = { horizontal: "center" };
+
+    ws.addRow([]);
+    ws.addRow(["Total de refeições", resultado.totais.total]);
+    ws.addRow(["Custo Vascon estimado", resultado.totais.valorVascon]);
+    ws.addRow(["Desconto funcionários", resultado.totais.desconto]);
+    ws.addRow(["Valor unitário Vascon", resultado.valoresPeriodo.valorVascon]);
+    ws.addRow(["Valor unitário descontado", resultado.valoresPeriodo.valorDesconto]);
+    ws.addRow([]);
+
+    const headerRow = ws.addRow(colunas);
+    headerRow.eachCell(cell => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
+      cell.alignment = { horizontal: "center" };
+      cell.border = {
+        top: { style: "thin" }, left: { style: "thin" },
+        bottom: { style: "thin" }, right: { style: "thin" }
+      };
+    });
+
+    if (linhas.length) {
+      linhas.forEach((linha, idx) => {
+        const row = ws.addRow(colunas.map(c => linha[c]));
+        row.eachCell(cell => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: idx % 2 === 0 ? "FFF3F6FB" : "FFFFFFFF" } };
+          cell.border = { bottom: { style: "thin", color: { argb: "FFD9E2F3" } } };
+        });
+      });
+    } else {
+      ws.addRow(["Sem dados no período."]);
+    }
+
+    ws.columns.forEach(col => {
+      let max = 12;
+      col.eachCell({ includeEmpty: true }, cell => {
+        max = Math.max(max, String(cell.value || "").length + 2);
+      });
+      col.width = Math.min(max, 35);
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
+    const nomeArquivo = `relatorio-refeitorio-${this.slug(titulo)}-${resultado.filtros.dataInicio}-a-${resultado.filtros.dataFim}.xlsx`;
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = nomeArquivo;
@@ -488,90 +537,10 @@ window.AdminRelatorios = {
     document.body.removeChild(link);
   },
 
-  gerarHtmlExcel(titulo, resultado, linhas) {
-    const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
-
-    return `
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          body { font-family: Arial, sans-serif; }
-          table { border-collapse: collapse; }
-          .titulo {
-            background: #0B1F3C;
-            color: #FFFFFF;
-            font-size: 18px;
-            font-weight: bold;
-            text-align: center;
-          }
-          .periodo {
-            background: #C0281C;
-            color: #FFFFFF;
-            font-weight: bold;
-            text-align: center;
-          }
-          .sub {
-            background: #E8F0FF;
-            color: #0B1F3C;
-            font-weight: bold;
-          }
-          .resumo-label {
-            font-weight: bold;
-            background: #F3F6FB;
-          }
-          th {
-            background: #0B1F3C;
-            color: #FFFFFF;
-            font-weight: bold;
-            border: 1px solid #0B1F3C;
-            text-align: center;
-            padding: 8px;
-          }
-          td {
-            border: 1px solid #D9E2F3;
-            padding: 7px;
-            mso-number-format: "\\@";
-          }
-          .linha-par { background: #F3F6FB; }
-          .linha-impar { background: #FFFFFF; }
-        </style>
-      </head>
-      <body>
-        <table>
-          <tr><td class="titulo" colspan="${Math.max(colunas.length, 6)}">RELATÓRIO REFEITÓRIO HOMY — ${titulo.toUpperCase()}</td></tr>
-          <tr><td class="periodo" colspan="${Math.max(colunas.length, 6)}">Período: ${this.dataBR(resultado.filtros.dataInicio)} a ${this.dataBR(resultado.filtros.dataFim)}</td></tr>
-          <tr><td class="sub" colspan="${Math.max(colunas.length, 6)}">Gerado em: ${this.dataBR(new Date())}</td></tr>
-          <tr></tr>
-          <tr><td class="resumo-label">Total de refeições</td><td>${resultado.totais.total}</td></tr>
-          <tr><td class="resumo-label">Custo Vascon estimado</td><td>${this.moeda(resultado.totais.valorVascon)}</td></tr>
-          <tr><td class="resumo-label">Desconto funcionários</td><td>${this.moeda(resultado.totais.desconto)}</td></tr>
-          <tr><td class="resumo-label">Valor unitário Vascon</td><td>${this.moeda(resultado.valoresPeriodo.valorVascon)}</td></tr>
-          <tr><td class="resumo-label">Valor unitário descontado</td><td>${this.moeda(resultado.valoresPeriodo.valorDesconto)}</td></tr>
-          <tr></tr>
-          <tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>
-          ${
-            linhas.length
-              ? linhas.map((l, idx) => `
-                <tr class="${idx % 2 === 0 ? "linha-par" : "linha-impar"}">
-                  ${colunas.map(c => `<td>${this.valorExcel(l[c])}</td>`).join("")}
-                </tr>
-              `).join("")
-              : `<tr><td colspan="${colunas.length}">Sem dados no período.</td></tr>`
-          }
-        </table>
-      </body>
-      </html>
-    `;
-  },
-
   setTextoPossivel(ids, valor) {
     for (const id of ids) {
       const el = document.getElementById(id);
-      if (el) {
-        el.textContent = valor;
-        return;
-      }
+      if (el) { el.textContent = valor; return; }
     }
   },
 
@@ -580,26 +549,16 @@ window.AdminRelatorios = {
     return v ?? "";
   },
 
-  valorExcel(v) {
-    if (typeof v === "number") return String(v).replace(".", ",");
-    return String(v ?? "");
-  },
-
   moeda(v) {
-    return Number(v || 0).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL"
-    });
+    return Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   },
 
   dataBR(data) {
     if (!data) return "";
-
     if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
       const [a, m, d] = data.split("-");
       return `${d}/${m}/${a}`;
     }
-
     const dt = new Date(data);
     if (Number.isNaN(dt.getTime())) return "";
     return dt.toLocaleDateString("pt-BR");
@@ -611,31 +570,15 @@ window.AdminRelatorios = {
   },
 
   diaSemanaCompleto(data) {
-    const dias = [
-      "Domingo",
-      "Segunda-feira",
-      "Terça-feira",
-      "Quarta-feira",
-      "Quinta-feira",
-      "Sexta-feira",
-      "Sábado"
-    ];
-
-    return dias[new Date(data).getDay()];
+    return ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"][new Date(data).getDay()];
   },
 
   normalizar(valor) {
-    return String(valor || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
+    return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
   },
 
   slug(valor) {
-    return this.normalizar(valor)
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    return this.normalizar(valor).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   }
 };
 
@@ -643,23 +586,6 @@ window.gerarRelatorio = () => AdminRelatorios.gerar();
 window.exportarCSV = () => AdminRelatorios.exportarExcel();
 window.exportarRelatorioCSV = () => AdminRelatorios.exportarExcel();
 window.exportarExcel = () => AdminRelatorios.exportarExcel();
-
-document.addEventListener("click", function(e) {
-  const btn = e.target.closest("button");
-  if (!btn) return;
-
-  const texto = (btn.innerText || "").toLowerCase();
-
-  if (texto.includes("exportar")) {
-    e.preventDefault();
-    AdminRelatorios.exportarExcel();
-  }
-
-  if (texto.includes("gerar relatório") || texto.includes("gerar relatorio")) {
-    e.preventDefault();
-    AdminRelatorios.gerar();
-  }
-}, true);
 
 document.addEventListener("DOMContentLoaded", () => {
   setTimeout(() => AdminRelatorios.init(), 800);
