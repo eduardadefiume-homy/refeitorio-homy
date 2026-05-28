@@ -712,6 +712,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group">
+          <input type="hidden" id="colabEditandoId" value="">
           <label class="form-label">Nome</label>
           <input class="form-input" id="extraNome" placeholder="Nome do visitante">
         </div>
@@ -881,7 +882,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 
     <div class="modal-footer">
       <button class="btn-secondary" type="button" onclick="fecharModalColaborador(event)">Cancelar</button>
-      <button class="btn-success" type="button" onclick="salvarNovoColaborador()">Salvar colaborador</button>
+      <button onclick="AdminColaboradores.salvar()" class="btn-success" type="button" onclick="salvarNovoColaborador()">Salvar colaborador</button>
     </div>
   </div>
 </div>
