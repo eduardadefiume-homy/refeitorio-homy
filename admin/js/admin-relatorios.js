@@ -1,6 +1,6 @@
 // ============================================================
-// admin-relatorios.js — Relatórios por tipo + Excel estilizado
-// Correção: seletor visível, exportação bonita e relatórios separados
+// admin-relatorios.js — Relatórios por tipo + seletor forçado
+// Correção: aparece sempre a opção de escolher relatório
 // ============================================================
 
 window.AdminRelatorios = {
@@ -16,59 +16,90 @@ window.AdminRelatorios = {
   },
 
   async init() {
-    this.montarControles();
+    this.criarSeletorForcado();
+    this.configurarBotoes();
     await this.gerar();
   },
 
-  montarControles() {
-    const areaRelatorios = this.encontrarAreaRelatorios();
-    if (!areaRelatorios) return;
+  criarSeletorForcado() {
+    if (document.getElementById("tipoRelatorioBox")) return;
 
-    // Renomear botão de CSV para Excel
-    document.querySelectorAll("button").forEach(btn => {
-      const txt = (btn.innerText || "").toLowerCase();
-      if (txt.includes("csv")) {
-        btn.innerHTML = "📥 Exportar Excel";
-        btn.onclick = () => AdminRelatorios.exportarExcel();
-      }
-    });
+    const referencia =
+      this.encontrarTituloRelatorios() ||
+      document.querySelector(".content") ||
+      document.querySelector("main") ||
+      document.body;
 
-    // Criar seletor se ainda não existir
-    if (!document.getElementById("tipoRelatorio")) {
-      const bloco = document.createElement("div");
-      bloco.className = "form-group";
-      bloco.innerHTML = `
+    const box = document.createElement("div");
+    box.id = "tipoRelatorioBox";
+    box.style.cssText = `
+      margin: 1rem 0 1.2rem 0;
+      padding: 1rem;
+      border: 1px solid rgba(60,140,255,.28);
+      border-radius: 12px;
+      background: rgba(10,31,60,.55);
+      display: grid;
+      grid-template-columns: minmax(240px, 360px) 1fr;
+      gap: 1rem;
+      align-items: end;
+    `;
+
+    box.innerHTML = `
+      <div class="form-group">
         <label class="form-label">TIPO DE RELATÓRIO</label>
         <select id="tipoRelatorio" class="form-select" onchange="AdminRelatorios.gerar()">
           <option value="resumo-dia">Resumo por dia</option>
           <option value="centro-custo">Por centro de custo</option>
           <option value="colaborador">Quantidade por colaborador</option>
         </select>
-      `;
+      </div>
+      <div style="font-size:.78rem;color:#75b7ff;line-height:1.45;">
+        Escolha o tipo de relatório, defina o período e clique em <b>Gerar relatório</b>.
+        A exportação baixa somente o tipo selecionado.
+      </div>
+    `;
 
-      const formGrid = areaRelatorios.querySelector(".form-grid") || document.querySelector(".form-grid");
-      if (formGrid) {
-        formGrid.insertBefore(bloco, formGrid.children[2] || null);
-      } else {
-        areaRelatorios.prepend(bloco);
-      }
+    const container = referencia.closest(".module") || referencia.parentElement || document.body;
+
+    const formGrid = Array.from(container.querySelectorAll(".form-grid")).find(el =>
+      el.innerText.toLowerCase().includes("data inicial") ||
+      el.innerText.toLowerCase().includes("data final") ||
+      el.querySelector('input[type="date"]')
+    );
+
+    if (formGrid) {
+      formGrid.insertAdjacentElement("afterend", box);
+    } else {
+      referencia.insertAdjacentElement("afterend", box);
     }
+  },
 
-    // Botão gerar
-    document.querySelectorAll("button").forEach(btn => {
-      const txt = (btn.innerText || "").toLowerCase();
-      if (txt.includes("gerar relatório") || txt.includes("gerar relatorio")) {
-        btn.onclick = () => AdminRelatorios.gerar();
-      }
+  encontrarTituloRelatorios() {
+    return Array.from(document.querySelectorAll("h1,h2,h3,.section-title,.topbar-title")).find(el => {
+      const t = (el.innerText || "").toLowerCase();
+      return t.includes("relatórios gerenciais") || t.includes("relatorios gerenciais");
     });
   },
 
-  encontrarAreaRelatorios() {
-    const modulos = Array.from(document.querySelectorAll(".module, section, main, div"));
-    return modulos.find(el => {
-      const texto = (el.innerText || "").toLowerCase();
-      return texto.includes("relatórios gerenciais") || texto.includes("relatorios gerenciais");
-    }) || document.body;
+  configurarBotoes() {
+    document.querySelectorAll("button").forEach(btn => {
+      const texto = (btn.innerText || "").toLowerCase();
+
+      if (texto.includes("csv") || texto.includes("excel") || texto.includes("exportar")) {
+        btn.innerHTML = "📥 Exportar Excel";
+        btn.onclick = event => {
+          event.preventDefault();
+          AdminRelatorios.exportarExcel();
+        };
+      }
+
+      if (texto.includes("gerar relatório") || texto.includes("gerar relatorio")) {
+        btn.onclick = event => {
+          event.preventDefault();
+          AdminRelatorios.gerar();
+        };
+      }
+    });
   },
 
   async carregarDados() {
@@ -125,6 +156,9 @@ window.AdminRelatorios = {
 
   async gerar() {
     try {
+      this.criarSeletorForcado();
+      this.configurarBotoes();
+
       await this.carregarDados();
 
       const filtros = this.getFiltros();
@@ -180,11 +214,10 @@ window.AdminRelatorios = {
       if (!Number.isNaN(d.getTime())) return d;
     }
 
-    // Fallback para Semana_id + Dia
-    const semana = p.Semana_id || p.semana_id || "";
+    const semana = p.Semana_id || "";
     const dia = p.Dia || "";
-
     const match = String(semana).match(/(\d{4})-?W?(\d{1,2})/i);
+
     if (match && dia) {
       const ano = Number(match[1]);
       const semanaNum = Number(match[2]);
@@ -384,14 +417,11 @@ window.AdminRelatorios = {
     this.setTextoPossivel(["relMassa"], op.Massa);
     this.setTextoPossivel(["relLanche"], op.Lanche);
 
-    this.renderizarTabelaPrincipal(resultado);
+    this.renderizarPreviewSelecionado(resultado);
   },
 
-  renderizarTabelaPrincipal(resultado) {
-    const tipo = resultado.filtros.tipo;
-    const area = this.encontrarAreaRelatorios();
-    if (!area) return;
-
+  renderizarPreviewSelecionado(resultado) {
+    const area = document.querySelector(".content") || this.encontrarTituloRelatorios()?.closest(".module") || document.body;
     let bloco = document.getElementById("relatorioSelecionadoPreview");
 
     if (!bloco) {
@@ -401,23 +431,23 @@ window.AdminRelatorios = {
       area.appendChild(bloco);
     }
 
+    const tipo = resultado.filtros.tipo;
     const titulo = this.tipos[tipo] || "Relatório";
     const linhas = this.linhasDoTipo(resultado);
+    const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
 
     bloco.innerHTML = `
       <div class="section-title" style="margin-bottom:.8rem;">📌 ${titulo}</div>
       <div class="table-wrap">
         <table class="table">
           <thead>
-            <tr>
-              ${(linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"]).map(c => `<th>${c}</th>`).join("")}
-            </tr>
+            <tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>
           </thead>
           <tbody>
             ${
               linhas.length
-                ? linhas.map(l => `<tr>${Object.values(l).map(v => `<td>${this.valorTela(v)}</td>`).join("")}</tr>`).join("")
-                : `<tr><td style="text-align:center;padding:1.5rem;">Sem dados no período.</td></tr>`
+                ? linhas.map(l => `<tr>${colunas.map(c => `<td>${this.valorTela(l[c])}</td>`).join("")}</tr>`).join("")
+                : `<tr><td colspan="${colunas.length}" style="text-align:center;padding:1.5rem;">Sem dados no período.</td></tr>`
             }
           </tbody>
         </table>
@@ -431,17 +461,19 @@ window.AdminRelatorios = {
     return resultado.resumoDia;
   },
 
-  exportarExcel() {
+  async exportarExcel() {
     if (!this.ultimoResultado) {
-      this.gerar().then(() => this.exportarExcel());
-      return;
+      await this.gerar();
     }
 
     const resultado = this.ultimoResultado;
+    if (!resultado) return;
+
     const tipo = resultado.filtros.tipo;
     const titulo = this.tipos[tipo] || "Relatório";
     const linhas = this.linhasDoTipo(resultado);
 
+    // Exporta mesmo com zero pedidos, mantendo cabeçalho e estrutura.
     const html = this.gerarHtmlExcel(titulo, resultado, linhas);
     const blob = new Blob(["\ufeff" + html], { type: "application/vnd.ms-excel;charset=utf-8;" });
 
@@ -459,22 +491,13 @@ window.AdminRelatorios = {
   gerarHtmlExcel(titulo, resultado, linhas) {
     const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
 
-    const linhaResumo = `
-      <tr><td class="resumo-label">Total de refeições</td><td>${resultado.totais.total}</td></tr>
-      <tr><td class="resumo-label">Custo Vascon estimado</td><td>${this.moeda(resultado.totais.valorVascon)}</td></tr>
-      <tr><td class="resumo-label">Desconto funcionários</td><td>${this.moeda(resultado.totais.desconto)}</td></tr>
-      <tr><td class="resumo-label">Valor unitário Vascon</td><td>${this.moeda(resultado.valoresPeriodo.valorVascon)}</td></tr>
-      <tr><td class="resumo-label">Valor unitário descontado</td><td>${this.moeda(resultado.valoresPeriodo.valorDesconto)}</td></tr>
-    `;
-
     return `
       <html>
       <head>
         <meta charset="UTF-8">
         <style>
-          body {
-            font-family: Arial, sans-serif;
-          }
+          body { font-family: Arial, sans-serif; }
+          table { border-collapse: collapse; }
           .titulo {
             background: #0B1F3C;
             color: #FFFFFF;
@@ -503,17 +526,15 @@ window.AdminRelatorios = {
             font-weight: bold;
             border: 1px solid #0B1F3C;
             text-align: center;
+            padding: 8px;
           }
           td {
             border: 1px solid #D9E2F3;
-            padding: 6px;
+            padding: 7px;
+            mso-number-format: "\\@";
           }
-          .linha-par {
-            background: #F3F6FB;
-          }
-          .linha-impar {
-            background: #FFFFFF;
-          }
+          .linha-par { background: #F3F6FB; }
+          .linha-impar { background: #FFFFFF; }
         </style>
       </head>
       <body>
@@ -522,7 +543,11 @@ window.AdminRelatorios = {
           <tr><td class="periodo" colspan="${Math.max(colunas.length, 6)}">Período: ${this.dataBR(resultado.filtros.dataInicio)} a ${this.dataBR(resultado.filtros.dataFim)}</td></tr>
           <tr><td class="sub" colspan="${Math.max(colunas.length, 6)}">Gerado em: ${this.dataBR(new Date())}</td></tr>
           <tr></tr>
-          ${linhaResumo}
+          <tr><td class="resumo-label">Total de refeições</td><td>${resultado.totais.total}</td></tr>
+          <tr><td class="resumo-label">Custo Vascon estimado</td><td>${this.moeda(resultado.totais.valorVascon)}</td></tr>
+          <tr><td class="resumo-label">Desconto funcionários</td><td>${this.moeda(resultado.totais.desconto)}</td></tr>
+          <tr><td class="resumo-label">Valor unitário Vascon</td><td>${this.moeda(resultado.valoresPeriodo.valorVascon)}</td></tr>
+          <tr><td class="resumo-label">Valor unitário descontado</td><td>${this.moeda(resultado.valoresPeriodo.valorDesconto)}</td></tr>
           <tr></tr>
           <tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>
           ${
@@ -614,11 +639,27 @@ window.AdminRelatorios = {
   }
 };
 
-// Compatibilidade com botões antigos
 window.gerarRelatorio = () => AdminRelatorios.gerar();
 window.exportarCSV = () => AdminRelatorios.exportarExcel();
 window.exportarRelatorioCSV = () => AdminRelatorios.exportarExcel();
 window.exportarExcel = () => AdminRelatorios.exportarExcel();
+
+document.addEventListener("click", function(e) {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  const texto = (btn.innerText || "").toLowerCase();
+
+  if (texto.includes("exportar")) {
+    e.preventDefault();
+    AdminRelatorios.exportarExcel();
+  }
+
+  if (texto.includes("gerar relatório") || texto.includes("gerar relatorio")) {
+    e.preventDefault();
+    AdminRelatorios.gerar();
+  }
+}, true);
 
 document.addEventListener("DOMContentLoaded", () => {
   setTimeout(() => AdminRelatorios.init(), 800);
