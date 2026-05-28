@@ -1,0 +1,11 @@
+/* ============================================================
+   admin/css/admin.css
+   Refeitório Homy — folha de estilo do painel administrativo
+
+   IMPORTANTE:
+   - O admin/index.html atual foi preservado sem perda.
+   - Este arquivo é a base oficial para migrarmos o CSS aos poucos.
+   - Na próxima etapa, vamos remover o CSS inline do index.html e trazer para cá.
+   ============================================================ */
+
+/* Base visual do Admin será migrada do index.html atual. */
