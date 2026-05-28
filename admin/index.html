@@ -837,7 +837,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 </div>
 
 
-<!-- MODAL NOVO COLABORADOR -->
+<!-- MODAL <span id="modalColaboradorTitulo">NOVO COLABORADOR</span> -->
 <div class="modal-overlay" id="modalColaborador">
   <div class="modal-box">
     <div class="modal-header">
@@ -855,6 +855,10 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
         <div class="form-group">
           <label class="form-label">Departamento</label>
           <input class="form-input" id="colabDepartamento" placeholder="Ex.: TI, Comercial, RH">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Centro de Custo</label>
+          <input id="colabCentroCusto" class="form-input" placeholder="Ex.: TI, Comercial, RH, Laboratório">
         </div>
 
         <div class="form-group">
@@ -2677,5 +2681,8 @@ document.addEventListener("keydown", function(event){
 
 <!-- ADMIN REFEITORIO V20 PEDIDOS CARDAPIO BOTOES FUNCIONAIS -->
 <script src="admin-extensions.js?v=20260528"></script>
+<script src="js/admin-state.js"></script>
+<script src="js/admin-utils.js"></script>
+<script src="js/admin-colaboradores.js"></script>
 </body>
 </html>
