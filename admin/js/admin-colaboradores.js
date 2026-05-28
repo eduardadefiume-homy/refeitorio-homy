@@ -1,6 +1,5 @@
 // ============================================================
-// admin-colaboradores.js — CRUD correto de colaboradores
-// Correção: editar atualiza item existente; excluir remove de verdade
+// admin-colaboradores.js — Correção definitiva Editar x Novo
 // ============================================================
 
 window.AdminColaboradores = {
@@ -51,11 +50,7 @@ window.AdminColaboradores = {
 
   renderizarTabela() {
     const tbody = this.encontrarTbody();
-
-    if (!tbody) {
-      console.warn("Tabela de colaboradores não encontrada.");
-      return;
-    }
+    if (!tbody) return;
 
     const busca = this.normalizar(document.getElementById("buscaColaborador")?.value || "");
 
@@ -112,8 +107,25 @@ window.AdminColaboradores = {
       .replaceAll("'", "&#039;");
   },
 
+  setEditandoId(id) {
+    this.editandoId = id ? String(id) : null;
+    window.__colaboradorEditandoId = this.editandoId;
+
+    const hidden = document.getElementById("colabEditandoId");
+    if (hidden) hidden.value = this.editandoId || "";
+
+    const modal = this.getModal();
+    if (modal) modal.dataset.editandoId = this.editandoId || "";
+  },
+
+  getEditandoId() {
+    const hidden = document.getElementById("colabEditandoId")?.value || "";
+    const modalId = this.getModal()?.dataset?.editandoId || "";
+    return this.editandoId || window.__colaboradorEditandoId || hidden || modalId || null;
+  },
+
   abrirNovo() {
-    this.editandoId = null;
+    this.setEditandoId(null);
     this.preencherModal({});
     this.setTituloModal("NOVO COLABORADOR");
     this.abrirModal();
@@ -127,27 +139,28 @@ window.AdminColaboradores = {
       return;
     }
 
-    this.editandoId = String(id);
+    this.setEditandoId(id);
     this.preencherModal(c);
     this.setTituloModal("EDITAR COLABORADOR");
     this.abrirModal();
   },
 
-  abrirModal() {
-    const modal =
+  getModal() {
+    return (
       document.getElementById("modalColaborador") ||
-      document.getElementById("modalNovoColaborador");
+      document.getElementById("modalNovoColaborador")
+    );
+  },
 
+  abrirModal() {
+    const modal = this.getModal();
     if (modal) modal.classList.add("open");
   },
 
   fecharModal() {
-    const modal =
-      document.getElementById("modalColaborador") ||
-      document.getElementById("modalNovoColaborador");
-
+    const modal = this.getModal();
     if (modal) modal.classList.remove("open");
-    this.editandoId = null;
+    this.setEditandoId(null);
   },
 
   setTituloModal(texto) {
@@ -204,6 +217,7 @@ window.AdminColaboradores = {
   async salvar() {
     try {
       const dados = this.obterDadosFormulario();
+      const idEdicao = this.getEditandoId();
 
       if (!dados.nome) {
         alert("Informe o nome do colaborador.");
@@ -215,8 +229,8 @@ window.AdminColaboradores = {
         return;
       }
 
-      if (this.editandoId) {
-        await SP.updateColaborador(this.editandoId, dados);
+      if (idEdicao) {
+        await SP.updateColaborador(idEdicao, dados);
         alert("Colaborador atualizado com sucesso.");
       } else {
         await SP.createColaborador(dados);
@@ -255,18 +269,10 @@ window.AdminColaboradores = {
       console.error("Erro ao excluir colaborador:", erro);
       alert(`Erro ao excluir colaborador: ${erro.message || erro}`);
     }
-  },
-
-  async desativar(id) {
-    const ok = confirm("Deseja apenas desativar este colaborador?");
-    if (!ok) return;
-
-    await SP.desativarColaborador(id);
-    await this.carregar();
   }
 };
 
-// Sobrescreve funções antigas do HTML para impedir duplicação
+// Compatibilidade com funções antigas do HTML
 window.abrirModalColaborador = () => AdminColaboradores.abrirNovo();
 window.salvarColaborador = () => AdminColaboradores.salvar();
 window.carregarColaboradores = () => AdminColaboradores.carregar();
@@ -291,8 +297,7 @@ document.addEventListener("input", function(e) {
 
 document.addEventListener("DOMContentLoaded", function() {
   setTimeout(() => {
-    const textoPagina = (document.body.innerText || "").toLowerCase();
-    if (textoPagina.includes("colaboradores")) {
+    if (document.body.innerText.toLowerCase().includes("colaboradores")) {
       AdminColaboradores.carregar();
     }
   }, 1000);
