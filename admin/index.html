@@ -288,6 +288,9 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="nav-item" data-module="pedidos">
         <span class="nav-icon">📋</span><span class="nav-label">Pedidos</span>
       </div>
+      <div class="nav-item" data-module="operacao">
+        <span class="nav-icon">🍽️</span><span class="nav-label">Operação do Dia</span>
+      </div>
       <div class="nav-item" data-module="colaboradores">
         <span class="nav-icon">👥</span><span class="nav-label">Colaboradores</span>
       </div>
@@ -451,6 +454,68 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
         </div>
       </div>
 
+
+
+      <!-- ===== OPERAÇÃO DO DIA ===== -->
+      <div class="module" id="mod-operacao">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🍽️ Operação do Dia</div>
+            <div style="font-size:0.78rem;color:rgba(143,170,210,0.58);margin-top:0.25rem">Tela da Luana/cozinha para acompanhar, cancelar e ajustar refeições do dia.</div>
+          </div>
+          <button class="btn-secondary" id="btnRecarregarOperacao" type="button">🔄 Recarregar</button>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" id="opTotalConfirmado">—</div><div class="stat-label">Confirmados</div></div>
+          <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="opTotalPrincipal">—</div><div class="stat-label">Principal</div></div>
+          <div class="stat-card"><div class="stat-icon">🍃</div><div class="stat-value" id="opTotalLight">—</div><div class="stat-label">Light</div></div>
+          <div class="stat-card"><div class="stat-icon">⚠️</div><div class="stat-value" id="opTotalCancelado">—</div><div class="stat-label">Cancelados/Bloqueados</div></div>
+        </div>
+
+        <div style="display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+          <select class="form-select" id="operacaoDia" style="width:auto">
+            <option value="segunda">Segunda</option>
+            <option value="terca">Terça</option>
+            <option value="quarta">Quarta</option>
+            <option value="quinta">Quinta</option>
+            <option value="sexta">Sexta</option>
+          </select>
+          <select class="form-select" id="operacaoFiltroStatus" style="width:auto">
+            <option value="">Todos os status</option>
+            <option value="Confirmado">Confirmado</option>
+            <option value="Cancelado">Cancelado</option>
+            <option value="Afastado">Afastado</option>
+            <option value="Férias">Férias</option>
+            <option value="Bloqueado">Bloqueado</option>
+            <option value="Extra">Extra</option>
+            <option value="Não vai almoçar">Não vai almoçar</option>
+          </select>
+          <input class="form-input" id="operacaoBusca" placeholder="Buscar colaborador ou centro de custo" style="max-width:280px">
+        </div>
+
+        <div class="alert alert-info">💡 Alterações feitas aqui atualizam a lista <b>Pedidos</b> no SharePoint e ficam auditadas em <b>Origem</b>, <b>Alterado_Por</b> e <b>Observacao</b>.</div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Colaborador</th>
+                <th>Centro de custo</th>
+                <th>Opção</th>
+                <th>Prato</th>
+                <th>Status</th>
+                <th>Origem</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="operacaoTable">
+              <tr><td colspan="7" style="text-align:center;color:rgba(143,170,210,0.4);padding:2rem">Carregando operação do dia...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- ===== COLABORADORES ===== -->
       <div class="module" id="mod-colaboradores">
         <div class="section-header">
@@ -489,7 +554,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="module" id="mod-extras">
         <div class="section-header">
           <div class="section-title">➕ Extras / Visitantes</div>
-          <button class="btn-primary" id="btnNovoExtra" id="btnAdicionarExtra" type="button" onclick="abrirModalExtra()" id="btnAdicionarExtra" type="button" onclick="abrirModalExtra()">+ Adicionar extra</button>
+          <button class="btn-primary" id="btnAdicionarExtra" type="button" onclick="abrirModalExtra()">+ Adicionar extra</button>
         </div>
 
         <div class="alert alert-warning">⚠️ Extras são refeições fora da lista de colaboradores: visitantes, motoristas, investigadores fixos e marmitas especiais.</div>
@@ -888,6 +953,7 @@ const MODULES={
   dashboard:{title:"Dashboard",sub:"Visão geral do refeitório"},
   cardapio:{title:"Cardápio",sub:"Gerenciar cardápio da semana"},
   pedidos:{title:"Pedidos",sub:"Ver e editar pedidos dos colaboradores"},
+  operacao:{title:"Operação do Dia",sub:"Acompanhamento e ajustes da produção diária"},
   colaboradores:{title:"Colaboradores",sub:"Cadastro e gestão de colaboradores"},
   extras:{title:"Extras / Visitantes",sub:"Refeições fora do quadro de colaboradores"},
   relatorios:{title:"Relatórios",sub:"Totais e estatísticas por semana"},
@@ -1391,6 +1457,7 @@ function loadModule(mod){
   const semanaId=getSemanaIdAtualSelecionada();
   if(mod==="dashboard") loadDashboard(semanaId);
   if(mod==="pedidos") loadPedidos(semanaId);
+  if(mod==="operacao"){ bindOperacaoDia(); loadOperacaoDia(semanaId); }
   if(mod==="colaboradores") loadColaboradores();
   if(mod==="extras") loadExtras(semanaId);
   if(mod==="relatorios") loadRelatorios(semanaId);
@@ -1558,6 +1625,128 @@ document.getElementById("btnSalvarCardapio").addEventListener("click",async()=>{
   }
 });
 
+
+// --- OPERAÇÃO DO DIA ---
+const STATUS_PRODUCAO = ["Confirmado", "Extra"];
+const STATUS_CANCELADOS = ["Cancelado", "Afastado", "Férias", "Bloqueado", "Não vai almoçar"];
+
+function normalizarDiaOperacao(dia){
+  return String(dia||"").trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+
+function getStatusPedido(p){
+  return p.Status || p.status || (p.Confirmado || p.confirmado ? "Confirmado" : "Pendente");
+}
+
+function badgeStatusOperacao(status){
+  const s=String(status||"Pendente");
+  if(STATUS_PRODUCAO.includes(s)) return "badge-green";
+  if(STATUS_CANCELADOS.includes(s)) return "badge-red";
+  return "badge-yellow";
+}
+
+function setOperacaoTotals(pedidosDia){
+  const emProducao=pedidosDia.filter(p=>STATUS_PRODUCAO.includes(getStatusPedido(p)));
+  const cancelados=pedidosDia.filter(p=>STATUS_CANCELADOS.includes(getStatusPedido(p)));
+  const principal=emProducao.filter(p=>normalizarDiaOperacao(p.Opcao||p.opcao)==="principal").length;
+  const light=emProducao.filter(p=>normalizarDiaOperacao(p.Opcao||p.opcao)==="light").length;
+
+  const byId=(id)=>document.getElementById(id);
+  if(byId("opTotalConfirmado")) byId("opTotalConfirmado").textContent=emProducao.length;
+  if(byId("opTotalPrincipal")) byId("opTotalPrincipal").textContent=principal;
+  if(byId("opTotalLight")) byId("opTotalLight").textContent=light;
+  if(byId("opTotalCancelado")) byId("opTotalCancelado").textContent=cancelados.length;
+}
+
+async function loadOperacaoDia(semanaId){
+  const tbody=document.getElementById("operacaoTable");
+  if(!tbody) return;
+  try{
+    const diaSelecionado=document.getElementById("operacaoDia")?.value || "segunda";
+    const statusFiltro=document.getElementById("operacaoFiltroStatus")?.value || "";
+    const busca=normalizarDiaOperacao(document.getElementById("operacaoBusca")?.value || "");
+    const pedidos=await SP.getPedidos(semanaId);
+    let pedidosDia=pedidos.filter(p=>normalizarDiaOperacao(p.Dia||p.dia)===normalizarDiaOperacao(diaSelecionado));
+
+    if(statusFiltro) pedidosDia=pedidosDia.filter(p=>getStatusPedido(p)===statusFiltro);
+    if(busca){
+      pedidosDia=pedidosDia.filter(p=>{
+        const nome=normalizarDiaOperacao(p.Colaborador_nome||p.colaborador_nome||"");
+        const cc=normalizarDiaOperacao(p.Centro_Custo||p.centro_custo||"");
+        return nome.includes(busca)||cc.includes(busca);
+      });
+    }
+
+    setOperacaoTotals(pedidos.filter(p=>normalizarDiaOperacao(p.Dia||p.dia)===normalizarDiaOperacao(diaSelecionado)));
+
+    if(!pedidosDia.length){
+      tbody.innerHTML="<tr><td colspan='7' style='text-align:center;color:rgba(143,170,210,0.4);padding:2rem'>Nenhum pedido encontrado para este dia.</td></tr>";
+      return;
+    }
+
+    tbody.innerHTML=pedidosDia.map(p=>{
+      const id=p.id||"";
+      const nome=p.Colaborador_nome||p.colaborador_nome||"";
+      const cc=p.Centro_Custo||p.centro_custo||"";
+      const opcao=p.Opcao||p.opcao||"";
+      const prato=p.Nome_Prato||p.nome_prato||"";
+      const status=getStatusPedido(p);
+      const origem=p.Origem||p.origem||"Refeitório";
+      return `<tr>
+        <td>${nome}</td>
+        <td>${cc || "—"}</td>
+        <td><span class="badge badge-blue">${opcao || "—"}</span></td>
+        <td>${prato || "—"}</td>
+        <td><span class="badge ${badgeStatusOperacao(status)}">${status}</span></td>
+        <td>${origem}</td>
+        <td><div class="table-actions">
+          <button class="btn-icon" title="Confirmar" onclick="alterarStatusOperacao('${id}','Confirmado')">✅</button>
+          <button class="btn-icon danger" title="Cancelar" onclick="alterarStatusOperacao('${id}','Cancelado')">❌</button>
+          <button class="btn-icon" title="Não vai almoçar" onclick="alterarStatusOperacao('${id}','Não vai almoçar')">🚫</button>
+          <button class="btn-icon" title="Editar" onclick="abrirModalEditarPedido('${id}','${String(nome).replace(/'/g,"\\'")}','${p.Dia||p.dia||""}','${opcao}')">✏️</button>
+        </div></td>
+      </tr>`;
+    }).join("");
+  }catch(e){
+    tbody.innerHTML="<tr><td colspan='7' style='text-align:center;color:rgba(255,100,100,0.6);padding:2rem'>Erro: "+e.message+"</td></tr>";
+  }
+}
+
+async function alterarStatusOperacao(id,status){
+  if(!id) return;
+  const observacao = status==="Confirmado" ? "Confirmado pela Operação do Dia" : "Status alterado pela Operação do Dia";
+  await SP.updatePedido(id,{
+    Status:status,
+    Confirmado:STATUS_PRODUCAO.includes(status),
+    Origem:"Admin",
+    Observacao:observacao,
+    Alterado_Por:SP.getUserName ? SP.getUserName() : "Admin",
+    Data_Hora:new Date().toISOString()
+  });
+  toast("Pedido atualizado: "+status,"success");
+  loadOperacaoDia(getSemanaIdAtualSelecionada());
+}
+
+function bindOperacaoDia(){
+  ["operacaoDia","operacaoFiltroStatus","operacaoBusca"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && !el.dataset.boundOperacao){
+      el.dataset.boundOperacao="1";
+      el.addEventListener(id==="operacaoBusca"?"input":"change",()=>loadOperacaoDia(getSemanaIdAtualSelecionada()));
+    }
+  });
+  const btn=document.getElementById("btnRecarregarOperacao");
+  if(btn && !btn.dataset.boundOperacao){
+    btn.dataset.boundOperacao="1";
+    btn.addEventListener("click",()=>loadOperacaoDia(getSemanaIdAtualSelecionada()));
+  }
+}
+
+setTimeout(bindOperacaoDia,700);
+window.loadOperacaoDia=loadOperacaoDia;
+window.alterarStatusOperacao=alterarStatusOperacao;
+
 // --- PEDIDOS ---
 async function loadPedidos(semanaId){
   const tbody=document.getElementById("pedidosTable");
@@ -1574,15 +1763,15 @@ async function loadPedidos(semanaId){
       var opcao=p.opcao||p.Opcao||"";
       var prato=p.Nome_Prato||p.nome_prato||"";
       var confirmado=p.confirmado||p.Confirmado;
+      var status=getStatusPedido ? getStatusPedido(p) : (confirmado?"Confirmado":"Pendente");
       var pid=p.id||"";
       rows+="<tr>";
       rows+="<td>"+nome+"</td>";
       rows+="<td>"+dia+"</td>";
       rows+="<td><span class='badge badge-blue'>"+opcao+"</span></td>";
       rows+="<td>"+prato+"</td>";
-      rows+="<td><span class='badge "+(confirmado?"badge-green":"badge-yellow")+"'>"+(confirmado?"Confirmado":"Pendente")+"</span></td>";
+      rows+="<td><span class='badge "+badgeStatusOperacao(status)+"'>"+status+"</span></td>";
       rows+="<td><div class='table-actions'>";
-      rows+=`<div class="btn-icon" title="Editar" onclick="abrirModalEditarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div>`;
       rows+=`<div class="btn-icon" title="Editar" onclick="abrirModalEditarPedido('${pid}','${nome}','${dia}','${opcao}')">✏️</div><div class="btn-icon danger" title="Remover" onclick="removerPedido('${pid}')">🗑️</div>`;
       rows+="</div></td></tr>";
     });
