@@ -1,6 +1,6 @@
 // ============================================================
 // admin-colaboradores.js — CRUD de colaboradores
-// Prioridade 1: Centro_Custo + Editar + Excluir/Desativar
+// Correção: renderização robusta da tabela Colaboradores
 // ============================================================
 
 window.AdminColaboradores = {
@@ -8,51 +8,97 @@ window.AdminColaboradores = {
   editandoId: null,
 
   async carregar() {
-    if (!window.SP) {
-      console.error("SP não encontrado. Verifique se sharepoint.js foi carregado antes dos módulos admin.");
-      return;
-    }
+    try {
+      if (!window.SP) {
+        throw new Error("SP não encontrado. Verifique o carregamento do sharepoint.js.");
+      }
 
-    const getFn = SP.getTodosColaboradores ? "getTodosColaboradores" : "getColaboradores";
-    this.lista = await SP[getFn]();
-    this.renderizarTabela();
+      const getFn = typeof SP.getTodosColaboradores === "function"
+        ? "getTodosColaboradores"
+        : "getColaboradores";
+
+      this.lista = await SP[getFn]();
+      this.renderizarTabela();
+    } catch (erro) {
+      console.error("Erro ao carregar colaboradores:", erro);
+      this.renderizarErro(erro);
+    }
+  },
+
+  encontrarTbody() {
+    return (
+      document.getElementById("colaboradoresTableBody") ||
+      document.getElementById("tbodyColaboradores") ||
+      document.querySelector("[data-colaboradores-tbody]") ||
+      document.querySelector("#colaboradores tbody") ||
+      document.querySelector("#module-colaboradores tbody") ||
+      Array.from(document.querySelectorAll("tbody")).find(tb =>
+        tb.innerText && tb.innerText.toLowerCase().includes("carregando colaboradores")
+      )
+    );
+  },
+
+  renderizarErro(erro) {
+    const tbody = this.encontrarTbody();
+    if (!tbody) return;
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center;color:#ff6060;padding:2rem;">
+          Erro ao carregar colaboradores: ${erro.message || erro}
+        </td>
+      </tr>
+    `;
   },
 
   renderizarTabela() {
-    const tbody =
-      document.getElementById("colaboradoresTableBody") ||
-      document.getElementById("tbodyColaboradores") ||
-      document.querySelector("[data-colaboradores-tbody]");
+    const tbody = this.encontrarTbody();
 
     if (!tbody) {
       console.warn("Tabela de colaboradores não encontrada no HTML atual.");
       return;
     }
 
-    const busca = AdminUtils.normalizarTexto(
-      document.getElementById("buscaColaborador")?.value || ""
-    );
+    const busca = (document.getElementById("buscaColaborador")?.value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+
+    const normalizar = valor => String(valor || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
 
     const filtrados = this.lista.filter(c => {
-      const nome = AdminUtils.normalizarTexto(c.Nome || c.Title || "");
-      const departamento = AdminUtils.normalizarTexto(c.Departamento || "");
-      const centro = AdminUtils.normalizarTexto(c.Centro_Custo || "");
+      const nome = normalizar(c.Nome || c.Title || "");
+      const departamento = normalizar(c.Departamento || "");
+      const centro = normalizar(c.Centro_Custo || "");
       return !busca || nome.includes(busca) || departamento.includes(busca) || centro.includes(busca);
     });
 
     if (!filtrados.length) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;opacity:.55;padding:2rem;">Nenhum colaborador encontrado.</td></tr>`;
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align:center;opacity:.55;padding:2rem;">
+            Nenhum colaborador encontrado.
+          </td>
+        </tr>
+      `;
       return;
     }
 
     tbody.innerHTML = filtrados.map(c => {
-      const ativo = SP.isTrue ? SP.isTrue(c.Ativo) : String(c.Ativo).toLowerCase() !== "false";
+      const ativo = typeof SP.isTrue === "function"
+        ? SP.isTrue(c.Ativo)
+        : String(c.Ativo).toLowerCase() !== "false";
+
       return `
         <tr>
           <td>${c.Nome || c.Title || ""}</td>
           <td>${c.Departamento || ""}</td>
           <td>${c.Centro_Custo || "-"}</td>
-          <td><span class="badge badge-blue">${c.tipo || "Colaborador"}</span></td>
+          <td><span class="badge badge-blue">${c.tipo || c.Tipo || "Colaborador"}</span></td>
           <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${ativo ? "ATIVO" : "INATIVO"}</span></td>
           <td>
             <div class="table-actions">
@@ -68,47 +114,78 @@ window.AdminColaboradores = {
   abrirNovo() {
     this.editandoId = null;
     this.preencherModal({});
-    AdminUtils.abrirModal("modalColaborador");
+    this.abrirModal();
+  },
+
+  abrirModal() {
+    const modal =
+      document.getElementById("modalColaborador") ||
+      document.getElementById("modalNovoColaborador");
+    if (modal) modal.classList.add("open");
+  },
+
+  fecharModal() {
+    const modal =
+      document.getElementById("modalColaborador") ||
+      document.getElementById("modalNovoColaborador");
+    if (modal) modal.classList.remove("open");
   },
 
   abrirEditar(id) {
     const c = this.lista.find(x => String(x.id) === String(id));
     if (!c) {
-      AdminUtils.toast("Colaborador não encontrado para edição.", "warning");
+      alert("Colaborador não encontrado para edição.");
       return;
     }
 
     this.editandoId = id;
     this.preencherModal(c);
-    AdminUtils.abrirModal("modalColaborador");
+    this.abrirModal();
   },
 
   preencherModal(c) {
-    const set = (id, value) => {
-      const el = document.getElementById(id);
-      if (el) el.value = value || "";
+    const set = (ids, value) => {
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) {
+          el.value = value || "";
+          return;
+        }
+      }
     };
 
-    set("colabNome", c.Nome || c.Title || "");
-    set("colabDepartamento", c.Departamento || "");
-    set("colabEmail", c.Email || "");
-    set("colabTipo", c.tipo || "Colaborador");
-    set("colabCentroCusto", c.Centro_Custo || "");
+    set(["colabNome", "nomeColaborador"], c.Nome || c.Title || "");
+    set(["colabDepartamento", "departamentoColaborador"], c.Departamento || "");
+    set(["colabEmail", "emailColaborador"], c.Email || "");
+    set(["colabTipo", "tipoColaborador"], c.tipo || c.Tipo || "Colaborador");
+    set(["colabCentroCusto", "centroCustoColaborador"], c.Centro_Custo || "");
 
-    const titulo = document.getElementById("modalColaboradorTitulo");
+    const titulo =
+      document.getElementById("modalColaboradorTitulo") ||
+      document.querySelector("#modalColaborador .modal-title") ||
+      document.querySelector("#modalNovoColaborador .modal-title");
+
     if (titulo) titulo.textContent = this.editandoId ? "EDITAR COLABORADOR" : "NOVO COLABORADOR";
   },
 
   obterDadosFormulario() {
-    const val = id => document.getElementById(id)?.value?.trim() || "";
+    const val = ids => {
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) return el.value.trim();
+      }
+      return "";
+    };
+
+    const centroCusto = val(["colabCentroCusto", "centroCustoColaborador"]);
 
     return {
-      nome: val("colabNome"),
-      departamento: val("colabDepartamento"),
-      email: val("colabEmail"),
-      tipo: val("colabTipo") || "Colaborador",
-      centroCusto: val("colabCentroCusto"),
-      Centro_Custo: val("colabCentroCusto")
+      nome: val(["colabNome", "nomeColaborador"]),
+      departamento: val(["colabDepartamento", "departamentoColaborador"]),
+      email: val(["colabEmail", "emailColaborador"]),
+      tipo: val(["colabTipo", "tipoColaborador"]) || "Colaborador",
+      centroCusto,
+      Centro_Custo: centroCusto
     };
   },
 
@@ -116,24 +193,24 @@ window.AdminColaboradores = {
     const dados = this.obterDadosFormulario();
 
     if (!dados.nome) {
-      AdminUtils.toast("Informe o nome do colaborador.", "warning");
+      alert("Informe o nome do colaborador.");
       return;
     }
 
     if (!dados.centroCusto) {
-      AdminUtils.toast("Informe o Centro de Custo do colaborador.", "warning");
+      alert("Informe o Centro de Custo do colaborador.");
       return;
     }
 
     if (this.editandoId) {
       await SP.updateColaborador(this.editandoId, dados);
-      AdminUtils.toast("Colaborador atualizado com sucesso.", "success");
+      alert("Colaborador atualizado com sucesso.");
     } else {
       await SP.createColaborador(dados);
-      AdminUtils.toast("Colaborador cadastrado com sucesso.", "success");
+      alert("Colaborador cadastrado com sucesso.");
     }
 
-    AdminUtils.fecharModal("modalColaborador");
+    this.fecharModal();
     await this.carregar();
   },
 
@@ -142,12 +219,33 @@ window.AdminColaboradores = {
     if (!ok) return;
 
     await SP.desativarColaborador(id);
-    AdminUtils.toast("Colaborador desativado.", "success");
     await this.carregar();
   }
 };
 
-// Compatibilidade com onclicks antigos do admin/index.html
+// Compatibilidade com funções antigas do HTML
 window.abrirModalColaborador = () => AdminColaboradores.abrirNovo();
 window.salvarColaborador = () => AdminColaboradores.salvar();
 window.carregarColaboradores = () => AdminColaboradores.carregar();
+
+// Reforço: quando clicar na aba Colaboradores, recarrega a tabela
+document.addEventListener("click", function(e) {
+  const alvo = e.target.closest("[onclick], .nav-item, button, a");
+  if (!alvo) return;
+
+  const texto = (alvo.innerText || alvo.getAttribute("onclick") || "").toLowerCase();
+  if (texto.includes("colaboradores")) {
+    setTimeout(() => AdminColaboradores.carregar(), 250);
+  }
+});
+
+// Se a tela já abrir na aba colaboradores ou após o carregamento inicial
+document.addEventListener("DOMContentLoaded", function() {
+  setTimeout(() => {
+    const ativo = document.querySelector(".nav-item.active, .module.active");
+    const texto = ativo ? ativo.innerText.toLowerCase() : "";
+    if (texto.includes("colaboradores")) {
+      AdminColaboradores.carregar();
+    }
+  }, 800);
+});
