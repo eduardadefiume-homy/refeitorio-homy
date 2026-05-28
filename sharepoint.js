@@ -681,8 +681,7 @@ const SP = {
 
   getUserEmail() {
     return this._account ? this._account.username : "";
-  }
-
+  },
 
   // ============================================================
   // VALORES REFEIÇÃO
@@ -725,6 +724,8 @@ const SP = {
       fields.Ativo = dados.ativo;
 
     return this.updateItem("Valores_Refeicao", id, fields);
-  },
+  }
 
 };
+
+window.SP = SP;
