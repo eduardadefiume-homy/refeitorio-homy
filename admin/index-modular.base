@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin · Refeitório Homy — Arquitetura Modular</title>
+
+  <!-- Dependências principais -->
+  <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="../sharepoint.js"></script>
+
+  <!-- CSS modular -->
+  <link rel="stylesheet" href="css/admin.css">
+
+  <!-- JS modular -->
+  <script src="js/admin-state.js"></script>
+  <script src="js/admin-utils.js"></script>
+  <script src="js/admin-core.js"></script>
+  <script src="js/admin-dashboard.js"></script>
+  <script src="js/admin-cardapio.js"></script>
+  <script src="js/admin-pedidos.js"></script>
+  <script src="js/admin-operacao-dia.js"></script>
+  <script src="js/admin-colaboradores.js"></script>
+  <script src="js/admin-extras.js"></script>
+  <script src="js/admin-relatorios.js"></script>
+  <script src="js/admin-valores.js"></script>
+  <script src="js/admin-ausencias.js"></script>
+  <script src="js/admin-configuracoes.js"></script>
+</head>
+<body>
+  <h1>Admin Modular — Refeitório Homy</h1>
+  <p>Arquivo base seguro para evolução. O admin atual permanece em <code>admin/index.html</code>.</p>
+</body>
+</html>
