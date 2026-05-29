@@ -2,10 +2,10 @@
 // admin-relatorios.js
 // DEFINITIVO: sobrescreve loadRelatorios do admin-extensions
 // e controla a tela Relatórios inteira.
+// Correção: exporta Excel mesmo sem pedidos no período.
 // ============================================================
 
 (function () {
-  const DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"];
   const DIA_LABEL = {
     segunda: "Segunda-feira",
     terca: "Terça-feira",
@@ -20,6 +20,12 @@
     "resumo-dia": "Resumo por dia",
     "centro-custo": "Valor total por centro de custo",
     "colaborador": "Quantidade por colaborador"
+  };
+
+  const COLUNAS_TIPO = {
+    "resumo-dia": ["Dia", "Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
+    "centro-custo": ["Centro de custo", "Quantidade", "Valor Vascon", "Desconto funcionários", "Rateio NF"],
+    "colaborador": ["Colaborador", "Centro de custo", "Quantidade", "Valor de cada refeição", "Desconto em folha", "Valor Vascon estimado"]
   };
 
   const state = {
@@ -484,6 +490,11 @@
     return resultado.resumoDia;
   }
 
+  function colunasDoTipo(tipo, linhas) {
+    if (linhas && linhas.length) return Object.keys(linhas[0]);
+    return COLUNAS_TIPO[tipo] || ["Sem dados"];
+  }
+
   function valorTela(valor) {
     if (typeof valor === "number") return String(valor).replace(".", ",");
     return valor ?? "";
@@ -491,7 +502,7 @@
 
   function renderTabela(resultado) {
     const linhas = linhasDoTipo(resultado);
-    const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
+    const colunas = colunasDoTipo(resultado.filtros.tipo, linhas);
     const titulo = TIPOS[resultado.filtros.tipo] || "Relatório";
 
     $("relTituloTabela").textContent = titulo;
@@ -571,7 +582,7 @@
 
     const titulo = TIPOS[resultado.filtros.tipo] || "Relatório";
     const linhas = linhasDoTipo(resultado);
-    const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
+    const colunas = colunasDoTipo(resultado.filtros.tipo, linhas);
     const totalCols = Math.max(colunas.length, 6);
 
     const wb = new ExcelJS.Workbook();
@@ -632,7 +643,9 @@
         });
       });
     } else {
-      ws.addRow(["Sem dados no período."]);
+      const row = ws.addRow(["Sem dados no período."]);
+      row.getCell(1).font = { italic: true, color: { argb: "FF64748B" } };
+      row.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
     }
 
     ws.columns.forEach(col => {
@@ -656,13 +669,13 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    if (typeof window.toast === "function") {
+      toast("Relatório exportado com sucesso.", "success");
+    }
   }
 
-  // ======================================================================
-  // ESTE É O PONTO PRINCIPAL:
-  // o admin-extensions.js define loadRelatorios e recria a tela antiga.
-  // Aqui nós sobrescrevemos de novo, depois dele.
-  // ======================================================================
+  // Sobrescreve funções antigas do admin-extensions.
   window.loadRelatorios = async function (semanaId) {
     criarTelaRelatorios();
     await gerarRelatorioFinal(semanaId || semanaAtualFallback());
@@ -679,8 +692,27 @@
     exportarExcel: exportarRelatorioExcelFinal
   };
 
+  // Intercepta qualquer clique em exportar relatório para impedir a função antiga
+  // "Nenhum pedido encontrado para exportar".
   document.addEventListener("click", event => {
-    const item = event.target.closest("[data-module='relatorios'], .nav-item, button, a");
+    const btn = event.target.closest("button, a");
+    if (!btn) return;
+
+    const texto = normalizar(btn.innerText || "");
+    const estaRelatorios = !!$("mod-relatorios")?.classList.contains("active") ||
+      normalizar(document.querySelector(".nav-item.active")?.innerText || "").includes("relatorios");
+
+    if (estaRelatorios && texto.includes("exportar")) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      exportarRelatorioExcelFinal();
+      return false;
+    }
+  }, true);
+
+  document.addEventListener("click", event => {
+    const item = event.target.closest("[data-module='relatorios'], .nav-item");
     if (!item) return;
 
     const texto = normalizar(`${item.innerText || ""} ${item.dataset?.module || ""}`);
