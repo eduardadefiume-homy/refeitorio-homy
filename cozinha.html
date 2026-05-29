@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#040c1a">
+<title>Cozinha · Refeitório Homy</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+:root {
+  --bg:        #040c1a;
+  --surface:   rgba(255,255,255,0.045);
+  --border:    rgba(255,255,255,0.08);
+  --border-hi: rgba(255,255,255,0.15);
+  --text:      #e8f0ff;
+  --muted:     rgba(143,170,210,0.6);
+  --accent:    #c0281c;
+  --blue:      rgba(26,100,200,0.35);
+  --green:     #1a9e5c;
+  --green-bg:  rgba(26,158,92,0.13);
+  --green-bd:  rgba(26,158,92,0.3);
+}
+
+html, body {
+  width:100%; min-height:100%;
+  background: var(--bg);
+  font-family: "Barlow", sans-serif;
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+/* ── background grid + glow ──────────────────────────────────────────────── */
+body::before {
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(rgba(30,80,200,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30,80,200,0.055) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+body::after {
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 40% at 50% 100%, rgba(20,60,160,0.2) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 25% at 50% 0%, rgba(192,40,28,0.08) 0%, transparent 70%);
+}
+
+/* ── layout ──────────────────────────────────────────────────────────────── */
+#root {
+  position: relative; z-index:1;
+  display: flex; flex-direction: column;
+  min-height: 100vh;
+  padding: 0 0 2rem;
+}
+
+/* ── header ──────────────────────────────────────────────────────────────── */
+.header {
+  position: sticky; top:0; z-index:20;
+  background: rgba(4,12,26,0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 1.2rem 0.9rem;
+}
+
+.header-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.logo-row {
+  display: flex; align-items: center; gap: 0.7rem;
+}
+.logo-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(192,40,28,0.6);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%,100%{ opacity:1; transform:scale(1); }
+  50%    { opacity:0.5; transform:scale(0.7); }
+}
+.logo-label {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 1rem; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text);
+}
+.logo-sub {
+  font-size: 0.65rem; font-weight: 400;
+  color: var(--muted); letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.sync-pill {
+  display: flex; align-items: center; gap: 0.4rem;
+  background: rgba(26,100,200,0.12);
+  border: 1px solid rgba(26,100,200,0.25);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 0.6rem; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(100,180,255,0.8);
+  cursor: pointer;
+  transition: background .2s, border-color .2s;
+}
+.sync-pill:hover { background: rgba(26,100,200,0.22); }
+.sync-icon { font-size: 0.75rem; }
+.sync-icon.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── data bar ─────────────────────────────────────────────────────────────── */
+.date-bar {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.date-weekday {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 1.45rem; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: #fff; line-height:1;
+}
+.date-full {
+  font-size: 0.72rem; font-weight: 500;
+  color: var(--muted); letter-spacing: 0.08em;
+}
+
+/* ── cardápio do dia ─────────────────────────────────────────────────────── */
+.cardapio-banner {
+  margin: 0.8rem 1.2rem 0;
+  padding: 0.7rem 1rem;
+  background: rgba(26,100,200,0.1);
+  border: 1px solid rgba(26,100,200,0.22);
+  border-radius: 12px;
+  display: flex; align-items: center; gap: 0.8rem;
+  flex-wrap: wrap;
+}
+.cardapio-icon { font-size: 1.2rem; flex-shrink:0; }
+.cardapio-label {
+  font-size: 0.62rem; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(100,180,255,0.7);
+  margin-bottom: 0.15rem;
+}
+.cardapio-items {
+  font-size: 0.82rem; font-weight: 500;
+  color: var(--text);
+  display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem;
+}
+.cardapio-item {
+  display: flex; align-items: center; gap: 0.3rem;
+}
+.cardapio-item::before {
+  content: "·";
+  color: var(--accent);
+  font-weight: 700;
+}
+.cardapio-item:first-child::before { display:none; }
+
+/* ── contador ─────────────────────────────────────────────────────────────── */
+.counter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.9rem 1.2rem 0.2rem;
+  position: relative; z-index:1;
+}
+.counter-title {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 0.78rem; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+}
+.counter-nums {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.72rem; font-weight: 600;
+}
+.cnt-done {
+  color: #40d090;
+  background: rgba(26,158,92,0.12);
+  border: 1px solid rgba(26,158,92,0.25);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.cnt-total {
+  color: var(--muted);
+}
+.cnt-sep { color: var(--border-hi); }
+
+/* ── lista ────────────────────────────────────────────────────────────────── */
+.list {
+  padding: 0.5rem 1.2rem 1rem;
+  display: flex; flex-direction: column; gap: 0.55rem;
+  position: relative; z-index:1;
+}
+
+/* ── card colaborador ─────────────────────────────────────────────────────── */
+.colab-card {
+  display: flex; align-items: center; gap: 0.9rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .1s, opacity .2s;
+  position: relative; overflow: hidden;
+  animation: card-in .35s ease both;
+}
+.colab-card::before {
+  content:"";
+  position:absolute; top:0; left:0; right:0; height:1px;
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent);
+}
+@keyframes card-in {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.colab-card:hover:not(.done) {
+  background: rgba(255,255,255,0.07);
+  border-color: var(--border-hi);
+  transform: translateY(-1px);
+}
+.colab-card:active:not(.done) { transform: scale(0.98); }
+
+/* estado: feito ── */
+.colab-card.done {
+  background: var(--green-bg);
+  border-color: var(--green-bd);
+  cursor: default;
+  pointer-events: none;
+}
+.colab-card.done .colab-name  { color: rgba(64,208,144,0.9); }
+.colab-card.done .colab-opcao { color: rgba(64,208,144,0.55); }
+
+/* avatar ── */
+.avatar {
+  width:40px; height:40px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0;
+  font-family: "Barlow Condensed", sans-serif;
+  font-size:1rem; font-weight:700; letter-spacing:0.03em;
+  background: var(--blue);
+  border: 1px solid rgba(26,100,200,0.3);
+  color: rgba(140,200,255,0.85);
+  transition: background .2s, border-color .2s;
+}
+.colab-card.done .avatar {
+  background: rgba(26,158,92,0.2);
+  border-color: rgba(26,158,92,0.35);
+  color: #40d090;
+}
+
+/* info ── */
+.colab-info { flex:1; min-width:0; }
+.colab-name {
+  font-size: 0.9rem; font-weight: 600;
+  color: var(--text);
+  white-space: nowrap; overflow:hidden; text-overflow:ellipsis;
+  transition: color .2s;
+}
+.colab-opcao {
+  font-size: 0.72rem; font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap; overflow:hidden; text-overflow:ellipsis;
+  margin-top: 0.1rem;
+  transition: color .2s;
+}
+
+/* status badge ── */
+.status-badge {
+  flex-shrink:0;
+  font-size: 0.58rem; font-weight:700;
+  letter-spacing: 0.08em; text-transform:uppercase;
+  padding: 3px 8px; border-radius:6px;
+}
+.badge-pending {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(143,170,210,0.5);
+}
+.badge-done {
+  background: rgba(26,158,92,0.18);
+  border: 1px solid rgba(26,158,92,0.3);
+  color: #40d090;
+}
+
+/* check icon ── */
+.check-icon {
+  font-size: 1.1rem;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity .25s, transform .25s;
+  flex-shrink:0;
+}
+.colab-card.done .check-icon {
+  opacity:1; transform:scale(1);
+}
+
+/* ── estado vazio ─────────────────────────────────────────────────────────── */
+.empty-state {
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center;
+  padding: 3.5rem 2rem;
+  color: var(--muted);
+  text-align:center;
+  gap: 0.6rem;
+}
+.empty-icon { font-size:2.5rem; opacity:0.35; }
+.empty-title { font-size:0.95rem; font-weight:600; color:rgba(143,170,210,0.5); }
+.empty-sub   { font-size:0.75rem; font-weight:400; max-width:220px; line-height:1.5; }
+
+/* ── loading skeleton ─────────────────────────────────────────────────────── */
+.skeleton {
+  height:62px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.04) 75%);
+  background-size:200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius:14px;
+  border:1px solid var(--border);
+}
+@keyframes shimmer {
+  0%  { background-position:200% 0; }
+  100%{ background-position:-200% 0; }
+}
+
+/* ── MODAL overlay ────────────────────────────────────────────────────────── */
+#modal-overlay {
+  position:fixed; inset:0; z-index:100;
+  background: rgba(4,12,26,0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display:flex; align-items:center; justify-content:center;
+  padding:1.5rem;
+  opacity:0; pointer-events:none;
+  transition: opacity .2s;
+}
+#modal-overlay.open {
+  opacity:1; pointer-events:all;
+}
+
+.modal {
+  background: #0a1628;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  padding: 1.8rem 1.5rem;
+  width:100%; max-width:340px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  transform: scale(0.92) translateY(10px);
+  transition: transform .22s cubic-bezier(.22,1,.36,1);
+  text-align:center;
+}
+#modal-overlay.open .modal {
+  transform: scale(1) translateY(0);
+}
+
+.modal-icon   { font-size:2.2rem; margin-bottom:0.8rem; }
+.modal-title  {
+  font-family:"Barlow Condensed",sans-serif;
+  font-size:1.2rem; font-weight:700;
+  letter-spacing:0.04em; text-transform:uppercase;
+  color:#fff; margin-bottom:0.4rem;
+}
+.modal-sub {
+  font-size:0.82rem; color:var(--muted);
+  line-height:1.5; margin-bottom:1.4rem;
+}
+.modal-sub strong { color:var(--text); font-weight:600; }
+
+.modal-btns {
+  display:flex; gap:0.7rem;
+}
+.btn {
+  flex:1; padding:0.72rem 0.5rem;
+  border-radius:12px; border:none; cursor:pointer;
+  font-family:"Barlow",sans-serif;
+  font-size:0.83rem; font-weight:600;
+  letter-spacing:0.04em;
+  transition: background .15s, transform .1s;
+}
+.btn:active { transform:scale(0.97); }
+.btn-cancel {
+  background: rgba(255,255,255,0.07);
+  border:1px solid rgba(255,255,255,0.12);
+  color:var(--muted);
+}
+.btn-cancel:hover { background: rgba(255,255,255,0.11); }
+.btn-confirm {
+  background: linear-gradient(135deg, #1a9e5c, #15834d);
+  border: 1px solid rgba(26,158,92,0.4);
+  color:#fff;
+  box-shadow: 0 4px 16px rgba(26,158,92,0.25);
+}
+.btn-confirm:hover { background: linear-gradient(135deg,#20b868,#1a9e5c); }
+
+/* ── toast ────────────────────────────────────────────────────────────────── */
+#toast {
+  position:fixed; bottom:1.8rem; left:50%; transform:translateX(-50%) translateY(20px);
+  z-index:200;
+  background: #0d2010;
+  border:1px solid rgba(26,158,92,0.4);
+  border-radius:12px;
+  padding:0.65rem 1.2rem;
+  font-size:0.8rem; font-weight:600; color:#40d090;
+  white-space:nowrap;
+  opacity:0; pointer-events:none;
+  transition: opacity .25s, transform .25s;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+#toast.show {
+  opacity:1; transform:translateX(-50%) translateY(0);
+}
+
+/* ── rodapé ───────────────────────────────────────────────────────────────── */
+.footer {
+  position:relative; z-index:1;
+  text-align:center;
+  padding:0 1.2rem;
+  font-size:0.62rem; color:rgba(143,170,210,0.3);
+  letter-spacing:0.1em; text-transform:uppercase;
+}
+</style>
+</head>
+<body>
+
+<!-- ── MODAL de confirmação ─────────────────────────────────────────────── -->
+<div id="modal-overlay">
+  <div class="modal">
+    <div class="modal-icon">🍽️</div>
+    <div class="modal-title">Confirmar retirada</div>
+    <div class="modal-sub" id="modal-msg">Confirmar retirada para <strong id="modal-nome"></strong>?</div>
+    <div class="modal-btns">
+      <button class="btn btn-cancel" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-confirm" onclick="confirmarCheckin()">Confirmar ✓</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ────────────────────────────────────────────────────────────── -->
+<div id="toast">✓ Retirada confirmada</div>
+
+<!-- ── ROOT ─────────────────────────────────────────────────────────────── -->
+<div id="root">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-top">
+      <div class="logo-row">
+        <div class="logo-dot"></div>
+        <div>
+          <div class="logo-label">Cozinha</div>
+          <div class="logo-sub">Homy Química</div>
+        </div>
+      </div>
+      <div class="sync-pill" onclick="sincronizar()" title="Atualizar lista">
+        <span class="sync-icon" id="sync-icon">↻</span>
+        <span id="sync-label">Atualizar</span>
+      </div>
+    </div>
+    <div class="date-bar">
+      <span class="date-weekday" id="date-weekday">—</span>
+      <span class="date-full"    id="date-full">—</span>
+    </div>
+  </div>
+
+  <!-- CARDÁPIO DO DIA -->
+  <div class="cardapio-banner" id="cardapio-banner" style="display:none">
+    <span class="cardapio-icon">🍱</span>
+    <div>
+      <div class="cardapio-label">Cardápio de hoje</div>
+      <div class="cardapio-items" id="cardapio-items"></div>
+    </div>
+  </div>
+
+  <!-- CONTADOR -->
+  <div class="counter-row">
+    <span class="counter-title">Lista do dia</span>
+    <div class="counter-nums">
+      <span class="cnt-done" id="cnt-done">0 entregues</span>
+      <span class="cnt-sep">·</span>
+      <span class="cnt-total" id="cnt-total">0 total</span>
+    </div>
+  </div>
+
+  <!-- LISTA -->
+  <div class="list" id="lista">
+    <!-- skeletons iniciais -->
+    <div class="skeleton" style="animation-delay:.05s"></div>
+    <div class="skeleton" style="animation-delay:.12s"></div>
+    <div class="skeleton" style="animation-delay:.19s"></div>
+    <div class="skeleton" style="animation-delay:.26s"></div>
+    <div class="skeleton" style="animation-delay:.33s"></div>
+  </div>
+
+  <!-- RODAPÉ -->
+  <div class="footer" id="footer-sync">Atualiza automaticamente a cada 2 min</div>
+
+</div><!-- /root -->
+
+<!-- =====================================================================
+     CONFIGURAÇÃO — mesma do index.html
+     ===================================================================== -->
+<script>
+const SP_CONFIG = {
+  tenantId:     "a2850abc-334a-4805-b6b2-420b4aef68a9",
+  clientId:     "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
+  clientSecret: "25e6e2a6-1201-4a48-bb21-0424244eb1ed",          // ← mesmo secret do index.html
+  siteHostname: "homyquimica.sharepoint.com",
+  sitePath:     "/sites/Refeitrio-Homy",
+  listPedidos:   "Pedidos",
+  listCardapio:  "Cardápio",
+  listCheckIn:   "CheckIn"
+};
+</script>
+
+<script>
+// ── Constantes de dia ─────────────────────────────────────────────────────────
+const DIAS_PT   = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+const DIAS_KEY  = ["domingo","segunda","terca","quarta","quinta","sexta","sabado"];
+const MESES_PT  = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+
+// ── Estado global ─────────────────────────────────────────────────────────────
+let _token     = null;
+let _siteId    = null;
+let _pedidos   = [];        // [{id, nome, opcao, pedidoId}]
+let _feitos    = new Set(); // ids de pedidos já entregues (localmente)
+let _pendente  = null;      // card aguardando confirmação modal
+let _autoTimer = null;
+
+// ── Renderizar data ────────────────────────────────────────────────────────────
+(function renderData(){
+  const d = new Date();
+  document.getElementById("date-weekday").textContent = DIAS_PT[d.getDay()];
+  document.getElementById("date-full").textContent =
+    d.getDate().toString().padStart(2,"0") + "/" +
+    (d.getMonth()+1).toString().padStart(2,"0") + "/" +
+    d.getFullYear();
+})();
+
+// ── Token client credentials ──────────────────────────────────────────────────
+async function getToken(){
+  if(SP_CONFIG.clientSecret === "COLE_AQUI_O_CLIENT_SECRET"){
+    throw new Error("clientSecret não configurado");
+  }
+  const r = await fetch(
+    `https://login.microsoftonline.com/${SP_CONFIG.tenantId}/oauth2/v2.0/token`,
+    {
+      method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body: new URLSearchParams({
+        grant_type:    "client_credentials",
+        client_id:     SP_CONFIG.clientId,
+        client_secret: SP_CONFIG.clientSecret,
+        scope:         "https://graph.microsoft.com/.default"
+      })
+    }
+  );
+  if(!r.ok) throw new Error("Token HTTP " + r.status);
+  const j = await r.json();
+  _token = j.access_token;
+  return _token;
+}
+
+async function graph(path){
+  if(!_token) await getToken();
+  const r = await fetch("https://graph.microsoft.com/v1.0" + path, {
+    headers:{ Authorization:"Bearer " + _token }
+  });
+  if(r.status === 401){ _token=null; await getToken(); return graph(path); }
+  if(!r.ok) throw new Error("Graph " + r.status + " " + path);
+  return r.json();
+}
+
+async function graphPost(path, body){
+  if(!_token) await getToken();
+  const r = await fetch("https://graph.microsoft.com/v1.0" + path, {
+    method:"POST",
+    headers:{ Authorization:"Bearer " + _token, "Content-Type":"application/json" },
+    body: JSON.stringify(body)
+  });
+  if(!r.ok) throw new Error("GraphPost " + r.status);
+  return r.json();
+}
+
+async function graphPatch(path, body){
+  if(!_token) await getToken();
+  const r = await fetch("https://graph.microsoft.com/v1.0" + path, {
+    method:"PATCH",
+    headers:{ Authorization:"Bearer " + _token, "Content-Type":"application/json" },
+    body: JSON.stringify(body)
+  });
+  if(!r.ok) throw new Error("GraphPatch " + r.status);
+}
+
+async function getSiteId(){
+  if(_siteId) return _siteId;
+  const d = await graph(`/sites/${SP_CONFIG.siteHostname}:${SP_CONFIG.sitePath}`);
+  _siteId = d.id;
+  return _siteId;
+}
+
+// ── Dia da semana atual para filtro ──────────────────────────────────────────
+function diaHojeKey(){
+  const d = new Date();
+  return DIAS_KEY[d.getDay()]; // ex: "segunda"
+}
+
+// ── Buscar cardápio do dia ────────────────────────────────────────────────────
+async function buscarCardapio(){
+  const siteId = await getSiteId();
+  const diaKey = diaHojeKey();
+  // Busca item do cardápio onde Dia == dia atual da semana
+  const enc = encodeURIComponent(`fields/Dia eq '${diaKey}'`);
+  const r = await graph(`/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listCardapio)}/items?expand=fields&$filter=${enc}`);
+  const items = r.value || [];
+  if(!items.length) return;
+
+  // Monta lista de opções (campos: Principal, Massa, Salada, Sopa, Sobremesa — conforme sua lista)
+  const f = items[0].fields;
+  const opcoes = [];
+  const campos = ["Principal","Massa","Salada","Sopa","Sobremesa","Opcao1","Opcao2","Opcao3","Descricao","Prato"];
+  for(const c of campos){
+    if(f[c] && f[c].toString().trim()) opcoes.push(f[c].toString().trim());
+  }
+
+  if(!opcoes.length) return;
+
+  const banner = document.getElementById("cardapio-banner");
+  const el     = document.getElementById("cardapio-items");
+  el.innerHTML = opcoes.map(o=>`<span class="cardapio-item">${o}</span>`).join("");
+  banner.style.display = "flex";
+}
+
+// ── Buscar pedidos do dia ────────────────────────────────────────────────────
+async function buscarPedidos(){
+  const siteId = await getSiteId();
+  const diaKey = diaHojeKey();
+
+  // Busca pedidos onde Dia == diaKey  (ajuste o nome do campo conforme sua lista)
+  const enc = encodeURIComponent(`fields/Dia eq '${diaKey}'`);
+  const r = await graph(
+    `/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listPedidos)}/items?expand=fields&$filter=${enc}&$orderby=fields/NomeColaborador asc`
+  );
+  const items = r.value || [];
+
+  // Monta estrutura local
+  _pedidos = items.map(item => {
+    const f = item.fields;
+    // Tenta vários nomes de campo compatíveis com sua lista
+    const nome  = f.NomeColaborador || f.Nome || f.Title || "—";
+    const opcao = f.OpcaoEscolhida  || f.Opcao || f.Refeicao || f.Prato || "—";
+    return {
+      id:       item.id,
+      nome:     nome,
+      opcao:    opcao,
+      spItemId: item.id
+    };
+  });
+
+  // Busca check-ins já feitos hoje
+  await buscarCheckIns(siteId, diaKey);
+}
+
+// ── Buscar check-ins já registrados ──────────────────────────────────────────
+async function buscarCheckIns(siteId, diaKey){
+  try {
+    const enc = encodeURIComponent(`fields/Dia eq '${diaKey}'`);
+    const r = await graph(
+      `/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listCheckIn)}/items?expand=fields&$filter=${enc}`
+    );
+    const items = r.value || [];
+    _feitos = new Set(items.map(i => i.fields.PedidoId || i.fields.Title || ""));
+  } catch(e){
+    console.warn("CheckIn list error:", e.message);
+    _feitos = new Set();
+  }
+}
+
+// ── Registrar check-in no SharePoint ─────────────────────────────────────────
+async function registrarCheckIn(pedido){
+  const siteId = await getSiteId();
+  const diaKey = diaHojeKey();
+  const agora  = new Date().toISOString();
+
+  // Cria item na lista CheckIn
+  await graphPost(
+    `/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listCheckIn)}/items`,
+    {
+      fields:{
+        Title:           pedido.spItemId,
+        PedidoId:        pedido.spItemId,
+        NomeColaborador: pedido.nome,
+        OpcaoEscolhida:  pedido.opcao,
+        Dia:             diaKey,
+        DataHora:        agora,
+        Confirmado:      true
+      }
+    }
+  );
+
+  // Também atualiza o campo Confirmado no próprio pedido (se o campo existir)
+  try {
+    await graphPatch(
+      `/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listPedidos)}/items/${pedido.spItemId}`,
+      { fields:{ Confirmado: true, DataConfirmacao: agora } }
+    );
+  } catch(_){ /* campo pode não existir — ignora */ }
+}
+
+// ── Renderizar lista ──────────────────────────────────────────────────────────
+function renderLista(){
+  const lista = document.getElementById("lista");
+  lista.innerHTML = "";
+
+  if(!_pedidos.length){
+    lista.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🍽️</div>
+        <div class="empty-title">Nenhum pedido para hoje</div>
+        <div class="empty-sub">Os pedidos aparecerão aqui assim que os colaboradores marcarem a refeição.</div>
+      </div>`;
+    atualizarContador();
+    return;
+  }
+
+  _pedidos.forEach((p, idx) => {
+    const feito = _feitos.has(p.spItemId);
+    const iniciais = p.nome.split(" ").slice(0,2).map(w=>w[0]||"").join("").toUpperCase();
+
+    const card = document.createElement("div");
+    card.className = "colab-card" + (feito ? " done" : "");
+    card.style.animationDelay = (idx * 0.04) + "s";
+    card.dataset.id = p.spItemId;
+
+    card.innerHTML = `
+      <div class="avatar">${feito ? "✓" : iniciais}</div>
+      <div class="colab-info">
+        <div class="colab-name">${escHTML(p.nome)}</div>
+        <div class="colab-opcao">${escHTML(p.opcao)}</div>
+      </div>
+      <span class="status-badge ${feito ? "badge-done" : "badge-pending"}">${feito ? "Entregue" : "Pendente"}</span>
+      <span class="check-icon">✓</span>`;
+
+    if(!feito){
+      card.addEventListener("click", () => abrirModal(p));
+    }
+
+    lista.appendChild(card);
+  });
+
+  atualizarContador();
+}
+
+function escHTML(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function atualizarContador(){
+  const total  = _pedidos.length;
+  const feitos = _pedidos.filter(p => _feitos.has(p.spItemId)).length;
+  document.getElementById("cnt-done").textContent  = feitos + " entregue" + (feitos!==1?"s":"");
+  document.getElementById("cnt-total").textContent = total  + " total";
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function abrirModal(pedido){
+  _pendente = pedido;
+  document.getElementById("modal-nome").textContent = pedido.nome;
+  document.getElementById("modal-msg").innerHTML =
+    `Confirmar retirada para <strong>${escHTML(pedido.nome)}</strong>?<br>
+     <span style="font-size:.75rem;color:rgba(143,170,210,.5)">${escHTML(pedido.opcao)}</span>`;
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+function fecharModal(){
+  document.getElementById("modal-overlay").classList.remove("open");
+  _pendente = null;
+}
+
+async function confirmarCheckin(){
+  if(!_pendente) return;
+  const p = _pendente;
+  fecharModal();
+
+  // Atualiza UI imediatamente (optimistic update)
+  _feitos.add(p.spItemId);
+  renderLista();
+  mostrarToast("✓ " + p.nome + " — retirada confirmada");
+
+  // Persiste no SharePoint em background
+  try {
+    await registrarCheckIn(p);
+  } catch(e){
+    console.error("Erro ao registrar check-in:", e.message);
+    // não desfaz — registro local garantido, SharePoint tenta novamente no próximo sync
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function mostrarToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2800);
+}
+
+// ── Sincronizar (manual ou automático) ───────────────────────────────────────
+async function sincronizar(){
+  const icon  = document.getElementById("sync-icon");
+  const label = document.getElementById("sync-label");
+  icon.classList.add("spinning");
+  label.textContent = "Atualizando…";
+
+  try {
+    await getToken();
+    await Promise.all([ buscarCardapio(), buscarPedidos() ]);
+    renderLista();
+
+    const agora = new Date();
+    label.textContent = agora.getHours().toString().padStart(2,"0") + ":" +
+                        agora.getMinutes().toString().padStart(2,"0");
+    document.getElementById("footer-sync").textContent =
+      "Última atualização às " + label.textContent + " · Atualiza a cada 2 min";
+
+  } catch(e){
+    console.warn("Erro ao sincronizar:", e.message);
+    label.textContent = "Erro";
+
+    if(e.message.includes("clientSecret")){
+      renderModoDemo();
+    } else {
+      renderLista();
+    }
+  }
+
+  icon.classList.remove("spinning");
+}
+
+// ── Modo DEMO (secret não configurado) ───────────────────────────────────────
+function renderModoDemo(){
+  console.info("[Cozinha] Secret não configurado — modo demo ativo");
+
+  // Cardápio demo
+  document.getElementById("cardapio-items").innerHTML =
+    `<span class="cardapio-item">Frango Grelhado</span>
+     <span class="cardapio-item">Macarrão ao Sugo</span>
+     <span class="cardapio-item">Salada Mista</span>`;
+  document.getElementById("cardapio-banner").style.display = "flex";
+
+  // Pedidos demo
+  _pedidos = [
+    { spItemId:"d1", nome:"Maria Defiume",    opcao:"Principal" },
+    { spItemId:"d2", nome:"Eduardo Silva",    opcao:"Massa" },
+    { spItemId:"d3", nome:"Ana Costa",        opcao:"Principal" },
+    { spItemId:"d4", nome:"Pedro Almeida",    opcao:"Massa" },
+    { spItemId:"d5", nome:"Juliana Ferreira", opcao:"Principal" },
+    { spItemId:"d6", nome:"Carlos Mendes",    opcao:"Salada" },
+    { spItemId:"d7", nome:"Fernanda Lima",    opcao:"Principal" },
+    { spItemId:"d8", nome:"Roberto Santos",   opcao:"Massa" },
+  ];
+  _feitos = new Set(["d3","d6"]); // simula 2 já entregues
+  renderLista();
+
+  document.getElementById("footer-sync").textContent = "⚠️ Modo demonstração — clientSecret não configurado";
+}
+
+// ── Fechar modal clicando fora ────────────────────────────────────────────────
+document.getElementById("modal-overlay").addEventListener("click", function(e){
+  if(e.target === this) fecharModal();
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async function init(){
+  await sincronizar();
+
+  // Auto-refresh a cada 2 minutos
+  _autoTimer = setInterval(sincronizar, 2 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
