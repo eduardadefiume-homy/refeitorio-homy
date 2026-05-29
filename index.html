@@ -385,7 +385,8 @@ async function verificarLiberacao(){
   const btn   = document.getElementById("btn-marcar");
   const badge = document.getElementById("badge-marcar");
 
-  // Se o secret ainda é o placeholder, mostra indisponível e avisa no console
+  if(!btn || !badge) return;
+
   if(SP_CONFIG.clientSecret === "COLE_AQUI_O_CLIENT_SECRET"){
     console.warn("[Refeitório] clientSecret não configurado — botão bloqueado.");
     _setEstado(btn, badge, false);
@@ -393,7 +394,6 @@ async function verificarLiberacao(){
   }
 
   try {
-    // 1. Obter token de acesso (client credentials)
     const tokenRes = await fetch(
       `https://login.microsoftonline.com/${SP_CONFIG.tenantId}/oauth2/v2.0/token`,
       {
@@ -407,36 +407,48 @@ async function verificarLiberacao(){
         })
       }
     );
+
     if(!tokenRes.ok) throw new Error("Token error " + tokenRes.status);
     const { access_token } = await tokenRes.json();
 
-    // 2. Obter siteId
     const siteRes = await fetch(
       `https://graph.microsoft.com/v1.0/sites/${SP_CONFIG.siteHostname}:${SP_CONFIG.sitePath}`,
       { headers: { Authorization: "Bearer " + access_token } }
     );
+
     if(!siteRes.ok) throw new Error("Site error " + siteRes.status);
     const { id: siteId } = await siteRes.json();
 
-    // 3. Buscar itens da lista Configurações (filtra pelas chaves de liberação)
     const listRes = await fetch(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listName)}/items?expand=fields&$filter=fields/Title eq 'marcacao_liberada' or fields/Title eq 'cardapio_liberado' or fields/Title eq 'pedidos_liberados'`,
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listName)}/items?expand=fields&$top=999`,
       { headers: { Authorization: "Bearer " + access_token } }
     );
+
     if(!listRes.ok) throw new Error("List error " + listRes.status);
     const { value: items } = await listRes.json();
 
-    // 4. Se qualquer chave tiver valor "sim", libera o botão
-    const liberado = items.some(item => {
-      const v = (item.fields.Valor || item.fields.value || "").toString().toLowerCase();
-      return v === "sim" || v === "true";
+    const chavesLiberacao = [
+      "marcacao_liberada",
+      "cardapio_liberado",
+      "pedidos_liberados",
+      "liberar_marcacao",
+      "liberar_pedidos"
+    ];
+
+    const valoresVerdadeiros = ["sim", "true", "1", "yes", "ativo", "liberado", "liberada"];
+
+    const liberado = (items || []).some(item => {
+      const f = item.fields || {};
+      const chave = (f.Chave || f.Title || f.chave || "").toString().trim().toLowerCase();
+      const valor = (f.Valor || f.valor || f.Value || "").toString().trim().toLowerCase();
+
+      return chavesLiberacao.includes(chave) && valoresVerdadeiros.includes(valor);
     });
 
     _setEstado(btn, badge, liberado);
 
   } catch(e){
     console.warn("[Refeitório] Não foi possível verificar liberação:", e.message);
-    // Em caso de erro de rede, mantém indisponível (fail-safe)
     _setEstado(btn, badge, false);
   }
 }
@@ -446,12 +458,15 @@ function _setEstado(btn, badge, liberado){
     btn.classList.remove("disabled");
     badge.textContent = "Disponível";
     badge.className   = "card-badge badge-live";
+    btn.removeAttribute("aria-disabled");
   } else {
     btn.classList.add("disabled");
     badge.textContent = "Indisponível";
     badge.className   = "card-badge badge-locked";
+    btn.setAttribute("aria-disabled","true");
   }
 }
+
 </script>
 </body>
 </html>
