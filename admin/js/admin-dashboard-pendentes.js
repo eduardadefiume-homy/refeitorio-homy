@@ -1,10 +1,11 @@
 // ============================================================
 // admin-dashboard-pendentes.js
-// Posição final: abaixo da faixa "Semana atual", compacto
+// Posição final + select estável
 // ============================================================
 
 (function () {
   const ID_BOX = "controleTravaPendentesUnico";
+  let diaSelecionado = localStorage.getItem("diaTravaPendentes") || "Segunda";
 
   function normalizar(valor) {
     return String(valor || "")
@@ -15,17 +16,8 @@
   }
 
   function limparControlesAntigos() {
-    document.querySelectorAll("[id^='controleTravaPendentes']").forEach(el => el.remove());
-
-    document.querySelectorAll("button").forEach(btn => {
-      const texto = normalizar(btn.innerText || "");
-      if (texto.includes("travar pendentes")) {
-        const bloco = btn.closest("div");
-        if (bloco && bloco.id !== ID_BOX) {
-          const possivelContainer = btn.closest("div[style]");
-          if (possivelContainer) possivelContainer.remove();
-        }
-      }
+    document.querySelectorAll("[id^='controleTravaPendentes']").forEach(el => {
+      if (el.id !== ID_BOX) el.remove();
     });
   }
 
@@ -73,9 +65,12 @@
   }
 
   function inserirBotao() {
+    limparControlesAntigos();
+
     if (!estaNoDashboard()) return;
 
-    limparControlesAntigos();
+    const existente = document.getElementById(ID_BOX);
+    if (existente) return;
 
     const faixaSemana = encontrarFaixaSemanaAtual();
     if (!faixaSemana) return;
@@ -96,9 +91,10 @@
       box-sizing: border-box;
       min-height: 54px;
       max-height: 64px;
-      overflow: hidden;
+      overflow: visible;
       position: static;
       clear: both;
+      z-index: 20;
     `;
 
     box.innerHTML = `
@@ -127,6 +123,14 @@
 
     faixaSemana.insertAdjacentElement("afterend", box);
 
+    const select = document.getElementById("diaTravaPendentesUnico");
+    select.value = diaSelecionado;
+
+    select.addEventListener("change", function () {
+      diaSelecionado = this.value;
+      localStorage.setItem("diaTravaPendentes", diaSelecionado);
+    });
+
     document.getElementById("btnTravarPendentesUnico").addEventListener("click", travarPendentesComoPrincipal);
   }
 
@@ -137,7 +141,10 @@
         return;
       }
 
-      const dia = document.getElementById("diaTravaPendentesUnico")?.value || "Segunda";
+      const dia = document.getElementById("diaTravaPendentesUnico")?.value || diaSelecionado || "Segunda";
+      diaSelecionado = dia;
+      localStorage.setItem("diaTravaPendentes", diaSelecionado);
+
       const semanaId = obterSemanaAtual();
 
       const ok = confirm(
@@ -210,7 +217,7 @@
 
     document.addEventListener("click", () => {
       setTimeout(() => {
-        if (estaNoDashboard()) inserirBotao();
+        if (estaNoDashboard() && !document.getElementById(ID_BOX)) inserirBotao();
       }, 400);
     });
   }
