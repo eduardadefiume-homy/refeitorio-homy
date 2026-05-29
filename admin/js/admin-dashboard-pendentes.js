@@ -1,10 +1,10 @@
 // ============================================================
 // admin-dashboard-pendentes.js
-// Botão independente: Travar pendentes como Principal
+// Botão único e compacto: Travar pendentes como Principal
 // ============================================================
 
 (function () {
-  const ID_BOX = "controleTravaPendentesForcado";
+  const ID_BOX = "controleTravaPendentesUnico";
 
   function normalizar(valor) {
     return String(valor || "")
@@ -12,6 +12,21 @@
       .replace(/[\u0300-\u036f]/g, "")
       .trim()
       .toLowerCase();
+  }
+
+  function removerDuplicados() {
+    ["controleTravaPendentes", "controleTravaPendentesForcado"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+
+    document.querySelectorAll("button").forEach(btn => {
+      const texto = normalizar(btn.innerText || "");
+      const paiAntigo = btn.closest("[id^='controleTravaPendentes']");
+      if (texto.includes("travar pendentes") && paiAntigo && paiAntigo.id !== ID_BOX) {
+        paiAntigo.remove();
+      }
+    });
   }
 
   function numeroSemanaISO(data) {
@@ -23,13 +38,10 @@
   }
 
   function obterSemanaAtual() {
-    if (typeof window.getSemanaId === "function") {
-      return window.getSemanaId();
-    }
+    if (typeof window.getSemanaId === "function") return window.getSemanaId();
 
     const texto = document.body.innerText || "";
     const match = texto.match(/(\d{4}-W\d{1,2})/i);
-
     if (match) return match[1];
 
     const hoje = new Date();
@@ -40,12 +52,10 @@
   function estaNoDashboard() {
     const titulo = document.querySelector(".topbar-title, h1, h2");
     const textoTitulo = normalizar(titulo?.innerText || "");
-
     if (textoTitulo.includes("dashboard")) return true;
 
     const ativo = document.querySelector(".nav-item.active, .module.active");
     const textoAtivo = normalizar(ativo?.innerText || "");
-
     return textoAtivo.includes("dashboard");
   }
 
@@ -56,6 +66,8 @@
   }
 
   function inserirBotao() {
+    removerDuplicados();
+
     if (!estaNoDashboard()) return;
     if (document.getElementById(ID_BOX)) return;
 
@@ -65,46 +77,45 @@
     const box = document.createElement("div");
     box.id = ID_BOX;
     box.style.cssText = `
-      margin: 1rem 0;
-      padding: 1rem;
-      border: 1px solid rgba(192,40,28,.45);
-      border-radius: 12px;
-      background: rgba(192,40,28,.10);
-      display: grid;
-      grid-template-columns: 220px 1fr auto;
+      margin: .8rem 0 1rem 0;
+      padding: .8rem 1rem;
+      border: 1px solid rgba(192,40,28,.35);
+      border-radius: 10px;
+      background: rgba(192,40,28,.08);
+      display: flex;
+      align-items: center;
       gap: .8rem;
-      align-items: end;
+      justify-content: space-between;
+      max-width: 100%;
     `;
 
     box.innerHTML = `
-      <div class="form-group">
-        <label class="form-label">DIA PARA TRAVAR</label>
-        <select id="diaTravaPendentesForcado" class="form-select">
-          <option value="Segunda">Segunda</option>
-          <option value="Terça">Terça</option>
-          <option value="Quarta">Quarta</option>
-          <option value="Quinta">Quinta</option>
-          <option value="Sexta">Sexta</option>
-        </select>
+      <div style="display:flex;align-items:center;gap:.7rem;min-width:0;">
+        <div class="form-group" style="margin:0;min-width:150px;">
+          <label class="form-label" style="margin-bottom:.25rem;">DIA</label>
+          <select id="diaTravaPendentesUnico" class="form-select" style="height:38px;">
+            <option value="Segunda">Segunda</option>
+            <option value="Terça">Terça</option>
+            <option value="Quarta">Quarta</option>
+            <option value="Quinta">Quinta</option>
+            <option value="Sexta">Sexta</option>
+          </select>
+        </div>
+
+        <div style="font-size:.76rem;color:#ffcf8a;line-height:1.35;white-space:normal;">
+          Após o prazo, preenche automaticamente como <b>Principal</b> quem ficou pendente.
+        </div>
       </div>
 
-      <div style="font-size:.78rem;color:#ffcf8a;line-height:1.45;">
-        Após o prazo de marcação, clique aqui para preencher automaticamente como
-        <b>Principal</b> todos os colaboradores ativos que ficaram pendentes no dia selecionado.
-      </div>
-
-      <button type="button" class="btn-danger" id="btnTravarPendentesForcado">
-        🔒 Travar pendentes como Principal
+      <button type="button" class="btn-danger" id="btnTravarPendentesUnico" style="white-space:nowrap;height:38px;padding:0 .9rem;">
+        🔒 Travar pendentes
       </button>
     `;
 
-    if (referencia) {
-      referencia.insertAdjacentElement("afterend", box);
-    } else {
-      content.appendChild(box);
-    }
+    if (referencia) referencia.insertAdjacentElement("afterend", box);
+    else content.appendChild(box);
 
-    document.getElementById("btnTravarPendentesForcado").addEventListener("click", travarPendentesComoPrincipal);
+    document.getElementById("btnTravarPendentesUnico").addEventListener("click", travarPendentesComoPrincipal);
   }
 
   async function travarPendentesComoPrincipal() {
@@ -114,7 +125,7 @@
         return;
       }
 
-      const dia = document.getElementById("diaTravaPendentesForcado")?.value || "Segunda";
+      const dia = document.getElementById("diaTravaPendentesUnico")?.value || "Segunda";
       const semanaId = obterSemanaAtual();
 
       const ok = confirm(
@@ -146,20 +157,10 @@
 
         if (jaTemPedido) continue;
 
-        await SP.savePedido(
-          semanaId,
-          colaboradorId,
-          c.Nome || c.Title || "",
-          dia,
-          "Principal",
-          "Principal"
-        );
+        await SP.savePedido(semanaId, colaboradorId, c.Nome || c.Title || "", dia, "Principal", "Principal");
 
         const pedidosColaborador = await SP.getPedidoColaborador(semanaId, colaboradorId);
-
-        const pedidoCriado = pedidosColaborador.find(p =>
-          normalizar(p.Dia) === normalizar(dia)
-        );
+        const pedidoCriado = pedidosColaborador.find(p => normalizar(p.Dia) === normalizar(dia));
 
         if (pedidoCriado) {
           await SP.updatePedido(pedidoCriado.id, {
@@ -186,23 +187,12 @@
   function iniciar() {
     inserirBotao();
 
-    const observer = new MutationObserver(() => {
-      inserirBotao();
-    });
+    const observer = new MutationObserver(() => inserirBotao());
+    observer.observe(document.body, { childList: true, subtree: true });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-
-    document.addEventListener("click", () => {
-      setTimeout(inserirBotao, 300);
-    });
+    document.addEventListener("click", () => setTimeout(inserirBotao, 250));
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", iniciar);
-  } else {
-    iniciar();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
+  else iniciar();
 })();
