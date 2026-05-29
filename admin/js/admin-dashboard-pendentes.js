@@ -1,6 +1,6 @@
 // ============================================================
 // admin-dashboard-pendentes.js
-// Botão único compacto posicionado corretamente no Dashboard
+// Posição final: abaixo da faixa "Semana atual", compacto
 // ============================================================
 
 (function () {
@@ -14,15 +14,42 @@
       .toLowerCase();
   }
 
-  function removerDuplicados() {
-    ["controleTravaPendentes", "controleTravaPendentesForcado"].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.remove();
-    });
+  function limparControlesAntigos() {
+    document.querySelectorAll("[id^='controleTravaPendentes']").forEach(el => el.remove());
 
-    document.querySelectorAll("[id^='controleTravaPendentes']").forEach(el => {
-      if (el.id !== ID_BOX) el.remove();
+    document.querySelectorAll("button").forEach(btn => {
+      const texto = normalizar(btn.innerText || "");
+      if (texto.includes("travar pendentes")) {
+        const bloco = btn.closest("div");
+        if (bloco && bloco.id !== ID_BOX) {
+          const possivelContainer = btn.closest("div[style]");
+          if (possivelContainer) possivelContainer.remove();
+        }
+      }
     });
+  }
+
+  function estaNoDashboard() {
+    const titulo = document.querySelector(".topbar-title, h1, h2");
+    if (normalizar(titulo?.innerText || "").includes("dashboard")) return true;
+
+    const ativo = document.querySelector(".nav-item.active, .module.active");
+    return normalizar(ativo?.innerText || "").includes("dashboard");
+  }
+
+  function encontrarFaixaSemanaAtual() {
+    const candidatos = Array.from(document.querySelectorAll("div"));
+
+    return candidatos
+      .filter(el => {
+        const texto = el.innerText || "";
+        return texto.includes("Semana atual:") && texto.includes("dados exibidos");
+      })
+      .sort((a, b) => {
+        const areaA = a.offsetWidth * a.offsetHeight;
+        const areaB = b.offsetWidth * b.offsetHeight;
+        return areaA - areaB;
+      })[0] || null;
   }
 
   function numeroSemanaISO(data) {
@@ -45,59 +72,40 @@
     return `${hoje.getFullYear()}-W${String(semana).padStart(2, "0")}`;
   }
 
-  function estaNoDashboard() {
-    const titulo = document.querySelector(".topbar-title, h1, h2");
-    if (normalizar(titulo?.innerText || "").includes("dashboard")) return true;
-
-    const ativo = document.querySelector(".nav-item.active, .module.active");
-    return normalizar(ativo?.innerText || "").includes("dashboard");
-  }
-
-  function encontrarCardPrazo() {
-    const candidatos = Array.from(document.querySelectorAll("div"));
-
-    return candidatos.find(el => {
-      const texto = el.innerText || "";
-      return texto.includes("Prazo limite para marcação") && texto.includes("Salvar prazo");
-    });
-  }
-
-  function encontrarFaixaSemana() {
-    return Array.from(document.querySelectorAll("div")).find(el => {
-      const texto = el.innerText || "";
-      return texto.includes("Semana atual") && texto.includes("dados exibidos");
-    });
-  }
-
   function inserirBotao() {
-    removerDuplicados();
-
     if (!estaNoDashboard()) return;
-    if (document.getElementById(ID_BOX)) return;
+
+    limparControlesAntigos();
+
+    const faixaSemana = encontrarFaixaSemanaAtual();
+    if (!faixaSemana) return;
 
     const box = document.createElement("div");
     box.id = ID_BOX;
     box.style.cssText = `
       width: 100%;
-      margin: .75rem 0;
-      padding: .75rem 1rem;
+      margin: 10px 0 0 0;
+      padding: 10px 14px;
       border: 1px solid rgba(192,40,28,.35);
-      border-radius: 12px;
+      border-radius: 10px;
       background: rgba(192,40,28,.08);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 12px;
       box-sizing: border-box;
-      min-height: 64px;
+      min-height: 54px;
+      max-height: 64px;
+      overflow: hidden;
       position: static;
+      clear: both;
     `;
 
     box.innerHTML = `
-      <div style="display:flex;align-items:center;gap:.8rem;flex:1;min-width:0;">
-        <div class="form-group" style="margin:0;width:160px;flex:0 0 160px;">
-          <label class="form-label" style="margin-bottom:.25rem;font-size:.66rem;">DIA</label>
-          <select id="diaTravaPendentesUnico" class="form-select" style="height:36px;padding:.4rem .65rem;">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1;">
+        <div style="display:flex;flex-direction:column;gap:4px;width:145px;flex:0 0 145px;">
+          <label class="form-label" style="font-size:10px;margin:0;">DIA</label>
+          <select id="diaTravaPendentesUnico" class="form-select" style="height:34px;padding:4px 8px;">
             <option value="Segunda">Segunda</option>
             <option value="Terça">Terça</option>
             <option value="Quarta">Quarta</option>
@@ -106,28 +114,18 @@
           </select>
         </div>
 
-        <div style="font-size:.76rem;color:#ffcf8a;line-height:1.35;overflow:hidden;text-overflow:ellipsis;">
+        <div style="font-size:12px;color:#ffcf8a;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
           Após o prazo, preenche automaticamente como <b>Principal</b> quem ficou pendente.
         </div>
       </div>
 
       <button type="button" class="btn-danger" id="btnTravarPendentesUnico"
-        style="height:36px;padding:0 .9rem;white-space:nowrap;flex:0 0 auto;">
+        style="height:34px;padding:0 14px;white-space:nowrap;flex:0 0 auto;">
         🔒 Travar pendentes
       </button>
     `;
 
-    const faixaSemana = encontrarFaixaSemana();
-    const cardPrazo = encontrarCardPrazo();
-
-    if (faixaSemana) {
-      faixaSemana.insertAdjacentElement("beforebegin", box);
-    } else if (cardPrazo) {
-      cardPrazo.insertAdjacentElement("afterend", box);
-    } else {
-      const content = document.querySelector(".content") || document.querySelector("main") || document.body;
-      content.appendChild(box);
-    }
+    faixaSemana.insertAdjacentElement("afterend", box);
 
     document.getElementById("btnTravarPendentesUnico").addEventListener("click", travarPendentesComoPrincipal);
   }
@@ -199,12 +197,22 @@
   }
 
   function iniciar() {
-    inserirBotao();
+    let tentativas = 0;
 
-    const observer = new MutationObserver(() => inserirBotao());
-    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = setInterval(() => {
+      tentativas++;
+      inserirBotao();
 
-    document.addEventListener("click", () => setTimeout(inserirBotao, 250));
+      if (document.getElementById(ID_BOX) || tentativas >= 20) {
+        clearInterval(timer);
+      }
+    }, 300);
+
+    document.addEventListener("click", () => {
+      setTimeout(() => {
+        if (estaNoDashboard()) inserirBotao();
+      }, 400);
+    });
   }
 
   if (document.readyState === "loading") {
