@@ -1,9 +1,6 @@
 // ============================================================
 // admin-relatorios.js
-// Versão consolidada final
-// - Tipo de relatório no próprio HTML do painel
-// - Exportação Excel .xlsx real com layout Homy
-// - Sem arquivos force/layout/remendos
+// Relatórios consolidados — painel + Excel .xlsx estilizado
 // ============================================================
 
 (function () {
@@ -24,31 +21,12 @@
   }
 
   function estaNaTelaRelatorios() {
-    const modulo = document.getElementById("mod-relatorios");
-    if (modulo && modulo.classList.contains("active")) return true;
-
     const ativo = document.querySelector(".nav-item.active, .module.active");
-    return normalizar(ativo?.innerText || "").includes("relatorios");
-  }
+    const textoAtivo = normalizar(ativo?.innerText || "");
+    if (textoAtivo.includes("relatorios")) return true;
 
-  function moeda(valor) {
-    return Number(valor || 0).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL"
-    });
-  }
-
-  function dataBR(data) {
-    if (!data) return "";
-
-    if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
-      const [ano, mes, dia] = data.split("-");
-      return `${dia}/${mes}/${ano}`;
-    }
-
-    const dt = new Date(data);
-    if (Number.isNaN(dt.getTime())) return "";
-    return dt.toLocaleDateString("pt-BR");
+    const titulo = document.querySelector(".topbar-title, h1, h2");
+    return normalizar(titulo?.innerText || "").includes("relatorios");
   }
 
   function toInputDate(data) {
@@ -56,80 +34,62 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
 
-  function diaSemanaCompleto(data) {
-    return ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"][new Date(data).getDay()];
+  function dataBR(data) {
+    if (!data) return "";
+    if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      const [a, m, d] = data.split("-");
+      return `${d}/${m}/${a}`;
+    }
+    const d = new Date(data);
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("pt-BR");
+  }
+
+  function moeda(valor) {
+    return Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
 
   function slug(valor) {
     return normalizar(valor).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   }
 
-  function valorTela(valor) {
-    if (typeof valor === "number") return String(valor).replace(".", ",");
-    return valor ?? "";
-  }
-
-  function borda(color = "FFCBD5E1") {
-    return {
-      top: { style: "thin", color: { argb: color } },
-      left: { style: "thin", color: { argb: color } },
-      bottom: { style: "thin", color: { argb: color } },
-      right: { style: "thin", color: { argb: color } }
-    };
-  }
-
-  function setTexto(ids, valor) {
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el) {
-        el.textContent = valor;
-        return;
-      }
-    }
-  }
-
-  function inicializarDatas() {
-    const inicio = document.getElementById("relDataInicio");
-    const fim = document.getElementById("relDataFim");
-    if (!inicio || !fim) return;
-
-    const hoje = new Date();
-    const diaSemana = hoje.getDay() || 7;
-    const segunda = new Date(hoje);
-    segunda.setDate(hoje.getDate() - diaSemana + 1);
-    const sexta = new Date(segunda);
-    sexta.setDate(segunda.getDate() + 4);
-
-    if (!inicio.value) inicio.value = toInputDate(segunda);
-    if (!fim.value) fim.value = toInputDate(sexta);
+  function diaSemanaCompleto(data) {
+    return ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"][new Date(data).getDay()];
   }
 
   function getFiltros() {
-    inicializarDatas();
+    const hoje = new Date();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
 
-    const dataInicio = document.getElementById("relDataInicio")?.value || toInputDate(new Date());
-    const dataFim = document.getElementById("relDataFim")?.value || dataInicio;
+    const dataInicio = document.getElementById("relDataInicio")?.value || toInputDate(inicioMes);
+    const dataFim = document.getElementById("relDataFim")?.value || toInputDate(hoje);
     const tipo = document.getElementById("tipoRelatorio")?.value || "resumo-dia";
     const nfVascon = Number(String(document.getElementById("relNfVascon")?.value || "0").replace(",", ".")) || 0;
 
     return { dataInicio, dataFim, tipo, nfVascon };
   }
 
-  async function safe(fn) {
-    try {
-      return await fn();
-    } catch (erro) {
-      console.warn("Falha ao carregar dados do relatório:", erro);
-      return [];
-    }
+  function setDefaultsDatas() {
+    const hoje = new Date();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+    const ini = document.getElementById("relDataInicio");
+    const fim = document.getElementById("relDataFim");
+
+    if (ini && !ini.value) ini.value = toInputDate(inicioMes);
+    if (fim && !fim.value) fim.value = toInputDate(hoje);
+  }
+
+  async function safe(fn, fallback = []) {
+    try { return await fn(); }
+    catch (e) { console.warn("Falha relatório:", e); return fallback; }
   }
 
   async function carregarDados() {
-    if (!window.SP) throw new Error("SP não encontrado. Verifique se sharepoint.js foi carregado.");
+    if (!window.SP) throw new Error("SP não encontrado.");
 
-    state.pedidos = await safe(() => SP.getItems("Pedidos"));
-    state.colaboradores = await safe(() => SP.getTodosColaboradores ? SP.getTodosColaboradores() : SP.getColaboradores());
-    state.valores = await safe(() => SP.getValoresRefeicao ? SP.getValoresRefeicao() : []);
+    state.pedidos = await safe(() => SP.getItems ? SP.getItems("Pedidos") : SP.getPedidos(), []);
+    state.colaboradores = await safe(() => SP.getTodosColaboradores ? SP.getTodosColaboradores() : SP.getColaboradores(), []);
+    state.valores = await safe(() => SP.getValoresRefeicao ? SP.getValoresRefeicao() : [], []);
   }
 
   function inicioSemanaISO(ano, semana) {
@@ -157,19 +117,9 @@
 
     if (match && dia) {
       const segunda = inicioSemanaISO(Number(match[1]), Number(match[2]));
-      const mapa = {
-        segunda: 0,
-        terca: 1,
-        terça: 1,
-        quarta: 2,
-        quinta: 3,
-        sexta: 4,
-        sabado: 5,
-        sábado: 5,
-        domingo: 6
-      };
-
+      const mapa = { segunda: 0, terca: 1, terça: 1, quarta: 2, quinta: 3, sexta: 4, sabado: 5, sábado: 5, domingo: 6 };
       const idx = mapa[normalizar(dia)];
+
       if (idx !== undefined) {
         const d = new Date(segunda);
         d.setDate(d.getDate() + idx);
@@ -181,20 +131,20 @@
   }
 
   function filtrarPedidos(dataInicio, dataFim) {
-    const inicio = new Date(`${dataInicio}T00:00:00`);
+    const ini = new Date(`${dataInicio}T00:00:00`);
     const fim = new Date(`${dataFim}T23:59:59`);
 
     return (state.pedidos || []).filter(p => {
       const status = normalizar(p.Status || "");
-      if (["cancelado", "bloqueado", "afastado", "ferias", "nao vai almocar", "não vai almoçar"].includes(status)) return false;
+      if (["cancelado", "bloqueado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar"].includes(status)) return false;
 
       const d = dataPedido(p);
-      return d && d >= inicio && d <= fim;
+      return d && d >= ini && d <= fim;
     });
   }
 
-  function obterValoresPeriodo(dataInicio, dataFim) {
-    const inicio = new Date(`${dataInicio}T00:00:00`);
+  function valoresPeriodo(dataInicio, dataFim) {
+    const ini = new Date(`${dataInicio}T00:00:00`);
     const fim = new Date(`${dataFim}T23:59:59`);
 
     const ativos = (state.valores || []).filter(v => {
@@ -204,15 +154,14 @@
 
       if (!ativo) return false;
       if (!vi || !vf) return true;
-      return vi <= fim && vf >= inicio;
+      return vi <= fim && vf >= ini;
     });
 
-    const valor = ativos[0] || state.valores[0] || {};
+    const v = ativos[0] || state.valores[0] || {};
 
     return {
-      valorVascon: Number(valor.Valor_Vascon || 0),
-      valorDesconto: Number(valor.Valor_Desconto_Funcionario || 0),
-      titulo: valor.Title || ""
+      valorVascon: Number(v.Valor_Vascon || 0),
+      valorDesconto: Number(v.Valor_Desconto_Funcionario || 0)
     };
   }
 
@@ -235,21 +184,21 @@
     const id = String(pedido.Colaborador_id || "");
     const nome = normalizar(pedido.Colaborador_nome || "");
 
-    const colaborador = (state.colaboradores || []).find(c =>
+    const colab = (state.colaboradores || []).find(c =>
       String(c.id) === id ||
       String(c.ID) === id ||
       normalizar(c.Nome || c.Title || "") === nome
     );
 
-    return colaborador?.Centro_Custo || "";
+    return colab?.Centro_Custo || "";
   }
 
   function montarResumoDia(dataInicio, dataFim, pedidos) {
     const linhas = [];
-    const inicio = new Date(`${dataInicio}T00:00:00`);
+    const ini = new Date(`${dataInicio}T00:00:00`);
     const fim = new Date(`${dataFim}T00:00:00`);
 
-    for (let d = new Date(inicio); d <= fim; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(ini); d <= fim; d.setDate(d.getDate() + 1)) {
       const chave = toInputDate(d);
       const pedidosDia = pedidos.filter(p => {
         const dp = dataPedido(p);
@@ -289,7 +238,7 @@
         };
       }
 
-      mapa[centro]["Quantidade"]++;
+      mapa[centro]["Quantidade"] += 1;
       mapa[centro]["Valor Vascon"] += valores.valorVascon;
       mapa[centro]["Desconto Funcionários"] += valores.valorDesconto;
       mapa[centro]["Rateio NF"] += valores.valorVascon;
@@ -316,7 +265,7 @@
         };
       }
 
-      mapa[chave]["Quantidade"]++;
+      mapa[chave]["Quantidade"] += 1;
       mapa[chave]["Desconto em folha"] += valores.valorDesconto;
     });
 
@@ -329,49 +278,56 @@
     return resultado.resumoDia;
   }
 
-  function tituloDoTipo(tipo) {
-    return tipos[tipo] || "Relatório";
-  }
-
   function atualizarCards(resultado) {
     const op = resultado.totais.opcoes;
 
     setTexto(["rel-total", "relTotalRefeicoes", "statRelRefeicoes"], resultado.totais.total);
     setTexto(["rel-vascon", "relCustoVascon", "statRelVascon"], moeda(resultado.totais.valorVascon));
     setTexto(["rel-desconto", "relDescontoFuncionarios", "statRelDesconto"], moeda(resultado.totais.desconto));
-    setTexto(["rel-diferenca", "relDiferencaNf", "statRelDiferenca"], resultado.totais.diferencaNf === null ? "-" : moeda(resultado.totais.diferencaNf));
+    setTexto(["rel-diferenca", "relDiferencaNf", "statRelDiferenca"], resultado.totais.diferencaNf === null ? "—" : moeda(resultado.totais.diferencaNf));
 
-    setTexto(["rel-principal"], op.Principal);
-    setTexto(["rel-light", "relLigth"], op.Light);
-    setTexto(["rel-carne"], op.Carne);
-    setTexto(["rel-massa"], op.Massa);
-    setTexto(["rel-lanche"], op.Lanche);
+    setTexto(["rel-principal", "relPrincipal"], op.Principal);
+    setTexto(["rel-light", "relLight", "relLigth"], op.Light);
+    setTexto(["rel-carne", "relCarne"], op.Carne);
+    setTexto(["rel-massa", "relMassa"], op.Massa);
+    setTexto(["rel-lanche", "relLanche"], op.Lanche);
+  }
+
+  function setTexto(ids, valor) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.textContent = valor;
+        return;
+      }
+    }
+  }
+
+  function valorTela(valor) {
+    if (typeof valor === "number") return String(valor).replace(".", ",");
+    return valor ?? "";
   }
 
   function renderTabela(resultado) {
     const linhas = linhasDoTipo(resultado);
-    const colunas = linhas[0] ? Object.keys(linhas[0]) : (resultado.filtros.tipo === "resumo-dia"
-      ? ["Dia", "Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"]
-      : resultado.filtros.tipo === "centro-custo"
-        ? ["Centro de Custo", "Quantidade", "Valor Vascon", "Desconto Funcionários", "Rateio NF"]
-        : ["Colaborador", "Centro de Custo", "Quantidade", "Valor de cada refeição", "Desconto em folha"]);
+    const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
+    const titulo = tipos[resultado.filtros.tipo] || "Relatório";
 
-    const titulo = tituloDoTipo(resultado.filtros.tipo);
     const tituloEl = document.getElementById("relTituloTabela");
-    if (tituloEl) tituloEl.textContent = `📌 ${titulo}`;
+    const head = document.getElementById("relTableHead");
+    const body = document.getElementById("relTable");
 
-    const thead = document.getElementById("relTableHead");
-    const tbody = document.getElementById("relTable");
-    if (!thead || !tbody) return;
+    if (tituloEl) tituloEl.textContent = titulo;
+    if (head) head.innerHTML = `<tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>`;
 
-    thead.innerHTML = `<tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>`;
+    if (!body) return;
 
     if (!linhas.length) {
-      tbody.innerHTML = `<tr><td colspan="${colunas.length}" style="text-align:center;color:rgba(143,170,210,0.4);padding:2rem">Sem dados no período.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${colunas.length}" style="text-align:center;color:rgba(143,170,210,0.4);padding:2rem">Sem dados no período.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = linhas.map(linha => `
+    body.innerHTML = linhas.map(linha => `
       <tr>${colunas.map(c => `<td>${valorTela(linha[c])}</td>`).join("")}</tr>
     `).join("");
   }
@@ -380,11 +336,14 @@
     if (!estaNaTelaRelatorios()) return;
 
     try {
+      setDefaultsDatas();
       await carregarDados();
 
       const filtros = getFiltros();
       const pedidos = filtrarPedidos(filtros.dataInicio, filtros.dataFim);
-      const valores = obterValoresPeriodo(filtros.dataInicio, filtros.dataFim);
+      const valores = valoresPeriodo(filtros.dataInicio, filtros.dataFim);
+      const total = pedidos.length;
+      const opcoes = contarOpcoes(pedidos);
 
       const resultado = {
         filtros,
@@ -392,25 +351,29 @@
         valoresPeriodo: valores,
         resumoDia: montarResumoDia(filtros.dataInicio, filtros.dataFim, pedidos),
         centroCusto: montarCentroCusto(pedidos, valores),
-        colaborador: montarColaborador(pedidos, valores)
-      };
-
-      const total = pedidos.length;
-      resultado.totais = {
-        total,
-        valorVascon: total * valores.valorVascon,
-        desconto: total * valores.valorDesconto,
-        diferencaNf: filtros.nfVascon ? filtros.nfVascon - (total * valores.valorVascon) : null,
-        opcoes: contarOpcoes(pedidos)
+        colaborador: montarColaborador(pedidos, valores),
+        totais: {
+          total,
+          valorVascon: total * valores.valorVascon,
+          desconto: total * valores.valorDesconto,
+          diferencaNf: filtros.nfVascon ? filtros.nfVascon - (total * valores.valorVascon) : null,
+          opcoes
+        }
       };
 
       state.ultimoResultado = resultado;
       atualizarCards(resultado);
       renderTabela(resultado);
+      forcarBotaoExcel();
     } catch (erro) {
       console.error("Erro ao gerar relatório:", erro);
       alert(`Erro ao gerar relatório: ${erro.message || erro}`);
     }
+  }
+
+  function forcarBotaoExcel() {
+    const btn = document.getElementById("btnExportarRelatorio");
+    if (btn) btn.innerHTML = "📥 Exportar Excel";
   }
 
   async function carregarExcelJS() {
@@ -420,19 +383,18 @@
       const script = document.createElement("script");
       script.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
       script.onload = resolve;
-      script.onerror = () => reject(new Error("Não foi possível carregar ExcelJS."));
+      script.onerror = () => reject(new Error("Não foi possível carregar a biblioteca ExcelJS."));
       document.head.appendChild(script);
     });
   }
 
-  function aplicarEstiloResumo(ws) {
-    for (let row = 5; row <= 9; row++) {
-      ws.getCell(row, 1).font = { bold: true };
-      ws.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8F1FF" } };
-      ws.getCell(row, 1).border = borda();
-      ws.getCell(row, 2).border = borda();
-      if (row > 5) ws.getCell(row, 2).numFmt = '"R$" #,##0.00';
-    }
+  function borda(color = "FFCBD5E1") {
+    return {
+      top: { style: "thin", color: { argb: color } },
+      left: { style: "thin", color: { argb: color } },
+      bottom: { style: "thin", color: { argb: color } },
+      right: { style: "thin", color: { argb: color } }
+    };
   }
 
   async function exportarExcel() {
@@ -442,18 +404,12 @@
 
     await carregarExcelJS();
 
-    const titulo = tituloDoTipo(resultado.filtros.tipo);
+    const titulo = tipos[resultado.filtros.tipo] || "Relatório";
     const linhas = linhasDoTipo(resultado);
-    const colunas = linhas[0] ? Object.keys(linhas[0]) : (resultado.filtros.tipo === "resumo-dia"
-      ? ["Dia", "Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"]
-      : resultado.filtros.tipo === "centro-custo"
-        ? ["Centro de Custo", "Quantidade", "Valor Vascon", "Desconto Funcionários", "Rateio NF"]
-        : ["Colaborador", "Centro de Custo", "Quantidade", "Valor de cada refeição", "Desconto em folha"]);
+    const colunas = linhas[0] ? Object.keys(linhas[0]) : ["Sem dados"];
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = "Refeitório Homy";
-    wb.created = new Date();
-
+    wb.creator = "Homy Refeitório";
     const ws = wb.addWorksheet(titulo.substring(0, 31));
     const totalCols = Math.max(colunas.length, 6);
 
@@ -481,7 +437,6 @@
     ws.addRow(["Valor unitário Vascon", resultado.valoresPeriodo.valorVascon]);
     ws.addRow(["Valor unitário descontado", resultado.valoresPeriodo.valorDesconto]);
     ws.addRow([]);
-    aplicarEstiloResumo(ws);
 
     const header = ws.addRow(colunas);
     header.eachCell(cell => {
@@ -491,7 +446,7 @@
       cell.border = borda();
     });
 
-    const colunasMoeda = ["Valor Vascon", "Desconto Funcionários", "Rateio NF", "Valor de cada refeição", "Desconto em folha"];
+    const moneyCols = ["Valor Vascon", "Desconto Funcionários", "Rateio NF", "Valor de cada refeição", "Desconto em folha"];
 
     if (linhas.length) {
       linhas.forEach((linha, idx) => {
@@ -500,7 +455,7 @@
           const colName = colunas[colNumber - 1];
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: idx % 2 === 0 ? "FFF3F6FB" : "FFFFFFFF" } };
           cell.border = borda("FFD9E2F3");
-          if (colunasMoeda.includes(colName)) cell.numFmt = '"R$" #,##0.00';
+          if (moneyCols.includes(colName)) cell.numFmt = '"R$" #,##0.00';
         });
       });
     } else {
@@ -515,56 +470,60 @@
       col.width = Math.min(max, 38);
     });
 
-    ws.views = [{ state: "frozen", ySplit: 11 }];
-
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     });
 
     const nome = `relatorio-refeitorio-${slug(titulo)}-${resultado.filtros.dataInicio}-a-${resultado.filtros.dataFim}.xlsx`;
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = nome;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = nome;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
-  function inicializar() {
-    inicializarDatas();
+  function init() {
+    const btnGerar = document.getElementById("btnGerarRelatorio");
+    const btnExportar = document.getElementById("btnExportarRelatorio");
+    const tipo = document.getElementById("tipoRelatorio");
 
-    document.getElementById("btnGerarRelatorio")?.addEventListener("click", gerar);
-    document.getElementById("btnExportarRelatorio")?.addEventListener("click", exportarExcel);
-    document.getElementById("tipoRelatorio")?.addEventListener("change", gerar);
-    document.getElementById("relDataInicio")?.addEventListener("change", gerar);
-    document.getElementById("relDataFim")?.addEventListener("change", gerar);
+    if (btnGerar) btnGerar.onclick = gerar;
+    if (btnExportar) btnExportar.onclick = exportarExcel;
+    if (tipo) tipo.onchange = gerar;
 
-    document.addEventListener("click", event => {
-      const alvo = event.target.closest(".nav-item, [data-module], [onclick]");
-      if (!alvo) return;
+    document.addEventListener("click", e => {
+      const item = e.target.closest(".nav-item, [data-module], [onclick]");
+      const texto = normalizar(`${item?.innerText || ""} ${item?.dataset?.module || ""} ${item?.getAttribute?.("onclick") || ""}`);
 
-      const texto = normalizar(`${alvo.innerText || ""} ${alvo.dataset?.module || ""} ${alvo.getAttribute("onclick") || ""}`);
       if (texto.includes("relatorios")) {
         setTimeout(() => {
-          inicializarDatas();
+          setDefaultsDatas();
+          forcarBotaoExcel();
           gerar();
-        }, 350);
+        }, 400);
       }
     });
 
-    if (estaNaTelaRelatorios()) gerar();
+    setTimeout(() => {
+      if (estaNaTelaRelatorios()) {
+        setDefaultsDatas();
+        forcarBotaoExcel();
+        gerar();
+      }
+    }, 700);
   }
 
-  window.AdminRelatorios = { gerar, exportarExcel, inicializar };
+  window.AdminRelatorios = { gerar, exportarExcel };
   window.gerarRelatorio = gerar;
   window.exportarCSV = exportarExcel;
   window.exportarRelatorioCSV = exportarExcel;
   window.exportarExcel = exportarExcel;
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", inicializar);
+    document.addEventListener("DOMContentLoaded", init);
   } else {
-    inicializar();
+    init();
   }
 })();
