@@ -3,7 +3,9 @@
 // ============================================================
 
 const SP = {
-  clientId: "2e73e8be-484b-428e-a6c0-c75b1bf70d8a",
+  clientId: "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
+  clientSecret: "25e6e2a6-1201-4a48-bb21-0424244eb1ed",
+  appOnly: true,
   tenantId: "a2850abc-334a-4805-b6b2-420b4aef68a9",
   siteUrl: "homyquimica.sharepoint.com",
   sitePath: "/sites/Refeitrio-Homy",
@@ -67,6 +69,35 @@ const SP = {
   },
 
   async getToken() {
+    // Modo app-only: evita pedir acesso individual aos colaboradores.
+    if (this.appOnly && this.clientSecret && this.clientSecret !== "COLE_AQUI_O_CLIENT_SECRET") {
+      if (this._appToken && this._appTokenExpiresAt && Date.now() < this._appTokenExpiresAt) {
+        return this._appToken;
+      }
+
+      const res = await fetch(`https://login.microsoftonline.com/${this.tenantId}/oauth2/v2.0/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          scope: "https://graph.microsoft.com/.default"
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Erro ao obter token app-only ${res.status}: ${err}`);
+      }
+
+      const data = await res.json();
+      this._appToken = data.access_token;
+      this._appTokenExpiresAt = Date.now() + ((data.expires_in || 3600) - 120) * 1000;
+      return this._appToken;
+    }
+
+    // Fallback antigo com MSAL/login, caso appOnly esteja desligado.
     await this.init();
 
     if (!this._account) {
@@ -729,6 +760,30 @@ const SP = {
 
     return this.updateItem("Valores de Refeição", id, fields);
   }
+,
+
+  // ============================================================
+  // CHECK-IN COZINHA
+  // Lista: CheckIn
+  // Colunas sugeridas: Title, PedidoId, NomeColaborador,
+  // OpcaoEscolhida, Dia, DataHora, Confirmado
+  // ============================================================
+  async getCheckIns() {
+    return this.getItems("CheckIn");
+  },
+
+  async createCheckIn(dados) {
+    return this.createItem("CheckIn", {
+      Title: String(dados.pedidoId || dados.PedidoId || ""),
+      PedidoId: String(dados.pedidoId || dados.PedidoId || ""),
+      NomeColaborador: dados.nomeColaborador || dados.NomeColaborador || "",
+      OpcaoEscolhida: dados.opcaoEscolhida || dados.OpcaoEscolhida || "",
+      Dia: dados.dia || dados.Dia || "",
+      DataHora: dados.dataHora || dados.DataHora || new Date().toISOString(),
+      Confirmado: dados.confirmado ?? dados.Confirmado ?? true
+    });
+  }
+
 
 };
 
