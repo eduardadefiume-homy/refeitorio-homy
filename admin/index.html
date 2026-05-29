@@ -582,7 +582,12 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <!-- ===== RELATÓRIOS ===== -->
       <div class="module" id="mod-relatorios">
         <div class="section-header">
-          <div class="section-title">📈 Relatórios</div>
+          <div>
+            <div class="section-title">📈 RELATÓRIOS GERENCIAIS</div>
+            <div style="font-size:0.78rem;color:#55709a;margin-top:0.25rem">
+              Quantidade, centro de custo, colaborador, valores e comparação com NF Vascon.
+            </div>
+          </div>
           <button class="btn-secondary" id="btnExportarRelatorio">📥 Exportar Excel</button>
         </div>
 
@@ -612,30 +617,32 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           </div>
 
           <div class="form-group" style="margin:0;align-self:end">
-            <button class="btn-primary" id="btnGerarRelatorio" style="width:100%;height:42px;justify-content:center">Gerar relatório</button>
+            <button class="btn-primary" id="btnGerarRelatorio" style="width:100%;height:42px;justify-content:center">🔎 Gerar relatório</button>
           </div>
         </div>
 
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="rel-total">—</div><div class="stat-label">Total refeições</div></div>
-          <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value" id="rel-vascon">—</div><div class="stat-label">Valor Vascon</div></div>
-          <div class="stat-card"><div class="stat-icon">🧾</div><div class="stat-value" id="rel-desconto">—</div><div class="stat-label">Desconto folha</div></div>
-          <div class="stat-card"><div class="stat-icon">📌</div><div class="stat-value" id="rel-diferenca">—</div><div class="stat-label">Diferença NF</div></div>
+          <div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="rel-total">0</div><div class="stat-label">Refeições no período</div></div>
+          <div class="stat-card"><div class="stat-icon">🏢</div><div class="stat-value" id="rel-vascon">R$ 0,00</div><div class="stat-label">Custo Vascon estimado</div></div>
+          <div class="stat-card"><div class="stat-icon">👤</div><div class="stat-value" id="rel-desconto">R$ 0,00</div><div class="stat-label">Desconto funcionários</div></div>
+          <div class="stat-card"><div class="stat-icon">🧾</div><div class="stat-value" id="rel-diferenca">—</div><div class="stat-label">Diferença NF x calculado</div></div>
         </div>
 
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-icon">🍗</div><div class="stat-value" id="rel-principal">—</div><div class="stat-label">Principal</div></div>
-          <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="rel-light">—</div><div class="stat-label">Light</div></div>
-          <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="rel-carne">—</div><div class="stat-label">Carne</div></div>
-          <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">—</div><div class="stat-label">Massa</div></div>
-          <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">—</div><div class="stat-label">Lanche</div></div>
+          <div class="stat-card"><div class="stat-icon">🍗</div><div class="stat-value" id="rel-principal">0</div><div class="stat-label">Principal</div></div>
+          <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="rel-light">0</div><div class="stat-label">Light</div></div>
+          <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="rel-carne">0</div><div class="stat-label">Carne</div></div>
+          <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">0</div><div class="stat-label">Massa</div></div>
+          <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">0</div><div class="stat-label">Lanche</div></div>
         </div>
 
         <div style="margin-top:1rem">
           <div class="section-title" id="relTituloTabela" style="font-size:1rem;margin-bottom:0.8rem">Resumo por dia</div>
           <div class="table-wrap">
             <table class="table">
-              <thead id="relTableHead"><tr><th>Dia</th><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
+              <thead id="relTableHead">
+                <tr><th>Dia</th><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr>
+              </thead>
               <tbody id="relTable">
                 <tr><td colspan="8" style="text-align:center;color:rgba(143,170,210,0.4);padding:2rem">Selecione o período e clique em Gerar relatório.</td></tr>
               </tbody>
@@ -2726,8 +2733,8 @@ document.addEventListener("keydown", function(event){
 <script src="js/admin-valores.js"></script>
 <script src="js/admin-colaboradores.js"></script>
 
-<script src="js/admin-relatorios.js?v=final-1"></script>
-<script src="js/admin-dashboard-pendentes.js?v=final-1"></script>
+<script src="js/admin-dashboard-pendentes.js?v=final"></script>
+<script src="js/admin-relatorios.js?v=final"></script>
 </body>
 
 </html>
