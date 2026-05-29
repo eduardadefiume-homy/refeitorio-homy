@@ -243,7 +243,6 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 </head>
 <body>
 
@@ -582,69 +581,25 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <!-- ===== RELATÓRIOS ===== -->
       <div class="module" id="mod-relatorios">
         <div class="section-header">
-          <div>
-            <div class="section-title">📈 RELATÓRIOS GERENCIAIS</div>
-            <div style="font-size:0.78rem;color:#55709a;margin-top:0.25rem">
-              Quantidade, centro de custo, colaborador, valores e comparação com NF Vascon.
-            </div>
-          </div>
-          <button class="btn-secondary" id="btnExportarRelatorio">📥 Exportar Excel</button>
-        </div>
-
-        <div class="form-grid" id="relFiltros" style="grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) minmax(210px,1fr) minmax(240px,1fr) minmax(200px,260px);align-items:end">
-          <div class="form-group">
-            <label class="form-label">DATA INICIAL</label>
-            <input class="form-input" type="date" id="relDataInicio">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">DATA FINAL</label>
-            <input class="form-input" type="date" id="relDataFim">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">NF VASCON RECEBIDA</label>
-            <input class="form-input" type="number" step="0.01" id="relNfVascon" placeholder="Ex.: 1234,56">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">TIPO DE RELATÓRIO</label>
-            <select class="form-select" id="tipoRelatorio">
-              <option value="resumo-dia">Resumo por dia</option>
-              <option value="centro-custo">Valor total por centro de custo</option>
-              <option value="colaborador">Quantidade por colaborador</option>
-            </select>
-          </div>
-
-          <div class="form-group" style="margin:0;align-self:end">
-            <button class="btn-primary" id="btnGerarRelatorio" style="width:100%;height:42px;justify-content:center">🔎 Gerar relatório</button>
-          </div>
+          <div class="section-title">📈 Relatórios</div>
+          <button class="btn-secondary">📥 Exportar PDF</button>
         </div>
 
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="rel-total">0</div><div class="stat-label">Refeições no período</div></div>
-          <div class="stat-card"><div class="stat-icon">🏢</div><div class="stat-value" id="rel-vascon">R$ 0,00</div><div class="stat-label">Custo Vascon estimado</div></div>
-          <div class="stat-card"><div class="stat-icon">👤</div><div class="stat-value" id="rel-desconto">R$ 0,00</div><div class="stat-label">Desconto funcionários</div></div>
-          <div class="stat-card"><div class="stat-icon">🧾</div><div class="stat-value" id="rel-diferenca">—</div><div class="stat-label">Diferença NF x calculado</div></div>
-        </div>
-
-        <div class="stats-grid">
-          <div class="stat-card"><div class="stat-icon">🍗</div><div class="stat-value" id="rel-principal">0</div><div class="stat-label">Principal</div></div>
-          <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="rel-light">0</div><div class="stat-label">Light</div></div>
-          <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="rel-carne">0</div><div class="stat-label">Carne</div></div>
-          <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">0</div><div class="stat-label">Massa</div></div>
-          <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">0</div><div class="stat-label">Lanche</div></div>
+          <div class="stat-card"><div class="stat-icon">🍗</div><div class="stat-value" id="rel-principal">—</div><div class="stat-label">Principal</div></div>
+          <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="rel-light">—</div><div class="stat-label">Light</div></div>
+          <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="rel-carne">—</div><div class="stat-label">Carne</div></div>
+          <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">—</div><div class="stat-label">Massa</div></div>
+          <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">—</div><div class="stat-label">Lanche</div></div>
         </div>
 
         <div style="margin-top:1rem">
-          <div class="section-title" id="relTituloTabela" style="font-size:1rem;margin-bottom:0.8rem">Resumo por dia</div>
+          <div class="section-title" style="font-size:1rem;margin-bottom:0.8rem">Pedidos por dia</div>
           <div class="table-wrap">
             <table class="table">
-              <thead id="relTableHead">
-                <tr><th>Dia</th><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr>
-              </thead>
+              <thead><tr><th>Dia</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
               <tbody id="relTable">
-                <tr><td colspan="8" style="text-align:center;color:rgba(143,170,210,0.4);padding:2rem">Selecione o período e clique em Gerar relatório.</td></tr>
+                <tr><td colspan="7" style="text-align:center;color:rgba(143,170,210,0.4);padding:2rem">Carregando relatório...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2733,8 +2688,8 @@ document.addEventListener("keydown", function(event){
 <script src="js/admin-valores.js"></script>
 <script src="js/admin-colaboradores.js"></script>
 
-<script src="js/admin-dashboard-pendentes.js?v=20260529-1430"></script>
-<script src="js/admin-relatorios.js?v=20260529-1430"></script>
+<script src="js/admin-dashboard-pendentes.js?v=20260529-1510"></script>
+<script src="js/admin-relatorios.js?v=20260529-1510"></script>
 </body>
 
 </html>
