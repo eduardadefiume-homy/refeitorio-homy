@@ -1,6 +1,6 @@
 // ============================================================
 // admin-dashboard-pendentes.js
-// Botão único e compacto: Travar pendentes como Principal
+// Botão único compacto posicionado corretamente no Dashboard
 // ============================================================
 
 (function () {
@@ -20,12 +20,8 @@
       if (el) el.remove();
     });
 
-    document.querySelectorAll("button").forEach(btn => {
-      const texto = normalizar(btn.innerText || "");
-      const paiAntigo = btn.closest("[id^='controleTravaPendentes']");
-      if (texto.includes("travar pendentes") && paiAntigo && paiAntigo.id !== ID_BOX) {
-        paiAntigo.remove();
-      }
+    document.querySelectorAll("[id^='controleTravaPendentes']").forEach(el => {
+      if (el.id !== ID_BOX) el.remove();
     });
   }
 
@@ -51,18 +47,26 @@
 
   function estaNoDashboard() {
     const titulo = document.querySelector(".topbar-title, h1, h2");
-    const textoTitulo = normalizar(titulo?.innerText || "");
-    if (textoTitulo.includes("dashboard")) return true;
+    if (normalizar(titulo?.innerText || "").includes("dashboard")) return true;
 
     const ativo = document.querySelector(".nav-item.active, .module.active");
-    const textoAtivo = normalizar(ativo?.innerText || "");
-    return textoAtivo.includes("dashboard");
+    return normalizar(ativo?.innerText || "").includes("dashboard");
   }
 
-  function encontrarReferenciaSemana() {
-    return Array.from(document.querySelectorAll("div,span,p")).find(el =>
-      (el.innerText || "").includes("Semana atual")
-    );
+  function encontrarCardPrazo() {
+    const candidatos = Array.from(document.querySelectorAll("div"));
+
+    return candidatos.find(el => {
+      const texto = el.innerText || "";
+      return texto.includes("Prazo limite para marcação") && texto.includes("Salvar prazo");
+    });
+  }
+
+  function encontrarFaixaSemana() {
+    return Array.from(document.querySelectorAll("div")).find(el => {
+      const texto = el.innerText || "";
+      return texto.includes("Semana atual") && texto.includes("dados exibidos");
+    });
   }
 
   function inserirBotao() {
@@ -71,29 +75,29 @@
     if (!estaNoDashboard()) return;
     if (document.getElementById(ID_BOX)) return;
 
-    const referencia = encontrarReferenciaSemana();
-    const content = document.querySelector(".content") || document.querySelector("main") || document.body;
-
     const box = document.createElement("div");
     box.id = ID_BOX;
     box.style.cssText = `
-      margin: .8rem 0 1rem 0;
-      padding: .8rem 1rem;
+      width: 100%;
+      margin: .75rem 0;
+      padding: .75rem 1rem;
       border: 1px solid rgba(192,40,28,.35);
-      border-radius: 10px;
+      border-radius: 12px;
       background: rgba(192,40,28,.08);
       display: flex;
       align-items: center;
-      gap: .8rem;
       justify-content: space-between;
-      max-width: 100%;
+      gap: 1rem;
+      box-sizing: border-box;
+      min-height: 64px;
+      position: static;
     `;
 
     box.innerHTML = `
-      <div style="display:flex;align-items:center;gap:.7rem;min-width:0;">
-        <div class="form-group" style="margin:0;min-width:150px;">
-          <label class="form-label" style="margin-bottom:.25rem;">DIA</label>
-          <select id="diaTravaPendentesUnico" class="form-select" style="height:38px;">
+      <div style="display:flex;align-items:center;gap:.8rem;flex:1;min-width:0;">
+        <div class="form-group" style="margin:0;width:160px;flex:0 0 160px;">
+          <label class="form-label" style="margin-bottom:.25rem;font-size:.66rem;">DIA</label>
+          <select id="diaTravaPendentesUnico" class="form-select" style="height:36px;padding:.4rem .65rem;">
             <option value="Segunda">Segunda</option>
             <option value="Terça">Terça</option>
             <option value="Quarta">Quarta</option>
@@ -102,18 +106,28 @@
           </select>
         </div>
 
-        <div style="font-size:.76rem;color:#ffcf8a;line-height:1.35;white-space:normal;">
+        <div style="font-size:.76rem;color:#ffcf8a;line-height:1.35;overflow:hidden;text-overflow:ellipsis;">
           Após o prazo, preenche automaticamente como <b>Principal</b> quem ficou pendente.
         </div>
       </div>
 
-      <button type="button" class="btn-danger" id="btnTravarPendentesUnico" style="white-space:nowrap;height:38px;padding:0 .9rem;">
+      <button type="button" class="btn-danger" id="btnTravarPendentesUnico"
+        style="height:36px;padding:0 .9rem;white-space:nowrap;flex:0 0 auto;">
         🔒 Travar pendentes
       </button>
     `;
 
-    if (referencia) referencia.insertAdjacentElement("afterend", box);
-    else content.appendChild(box);
+    const faixaSemana = encontrarFaixaSemana();
+    const cardPrazo = encontrarCardPrazo();
+
+    if (faixaSemana) {
+      faixaSemana.insertAdjacentElement("beforebegin", box);
+    } else if (cardPrazo) {
+      cardPrazo.insertAdjacentElement("afterend", box);
+    } else {
+      const content = document.querySelector(".content") || document.querySelector("main") || document.body;
+      content.appendChild(box);
+    }
 
     document.getElementById("btnTravarPendentesUnico").addEventListener("click", travarPendentesComoPrincipal);
   }
@@ -193,6 +207,9 @@
     document.addEventListener("click", () => setTimeout(inserirBotao, 250));
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
-  else iniciar();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", iniciar);
+  } else {
+    iniciar();
+  }
 })();
