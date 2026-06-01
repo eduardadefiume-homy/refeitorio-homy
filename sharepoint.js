@@ -1138,3 +1138,79 @@ window.SP = SP;
     };
   };
 })();
+
+
+// ============================================================
+// HOTFIX FINAL OPERAÇÃO — valores, extras e sincronização
+// ============================================================
+(function(){
+  if(!window.SP) return;
+  const SP = window.SP;
+  const norm = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  const money = v => { const n=Number(String(v ?? 0).replace(/[R$\s.]/g,'').replace(',','.')); return Number.isFinite(n)?n:0; };
+  const pick = (obj,...keys)=>{ for(const k of keys){ if(obj && obj[k]!==undefined && obj[k]!==null) return obj[k]; } return ''; };
+
+  // Corrige a coluna real da lista Valores de Refeição: Valor_Desconto.
+  SP.createValorRefeicao = async function(dados){
+    const fields = {
+      Title: dados.title || dados.Title || 'Valor refeição',
+      Data_Inicio: dados.dataInicio || dados.Data_Inicio,
+      Data_Fim: dados.dataFim || dados.Data_Fim,
+      Valor_Vascon: money(dados.valorVascon ?? dados.Valor_Vascon),
+      Valor_Desconto: money(dados.valorDesconto ?? dados.valorDescontoFuncionario ?? dados.Valor_Desconto),
+      Observacao: dados.observacao || dados.Observacao || '',
+      Ativo: dados.ativo ?? dados.Ativo ?? true
+    };
+    return await this.createItem('Valores de Refeição', fields);
+  };
+
+  SP.updateValorRefeicao = async function(id,dados){
+    const fields = {};
+    if(dados.title!==undefined) fields.Title=dados.title;
+    if(dados.Title!==undefined) fields.Title=dados.Title;
+    if(dados.dataInicio!==undefined) fields.Data_Inicio=dados.dataInicio;
+    if(dados.Data_Inicio!==undefined) fields.Data_Inicio=dados.Data_Inicio;
+    if(dados.dataFim!==undefined) fields.Data_Fim=dados.dataFim;
+    if(dados.Data_Fim!==undefined) fields.Data_Fim=dados.Data_Fim;
+    if(dados.valorVascon!==undefined) fields.Valor_Vascon=money(dados.valorVascon);
+    if(dados.Valor_Vascon!==undefined) fields.Valor_Vascon=money(dados.Valor_Vascon);
+    if(dados.valorDesconto!==undefined) fields.Valor_Desconto=money(dados.valorDesconto);
+    if(dados.Valor_Desconto!==undefined) fields.Valor_Desconto=money(dados.Valor_Desconto);
+    if(dados.observacao!==undefined) fields.Observacao=dados.observacao;
+    if(dados.Observacao!==undefined) fields.Observacao=dados.Observacao;
+    if(dados.ativo!==undefined) fields.Ativo=dados.ativo;
+    if(dados.Ativo!==undefined) fields.Ativo=dados.Ativo;
+    return await this.updateItem('Valores de Refeição', id, fields);
+  };
+
+  SP.isExtraPedido = function(p){
+    const origem = norm(pick(p,'Origem','origem','Tipo','tipo'));
+    const nome = norm(pick(p,'Colaborador_nome','Nome','Title'));
+    return origem.includes('extra') || ['investigador','guarda','prestador','visitante','motorista','marmita','outro'].includes(origem) || nome.includes('refeicao extra') || nome.includes('investigador') || nome.includes('guarda');
+  };
+
+  SP.ensureExtraAutomaticoSemana = async function(semanaId){
+    const dias = ['segunda','terca','quarta','quinta','sexta'];
+    const pedidos = await this.getPedidos(semanaId);
+    for(const dia of dias){
+      const jaTem = pedidos.some(p => norm(pick(p,'Dia'))===dia && norm(pick(p,'Colaborador_nome','Title','Nome'))==='refeicao extra' && norm(pick(p,'Origem','Tipo','tipo')).includes('extra'));
+      if(!jaTem){
+        await this.addExtraPedido(semanaId,dia,'Refeição extra','extra automatica','principal','Refeição extra automática');
+      }
+    }
+    await this.setConfig('sync_timestamp', new Date().toISOString());
+    return true;
+  };
+
+  SP.addExtraPedido = async function(semanaId, dia, nome, tipo, opcao='principal', observacao='', adicionadoPor=null){
+    const normalDia=norm(dia), normalNome=norm(nome), normalTipo=norm(tipo);
+    const pedidos = await this.getPedidos(semanaId);
+    const existente = pedidos.find(p => norm(pick(p,'Dia'))===normalDia && norm(pick(p,'Colaborador_nome','Title','Nome'))===normalNome && norm(pick(p,'Origem','Tipo','tipo'))===normalTipo);
+    if(existente) return existente;
+    const cid = 'EXTRA-' + Date.now() + '-' + Math.random().toString(16).slice(2,6);
+    if(this.addExtra){
+      try{ await this.addExtra(semanaId,dia,nome,tipo,opcao,observacao,adicionadoPor || this.getUserName()); }catch(e){ console.warn('Extras list:',e); }
+    }
+    return await this.savePedido(semanaId,cid,nome,dia,opcao,nome,{confirmado:true,status:'Confirmado',origem:tipo,observacao:observacao,dataRef:this.getDataRefBySemanaDia?this.getDataRefBySemanaDia(semanaId,dia):undefined});
+  };
+})();
