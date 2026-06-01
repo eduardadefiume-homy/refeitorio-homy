@@ -5,17 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#040c1a">
 
-<link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=ramais-v1">
-<link rel="icon" type="image/png" sizes="256x256" href="homy-icon-256.png?v=ramais-v1">
-<link rel="icon" type="image/png" sizes="512x512" href="homy-icon-512.png?v=ramais-v1">
-<link rel="shortcut icon" href="favicon.ico?v=ramais-v1">
-<link rel="apple-touch-icon" href="apple-touch-icon.png?v=ramais-v1">
+<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
+<link rel="icon" type="image/png" sizes="256x256" href="favicon.png?v=fix-msal">
+<link rel="icon" type="image/png" sizes="512x512" href="favicon.png?v=fix-msal">
+<link rel="shortcut icon" href="favicon.png?v=fix-msal">
 <title>Cozinha · Refeitório Homy</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-<script src="sharepoint.js?v=ramais-v1"></script>
-
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -84,6 +80,8 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radi
 .confirm{background:linear-gradient(135deg,#22c879,#15834d);color:white}
 @media(max-width:600px){.brand-title{font-size:.95rem}.weekday{font-size:1.35rem}.content{padding:.85rem}.btn-voltar span{display:none}}
 </style>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="sharepoint.js?v=fix-msal"></script>
 </head>
 
 <body>
@@ -109,7 +107,7 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radi
       <div class="left">
         <a class="btn-voltar" href="index.html">← <span>Voltar</span></a>
         <div class="brand">
-          <img src="homy-icon-512.png?v=ramais-v1" alt="Homy">
+          <img src="favicon.png?v=fix-msal" alt="">
           <div>
             <div class="brand-title">Cozinha</div>
             <div class="brand-sub">Homy Química</div>
