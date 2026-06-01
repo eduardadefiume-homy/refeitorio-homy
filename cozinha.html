@@ -3,412 +3,394 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#040c1a">
-<link rel="icon" type="image/png" href="favicon.png">
+<link rel="icon" type="image/png" href="favicon.png?v=cozinha2">
 <title>Cozinha · Refeitório Homy</title>
+
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="sharepoint.js?v=cozinha2"></script>
+
 <style>
-*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+*{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#040c1a;--panel:rgba(255,255,255,.045);--panel2:rgba(255,255,255,.065);
-  --border:rgba(255,255,255,.085);--border2:rgba(255,255,255,.16);
-  --text:#e8f0ff;--muted:rgba(143,170,210,.62);--blue:#1a64c8;--red:#c0281c;
-  --green:#1a9e5c;--green-bg:rgba(26,158,92,.13);--green-bd:rgba(26,158,92,.32);
+  --bg:#040c1a;--surface:rgba(255,255,255,.045);--surface2:rgba(10,31,60,.58);
+  --border:rgba(255,255,255,.09);--border2:rgba(80,150,255,.24);
+  --text:#e8f0ff;--muted:rgba(143,170,210,.64);--blue:#61b8ff;--red:#c0281c;--green:#22c879;
 }
-html,body{width:100%;min-height:100%;background:var(--bg);font-family:"Barlow",sans-serif;color:var(--text);overflow-x:hidden}
-#tech-bg{position:fixed;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;opacity:.72}
-body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(30,80,200,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(30,80,200,.045) 1px,transparent 1px);background-size:56px 56px}
-body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 65% 45% at 50% 100%,rgba(20,60,160,.2),transparent 70%),radial-gradient(ellipse 50% 25% at 50% 0%,rgba(192,40,28,.08),transparent 70%)}
-#root{position:relative;z-index:1;min-height:100vh;padding-bottom:2rem}
-.header{position:sticky;top:0;z-index:20;background:rgba(4,12,26,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:1rem 1.2rem .95rem}
-.header-top{display:flex;align-items:center;justify-content:space-between;gap:.8rem;margin-bottom:.75rem}
-.left-actions{display:flex;align-items:center;gap:.65rem;min-width:0}
-.back-btn,.sync-pill{display:flex;align-items:center;gap:.4rem;border-radius:20px;padding:5px 11px;font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;text-decoration:none;white-space:nowrap}
-.back-btn{background:rgba(255,255,255,.055);border:1px solid var(--border);color:rgba(232,240,255,.8)}
-.back-btn:hover{background:rgba(255,255,255,.09)}
-.logo-row{display:flex;align-items:center;gap:.7rem;min-width:0}
-.logo-row img{width:32px;height:32px;border-radius:50%;object-fit:contain;flex-shrink:0;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);box-shadow:0 0 18px rgba(26,100,200,.22)}
-.logo-label{font-family:"Barlow Condensed",sans-serif;font-size:1.05rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#fff;line-height:1}
-.logo-sub{font-size:.65rem;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;margin-top:.1rem}
-.sync-pill{background:rgba(26,100,200,.12);border:1px solid rgba(26,100,200,.28);color:rgba(120,190,255,.9)}
-.sync-pill:hover{background:rgba(26,100,200,.22)}
-.sync-icon.spinning{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-.date-bar{display:flex;align-items:baseline;gap:.65rem;flex-wrap:wrap}
-.date-weekday{font-family:"Barlow Condensed",sans-serif;font-size:1.55rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;line-height:1}
-.date-full{font-size:.76rem;font-weight:600;color:var(--muted);letter-spacing:.08em}
-.cardapio-banner{margin:.9rem 1.2rem 0;padding:.85rem 1rem;background:rgba(26,100,200,.105);border:1px solid rgba(26,100,200,.25);border-radius:14px;display:flex;align-items:center;gap:.85rem;backdrop-filter:blur(10px)}
+html,body{min-height:100%;background:var(--bg);font-family:Barlow,sans-serif;color:var(--text);overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(30,80,200,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(30,80,200,.055) 1px,transparent 1px);background-size:56px 56px}
+body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse 60% 35% at 50% 100%,rgba(20,70,170,.22),transparent 72%),radial-gradient(ellipse 55% 28% at 50% 0%,rgba(192,40,28,.075),transparent 70%)}
+.molecule{position:fixed;inset:0;z-index:0;opacity:.45;pointer-events:none}
+.dot{position:absolute;width:7px;height:7px;border-radius:50%;background:#2f8dcc;box-shadow:0 0 12px rgba(80,180,255,.8)}
+.dot.red{background:#c0281c}.dot.green{background:#22c879}
+.line{position:absolute;height:1px;background:rgba(80,150,255,.14);transform-origin:left center}
+.app{position:relative;z-index:1;min-height:100vh;padding-bottom:2rem}
+.header{position:sticky;top:0;z-index:10;background:rgba(4,12,26,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:.95rem 1rem .75rem}
+.top{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.left{display:flex;align-items:center;gap:.75rem;min-width:0}
+.btn-voltar{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.045);color:var(--text);font-size:.72rem;font-weight:700;text-transform:uppercase;text-decoration:none;display:flex;align-items:center;gap:.35rem}
+.brand{display:flex;align-items:center;gap:.6rem;min-width:0}
+.brand img{width:30px;height:30px;border-radius:50%;object-fit:contain;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12)}
+.brand-title{font-family:"Barlow Condensed";font-size:1.05rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.brand-sub{font-size:.62rem;color:var(--muted);letter-spacing:.15em;text-transform:uppercase}
+.sync{height:30px;padding:0 12px;border-radius:999px;border:1px solid rgba(80,150,255,.25);background:rgba(26,100,200,.14);color:#75b7ff;font-weight:700;font-size:.68rem;cursor:pointer}
+.datebar{display:flex;align-items:baseline;gap:.7rem;margin-top:.65rem}
+.weekday{font-family:"Barlow Condensed";font-size:1.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.fulldate{font-size:.75rem;color:var(--muted);letter-spacing:.08em;font-weight:600}
+.content{padding:1rem}
+.cardapio{border:1px solid var(--border2);background:rgba(8,31,68,.72);border-radius:14px;padding:1rem;display:flex;gap:.8rem;align-items:flex-start;margin-bottom:.85rem}
 .cardapio-icon{font-size:1.35rem}
-.cardapio-label{font-size:.63rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(120,190,255,.72);margin-bottom:.2rem}
-.cardapio-items{font-size:.86rem;font-weight:600;color:var(--text);display:flex;flex-wrap:wrap;gap:.35rem .75rem}
-.cardapio-item{display:flex;align-items:center;gap:.35rem}.cardapio-item::before{content:"·";color:var(--red);font-weight:800}.cardapio-item:first-child::before{display:none}
-.search-row{padding:.9rem 1.2rem .15rem;display:grid;grid-template-columns:1fr auto;gap:.65rem;align-items:center}
-.search-box{position:relative}
-.search-box input{width:100%;height:42px;border-radius:12px;border:1px solid var(--border);background:rgba(255,255,255,.045);color:var(--text);font-family:"Barlow",sans-serif;font-size:.86rem;padding:0 42px 0 38px;outline:none}
-.search-box input:focus{border-color:rgba(80,160,255,.48);box-shadow:0 0 0 3px rgba(26,100,200,.15)}
-.search-ico{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:.55}
-.clear-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:0;border-radius:8px;background:rgba(255,255,255,.06);color:var(--muted);cursor:pointer}
-.counter-row{display:flex;align-items:center;justify-content:space-between;padding:.85rem 1.2rem .25rem}
-.counter-title{font-family:"Barlow Condensed",sans-serif;font-size:.82rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.counter-nums{display:flex;align-items:center;gap:.5rem;font-size:.74rem;font-weight:700}
-.cnt-done{color:#40d090;background:rgba(26,158,92,.12);border:1px solid rgba(26,158,92,.28);border-radius:6px;padding:2px 8px}.cnt-total{color:var(--muted)}.cnt-sep{color:var(--border2)}
-.list{padding:.5rem 1.2rem 1rem;display:flex;flex-direction:column;gap:.58rem}
-.colab-card{display:flex;align-items:center;gap:.9rem;padding:.88rem 1rem;background:var(--panel);border:1px solid var(--border);border-radius:14px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s,opacity .2s;position:relative;overflow:hidden;animation:card-in .35s ease both;backdrop-filter:blur(8px)}
-.colab-card::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent)}
-@keyframes card-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.colab-card:hover:not(.done){background:rgba(255,255,255,.075);border-color:var(--border2);transform:translateY(-1px)}
-.colab-card.done{background:var(--green-bg);border-color:var(--green-bd);cursor:default;pointer-events:none}
-.avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:"Barlow Condensed",sans-serif;font-size:1rem;font-weight:800;background:rgba(26,100,200,.35);border:1px solid rgba(26,100,200,.32);color:rgba(150,210,255,.9)}
-.colab-card.done .avatar{background:rgba(26,158,92,.2);border-color:rgba(26,158,92,.35);color:#40d090}
-.colab-info{flex:1;min-width:0}.colab-name{font-size:.92rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.colab-opcao{font-size:.75rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.12rem}
-.colab-card.done .colab-name{color:rgba(64,208,144,.94)}.colab-card.done .colab-opcao{color:rgba(64,208,144,.58)}
-.status-badge{flex-shrink:0;font-size:.58rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:6px}
-.badge-pending{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:rgba(143,170,210,.56)}.badge-done{background:rgba(26,158,92,.18);border:1px solid rgba(26,158,92,.3);color:#40d090}
-.check-icon{font-size:1.1rem;opacity:0;transform:scale(.5);transition:opacity .25s,transform .25s;flex-shrink:0}.colab-card.done .check-icon{opacity:1;transform:scale(1)}
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3.5rem 2rem;color:var(--muted);text-align:center;gap:.6rem}.empty-icon{font-size:2.5rem;opacity:.35}.empty-title{font-size:.96rem;font-weight:700;color:rgba(143,170,210,.55)}.empty-sub{font-size:.78rem;max-width:280px;line-height:1.5}
-.skeleton{height:62px;background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.07) 50%,rgba(255,255,255,.04) 75%);background-size:200% 100%;animation:shimmer 1.4s ease-in-out infinite;border-radius:14px;border:1px solid var(--border)}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-#modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(4,12,26,.82);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:1.5rem;opacity:0;pointer-events:none;transition:opacity .2s}#modal-overlay.open{opacity:1;pointer-events:all}
-.modal{background:#0a1628;border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:1.8rem 1.5rem;width:100%;max-width:340px;box-shadow:0 24px 60px rgba(0,0,0,.55);transform:scale(.92) translateY(10px);transition:transform .22s;text-align:center}#modal-overlay.open .modal{transform:scale(1) translateY(0)}
-.modal-icon{font-size:2.2rem;margin-bottom:.8rem}.modal-title{font-family:"Barlow Condensed",sans-serif;font-size:1.2rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;margin-bottom:.4rem}.modal-sub{font-size:.84rem;color:var(--muted);line-height:1.5;margin-bottom:1.4rem}.modal-sub strong{color:var(--text);font-weight:700}
-.modal-btns{display:flex;gap:.7rem}.btn{flex:1;padding:.72rem .5rem;border-radius:12px;border:none;cursor:pointer;font-family:"Barlow",sans-serif;font-size:.83rem;font-weight:700;letter-spacing:.04em}.btn:active{transform:scale(.97)}.btn-cancel{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--muted)}.btn-confirm{background:linear-gradient(135deg,#1a9e5c,#15834d);border:1px solid rgba(26,158,92,.4);color:#fff;box-shadow:0 4px 16px rgba(26,158,92,.25)}
-#toast{position:fixed;bottom:1.8rem;left:50%;transform:translateX(-50%) translateY(20px);z-index:200;background:#0d2010;border:1px solid rgba(26,158,92,.4);border-radius:12px;padding:.65rem 1.2rem;font-size:.8rem;font-weight:700;color:#40d090;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;box-shadow:0 8px 24px rgba(0,0,0,.4)}#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-.footer{text-align:center;padding:0 1.2rem;font-size:.62rem;color:rgba(143,170,210,.34);letter-spacing:.1em;text-transform:uppercase}
-@media(max-width:720px){.header-top{align-items:flex-start}.left-actions{flex-wrap:wrap}.sync-pill span:last-child{display:none}.search-row{grid-template-columns:1fr}.cardapio-banner{align-items:flex-start}.date-weekday{font-size:1.35rem}}
+.label{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#75b7ff;margin-bottom:.25rem}
+.cardapio-text{font-size:.9rem;color:var(--text);line-height:1.45}
+.search{position:relative;margin-bottom:.85rem}
+.search input{width:100%;height:42px;border-radius:12px;border:1px solid var(--border);background:rgba(255,255,255,.055);color:var(--text);padding:0 42px 0 42px;font-size:.95rem;outline:none}
+.search:before{content:"🔎";position:absolute;left:14px;top:10px;opacity:.7}
+.clear{position:absolute;right:8px;top:7px;width:28px;height:28px;border:0;border-radius:8px;background:rgba(255,255,255,.06);color:var(--muted);cursor:pointer}
+.counter{display:flex;align-items:center;justify-content:space-between;margin:.6rem 0 .55rem}
+.counter-title{font-family:"Barlow Condensed";font-size:.82rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:700}
+.nums{font-size:.78rem;font-weight:700;color:var(--muted);display:flex;gap:.5rem}
+.done-pill{color:#40d090;background:rgba(34,200,121,.12);border:1px solid rgba(34,200,121,.28);border-radius:7px;padding:2px 8px}
+.list{display:flex;flex-direction:column;gap:.58rem}
+.item{display:flex;align-items:center;gap:.9rem;border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:.82rem .95rem;cursor:pointer;transition:.15s}
+.item:hover{border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.07)}
+.item.done{background:rgba(34,200,121,.13);border-color:rgba(34,200,121,.32);cursor:default}
+.avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(26,100,200,.28);border:1px solid rgba(80,150,255,.28);font-family:"Barlow Condensed";font-weight:800;color:#9bd2ff}
+.info{flex:1;min-width:0}
+.name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desc{font-size:.75rem;color:var(--muted);margin-top:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:4px 8px;border-radius:7px;background:rgba(255,255,255,.06);color:var(--muted)}
+.item.done .badge{background:rgba(34,200,121,.18);color:#40d090}
+.empty,.error{display:flex;min-height:270px;align-items:center;justify-content:center;text-align:center;flex-direction:column;color:var(--muted);gap:.45rem}
+.empty-icon{font-size:2.4rem;opacity:.45}
+.empty-title{font-weight:800;color:rgba(180,205,240,.72)}
+.empty-sub{font-size:.86rem;max-width:330px;line-height:1.45}
+.connect{margin-top:.8rem;border:1px solid rgba(80,150,255,.28);background:rgba(26,100,200,.18);color:#9bd2ff;border-radius:10px;padding:.65rem 1rem;font-weight:800;cursor:pointer}
+.toast{position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%) translateY(20px);opacity:0;z-index:50;background:#0d2010;border:1px solid rgba(34,200,121,.38);color:#40d090;border-radius:12px;padding:.7rem 1.1rem;font-weight:800;transition:.2s}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.modal-bg{position:fixed;inset:0;background:rgba(4,12,26,.82);z-index:40;display:none;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(8px)}
+.modal-bg.open{display:flex}
+.modal{width:100%;max-width:360px;background:#0a1628;border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:1.5rem;text-align:center;box-shadow:0 22px 70px rgba(0,0,0,.5)}
+.modal h3{font-family:"Barlow Condensed";font-size:1.3rem;text-transform:uppercase;letter-spacing:.05em;margin:.5rem 0}
+.modal p{color:var(--muted);line-height:1.4;margin-bottom:1.2rem}
+.modal-actions{display:flex;gap:.7rem}
+.modal-actions button{flex:1;height:42px;border-radius:11px;border:1px solid var(--border);font-weight:800;cursor:pointer}
+.cancel{background:rgba(255,255,255,.06);color:var(--muted)}
+.confirm{background:linear-gradient(135deg,#22c879,#15834d);color:white}
+@media(max-width:600px){.brand-title{font-size:.95rem}.weekday{font-size:1.35rem}.content{padding:.85rem}.btn-voltar span{display:none}}
 </style>
 </head>
-<body>
-<canvas id="tech-bg"></canvas>
 
-<div id="modal-overlay">
+<body>
+<div class="molecule" id="molecule"></div>
+
+<div class="modal-bg" id="modal">
   <div class="modal">
-    <div class="modal-icon">🍽️</div>
-    <div class="modal-title">Confirmar retirada</div>
-    <div class="modal-sub" id="modal-msg">Confirmar retirada?</div>
-    <div class="modal-btns">
-      <button class="btn btn-cancel" onclick="fecharModal()">Cancelar</button>
-      <button class="btn btn-confirm" onclick="confirmarCheckin()">Confirmar ✓</button>
+    <div style="font-size:2.2rem">🍽️</div>
+    <h3>Confirmar retirada</h3>
+    <p>Confirmar retirada para <strong id="modalNome"></strong>?</p>
+    <div class="modal-actions">
+      <button class="cancel" onclick="fecharModal()">Cancelar</button>
+      <button class="confirm" onclick="confirmarRetirada()">Confirmar ✓</button>
     </div>
   </div>
 </div>
 
-<div id="toast">✓ Retirada confirmada</div>
+<div class="toast" id="toast">Retirada confirmada</div>
 
-<div id="root">
-  <div class="header">
-    <div class="header-top">
-      <div class="left-actions">
-        <a class="back-btn" href="index.html">← Voltar</a>
-        <div class="logo-row">
-          <img src="favicon.png" alt="Homy">
+<div class="app">
+  <header class="header">
+    <div class="top">
+      <div class="left">
+        <a class="btn-voltar" href="index.html">← <span>Voltar</span></a>
+        <div class="brand">
+          <img src="favicon.png?v=cozinha2" alt="Homy">
           <div>
-            <div class="logo-label">Cozinha</div>
-            <div class="logo-sub">Homy Química</div>
+            <div class="brand-title">Cozinha</div>
+            <div class="brand-sub">Homy Química</div>
           </div>
         </div>
       </div>
-      <button class="sync-pill" onclick="sincronizar()" title="Atualizar lista">
-        <span class="sync-icon" id="sync-icon">↻</span>
-        <span id="sync-label">Atualizar</span>
-      </button>
+      <button class="sync" onclick="sincronizar()">↻ Atualizar</button>
     </div>
-    <div class="date-bar">
-      <span class="date-weekday" id="date-weekday">—</span>
-      <span class="date-full" id="date-full">—</span>
+
+    <div class="datebar">
+      <div class="weekday" id="weekday">—</div>
+      <div class="fulldate" id="fulldate">—</div>
     </div>
-  </div>
+  </header>
 
-  <div class="cardapio-banner" id="cardapio-banner">
-    <span class="cardapio-icon">🍱</span>
-    <div>
-      <div class="cardapio-label">Cardápio de hoje</div>
-      <div class="cardapio-items" id="cardapio-items">Carregando cardápio...</div>
+  <main class="content">
+    <section class="cardapio">
+      <div class="cardapio-icon">🍱</div>
+      <div>
+        <div class="label">Cardápio de hoje</div>
+        <div class="cardapio-text" id="cardapioHoje">Carregando cardápio...</div>
+      </div>
+    </section>
+
+    <div class="search">
+      <input id="busca" type="search" placeholder="Pesquisar colaborador..." oninput="renderLista()">
+      <button class="clear" onclick="limparBusca()">×</button>
     </div>
-  </div>
 
-  <div class="search-row">
-    <div class="search-box">
-      <span class="search-ico">🔎</span>
-      <input id="busca" type="search" placeholder="Pesquisar colaborador..." autocomplete="off">
-      <button class="clear-btn" id="limparBusca" type="button">×</button>
+    <div class="counter">
+      <div class="counter-title">Lista do dia</div>
+      <div class="nums"><span class="done-pill" id="cntDone">0 entregues</span><span>·</span><span id="cntTotal">0 total</span></div>
     </div>
-  </div>
 
-  <div class="counter-row">
-    <span class="counter-title">Lista do dia</span>
-    <div class="counter-nums">
-      <span class="cnt-done" id="cnt-done">0 entregues</span>
-      <span class="cnt-sep">·</span>
-      <span class="cnt-total" id="cnt-total">0 total</span>
-    </div>
-  </div>
-
-  <div class="list" id="lista">
-    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
-  </div>
-
-  <div class="footer" id="footer-sync">Atualiza automaticamente a cada 2 min</div>
+    <section class="list" id="lista">
+      <div class="empty">
+        <div class="empty-icon">⏳</div>
+        <div class="empty-title">Carregando...</div>
+      </div>
+    </section>
+  </main>
 </div>
 
 <script>
-const SP_CONFIG = {
-  tenantId:     "a2850abc-334a-4805-b6b2-420b4aef68a9",
-  clientId:     "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
-  clientSecret: "25e6e2a6-1201-4a48-bb21-0424244eb1ed",
-  siteHostname: "homyquimica.sharepoint.com",
-  sitePath:     "/sites/Refeitrio-Homy",
-  lists: {
-    pedidos:  ["Pedidos"],
-    cardapio: ["Cardapio", "Cardápio"],
-    checkin:  ["CheckIn", "Check-in", "Check In"]
-  }
-};
-</script>
+const DIAS = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+const DIAS_CHAVE = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+const DIAS_NORMAL = ["domingo","segunda","terca","quarta","quinta","sexta","sabado"];
 
-<script>
-const DIAS_PT  = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
-const DIAS_KEY = ["domingo","segunda","terca","quarta","quinta","sexta","sabado"];
+let pedidosHoje = [];
+let checkinsHoje = [];
+let pedidoSelecionado = null;
 
-let _token = null;
-let _siteId = null;
-let _listIds = {};
-let _pedidos = [];
-let _feitos = new Set();
-let _pendente = null;
-let _busca = "";
+function normalizar(v){
+  return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
+}
 
-function normalizar(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();}
-function escHTML(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]));}
-function diaHojeKey(){return DIAS_KEY[new Date().getDay()];}
-function dataHojeBR(){
+function hoje(){
+  return new Date();
+}
+
+function semanaIdAtual(){
+  if (window.SP && typeof SP.getCurrentWeekId === "function") return SP.getCurrentWeekId();
   const d = new Date();
-  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const w1 = new Date(d.getFullYear(),0,4);
+  const week = 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+  return `${d.getFullYear()}-W${String(week).padStart(2,"0")}`;
 }
 
-(function renderData(){
-  const d = new Date();
-  document.getElementById("date-weekday").textContent = DIAS_PT[d.getDay()];
-  document.getElementById("date-full").textContent = dataHojeBR();
-})();
-
-async function getToken(){
-  if(_token) return _token;
-  const r = await fetch(`https://login.microsoftonline.com/${SP_CONFIG.tenantId}/oauth2/v2.0/token`,{
-    method:"POST",
-    headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({
-      grant_type:"client_credentials",
-      client_id:SP_CONFIG.clientId,
-      client_secret:SP_CONFIG.clientSecret,
-      scope:"https://graph.microsoft.com/.default"
-    })
-  });
-  if(!r.ok) throw new Error("Token HTTP " + r.status);
-  const j = await r.json();
-  _token = j.access_token;
-  return _token;
+function diaAtual(){
+  return DIAS_CHAVE[hoje().getDay()];
 }
 
-async function graph(path, options={}){
-  const token = await getToken();
-  const r = await fetch("https://graph.microsoft.com/v1.0" + path,{
-    ...options,
-    headers:{Authorization:"Bearer "+token,"Content-Type":"application/json",...(options.headers||{})}
-  });
-  if(r.status === 401){_token=null;return graph(path,options);}
-  if(!r.ok) throw new Error("Graph " + r.status + " " + path);
-  if(r.status === 204) return null;
-  return r.json();
+function atualizarData(){
+  const d = hoje();
+  document.getElementById("weekday").textContent = DIAS[d.getDay()];
+  document.getElementById("fulldate").textContent =
+    `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
 }
 
-async function getSiteId(){
-  if(_siteId) return _siteId;
-  const d = await graph(`/sites/${SP_CONFIG.siteHostname}:${SP_CONFIG.sitePath}`);
-  _siteId = d.id;
-  return _siteId;
+function iniciais(nome){
+  return String(nome || "?").split(/\s+/).filter(Boolean).slice(0,2).map(p=>p[0]).join("").toUpperCase();
 }
 
-async function getListId(candidates){
-  const key = candidates.join("|");
-  if(_listIds[key]) return _listIds[key];
-
-  const siteId = await getSiteId();
-  const all = await graph(`/sites/${siteId}/lists?$top=999`);
-  const wanted = candidates.map(normalizar);
-
-  const found = (all.value || []).find(l => wanted.includes(normalizar(l.displayName || l.name)));
-  if(!found) throw new Error("Lista não encontrada: " + candidates.join(" / "));
-
-  _listIds[key] = found.id;
-  return found.id;
-}
-
-async function getListItems(candidates){
-  const siteId = await getSiteId();
-  const listId = await getListId(candidates);
-  const data = await graph(`/sites/${siteId}/lists/${listId}/items?expand=fields&$top=999`);
-  return (data.value || []).map(i => ({id:i.id, ...(i.fields||{})}));
-}
-
-async function createListItem(candidates, fields){
-  const siteId = await getSiteId();
-  const listId = await getListId(candidates);
-  return graph(`/sites/${siteId}/lists/${listId}/items`,{
-    method:"POST",
-    body:JSON.stringify({fields})
-  });
-}
-
-function itemDoDia(item){
-  const dia = normalizar(item.Dia || item.dia || "");
-  const hoje = diaHojeKey();
-  const labelHoje = normalizar(DIAS_PT[new Date().getDay()]);
-  return dia === hoje || dia === labelHoje || dia.includes(hoje) || labelHoje.includes(dia);
+function itemValor(obj, ...keys){
+  for (const k of keys) if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
+  return "";
 }
 
 function pedidoConta(p){
-  const status = normalizar(p.Status || "");
+  const status = normalizar(itemValor(p, "Status", "status"));
   return !["cancelado","bloqueado","afastado","ferias","férias","nao vai almocar","não vai almoçar"].includes(status);
 }
 
-async function buscarCardapio(){
-  const el = document.getElementById("cardapio-items");
-  try{
-    const items = await getListItems(SP_CONFIG.lists.cardapio);
-    const hoje = items.filter(itemDoDia);
+function getNome(p){
+  return itemValor(p, "Colaborador_nome", "colaborador_nome", "Colaborador", "Title") || "Sem nome";
+}
 
-    const opcoes = [];
-    hoje.forEach(f=>{
-      ["Principal","Light","Carne","Massa","Lanche","Nome_Prato","NomePrato","Prato","Descricao","Descrição","Detalhes"].forEach(c=>{
-        if(f[c] && String(f[c]).trim()) opcoes.push(String(f[c]).trim());
-      });
-      if(f.Opcao && f.Nome_Prato) opcoes.push(`${f.Opcao}: ${f.Nome_Prato}`);
-    });
+function getOpcao(p){
+  return itemValor(p, "Opcao", "opcao", "Nome_Prato", "nomePrato") || "Principal";
+}
 
-    const unicas = [...new Set(opcoes)].filter(Boolean);
+function getPedidoId(p){
+  return String(itemValor(p, "id", "ID"));
+}
 
-    el.innerHTML = unicas.length
-      ? unicas.map(o=>`<span class="cardapio-item">${escHTML(o)}</span>`).join("")
-      : `<span style="color:rgba(143,170,210,.55)">Cardápio ainda não cadastrado para hoje.</span>`;
-  }catch(e){
-    console.warn("Cardápio:", e.message);
-    el.innerHTML = `<span style="color:rgba(143,170,210,.55)">Não foi possível carregar o cardápio.</span>`;
+function getColaboradorId(p){
+  return String(itemValor(p, "Colaborador_id", "colaborador_id"));
+}
+
+function isCheckinFeito(p){
+  const pid = getPedidoId(p);
+  const cid = getColaboradorId(p);
+
+  return checkinsHoje.some(c => {
+    const cPid = String(itemValor(c, "Pedido_id", "pedido_id"));
+    const cCid = String(itemValor(c, "Colaborador_id", "colaborador_id"));
+    const retirou = SP && SP.isTrue ? SP.isTrue(itemValor(c, "Retirou", "retirou")) : true;
+    return retirou && ((pid && cPid === pid) || (cid && cCid === cid));
+  });
+}
+
+async function carregarCardapio(semanaId, dia){
+  try {
+    const cardapio = await SP.getCardapio(semanaId);
+    const itens = cardapio.filter(c => normalizar(itemValor(c,"Dia","dia")) === normalizar(dia));
+    if (!itens.length) {
+      document.getElementById("cardapioHoje").textContent = "Nenhum cardápio cadastrado para hoje.";
+      return;
+    }
+
+    const texto = itens.map(i => {
+      const opcao = itemValor(i,"Opcao","opcao") || "";
+      const prato = itemValor(i,"Nome_Prato","nomePrato","Prato","Descricao") || "";
+      return [opcao, prato].filter(Boolean).join(": ");
+    }).join(" · ");
+
+    document.getElementById("cardapioHoje").textContent = texto || "Cardápio cadastrado sem descrição.";
+  } catch(e) {
+    console.warn("Cardápio:", e);
+    document.getElementById("cardapioHoje").textContent = "Não foi possível carregar o cardápio.";
   }
 }
 
-async function buscarCheckIns(){
-  try{
-    const items = await getListItems(SP_CONFIG.lists.checkin);
-    const hoje = diaHojeKey();
-    _feitos = new Set(
-      items.filter(i => normalizar(i.Dia || "") === hoje || String(i.Data || i.DataHora || "").startsWith(new Date().toISOString().slice(0,10)))
-           .map(i => String(i.PedidoId || i.Title || ""))
-           .filter(Boolean)
-    );
-  }catch(e){
-    console.warn("CheckIn:", e.message);
-    _feitos = new Set();
+async function sincronizar(){
+  atualizarData();
+
+  const lista = document.getElementById("lista");
+  lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
+
+  try {
+    if (!window.SP) throw new Error("sharepoint.js não carregado");
+
+    await SP.init();
+
+    if (!SP._account) {
+      lista.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">🔐</div>
+          <div class="empty-title">Conexão necessária</div>
+          <div class="empty-sub">Entre uma vez com uma conta autorizada da Homy para a cozinha acessar a lista do dia.</div>
+          <button class="connect" onclick="conectar()">Conectar com Microsoft</button>
+        </div>`;
+      return;
+    }
+
+    const semanaId = semanaIdAtual();
+    const dia = diaAtual();
+
+    await carregarCardapio(semanaId, dia);
+
+    const pedidos = await SP.getPedidos(semanaId);
+    pedidosHoje = pedidos.filter(p => normalizar(itemValor(p,"Dia","dia")) === normalizar(dia) && pedidoConta(p));
+
+    try {
+      checkinsHoje = await SP.getCheckIn(semanaId, dia);
+    } catch(e) {
+      console.warn("CheckIn:", e);
+      checkinsHoje = [];
+    }
+
+    renderLista();
+  } catch(e) {
+    console.error(e);
+    lista.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-title">Não foi possível conectar</div>
+        <div class="empty-sub">${e.message || e}</div>
+        <button class="connect" onclick="conectar()">Conectar novamente</button>
+      </div>`;
   }
 }
 
-async function buscarPedidos(){
-  const items = await getListItems(SP_CONFIG.lists.pedidos);
-  _pedidos = items
-    .filter(itemDoDia)
-    .filter(pedidoConta)
-    .map(p => ({
-      spItemId: String(p.id),
-      nome: p.Colaborador_nome || p.NomeColaborador || p.Nome || p.Title || "Sem nome",
-      opcao: p.Opcao || p.Nome_Prato || p.OpcaoEscolhida || p.Prato || "Principal",
-      centro: p.Centro_Custo || ""
-    }))
-    .sort((a,b)=>a.nome.localeCompare(b.nome));
+async function conectar(){
+  try {
+    await SP.login();
+    await sincronizar();
+  } catch(e) {
+    alert("Não foi possível conectar: " + (e.message || e));
+  }
+}
 
-  await buscarCheckIns();
+function limparBusca(){
+  document.getElementById("busca").value = "";
+  renderLista();
 }
 
 function renderLista(){
   const lista = document.getElementById("lista");
-  lista.innerHTML = "";
+  const termo = normalizar(document.getElementById("busca").value);
+  const filtrados = pedidosHoje.filter(p => normalizar(getNome(p)).includes(termo));
+  const entregues = pedidosHoje.filter(isCheckinFeito).length;
 
-  const filtrados = _pedidos.filter(p => normalizar(p.nome).includes(normalizar(_busca)));
+  document.getElementById("cntDone").textContent = `${entregues} entregues`;
+  document.getElementById("cntTotal").textContent = `${pedidosHoje.length} total`;
 
-  if(!filtrados.length){
+  if (!pedidosHoje.length) {
     lista.innerHTML = `
-      <div class="empty-state">
+      <div class="empty">
         <div class="empty-icon">🍽️</div>
-        <div class="empty-title">${_busca ? "Nenhum nome encontrado" : "Nenhum pedido para hoje"}</div>
-        <div class="empty-sub">${_busca ? "Limpe a busca para ver a lista completa." : "Os pedidos aparecerão aqui assim que os colaboradores marcarem a refeição."}</div>
+        <div class="empty-title">Nenhum pedido para hoje</div>
+        <div class="empty-sub">Quando houver pedidos confirmados no admin, eles aparecerão aqui automaticamente.</div>
       </div>`;
-    atualizarContador();
     return;
   }
 
-  filtrados.forEach((p,idx)=>{
-    const feito = _feitos.has(p.spItemId);
-    const iniciais = p.nome.split(" ").slice(0,2).map(w=>w[0]||"").join("").toUpperCase();
+  if (!filtrados.length) {
+    lista.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🔎</div>
+        <div class="empty-title">Nenhum colaborador encontrado</div>
+      </div>`;
+    return;
+  }
 
-    const card = document.createElement("div");
-    card.className = "colab-card" + (feito ? " done" : "");
-    card.style.animationDelay = (idx*.035)+"s";
-    card.innerHTML = `
-      <div class="avatar">${feito ? "✓" : escHTML(iniciais)}</div>
-      <div class="colab-info">
-        <div class="colab-name">${escHTML(p.nome)}</div>
-        <div class="colab-opcao">${escHTML(p.opcao)}${p.centro ? " · " + escHTML(p.centro) : ""}</div>
-      </div>
-      <span class="status-badge ${feito ? "badge-done" : "badge-pending"}">${feito ? "Entregue" : "Pendente"}</span>
-      <span class="check-icon">✓</span>
+  lista.innerHTML = filtrados.map(p => {
+    const done = isCheckinFeito(p);
+    const nome = getNome(p);
+    const opcao = getOpcao(p);
+    return `
+      <article class="item ${done ? "done" : ""}" ${done ? "" : `onclick="abrirModal('${getPedidoId(p)}')"`}>
+        <div class="avatar">${iniciais(nome)}</div>
+        <div class="info">
+          <div class="name">${nome}</div>
+          <div class="desc">${opcao}</div>
+        </div>
+        <div class="badge">${done ? "Entregue" : "Pendente"}</div>
+      </article>
     `;
-    if(!feito) card.onclick = () => abrirModal(p);
-    lista.appendChild(card);
-  });
-
-  atualizarContador();
+  }).join("");
 }
 
-function atualizarContador(){
-  const total = _pedidos.length;
-  const feitos = _pedidos.filter(p=>_feitos.has(p.spItemId)).length;
-  document.getElementById("cnt-done").textContent = `${feitos} entregue${feitos!==1?"s":""}`;
-  document.getElementById("cnt-total").textContent = `${total} total`;
-}
-
-function abrirModal(pedido){
-  _pendente = pedido;
-  document.getElementById("modal-msg").innerHTML =
-    `Confirmar retirada para <strong>${escHTML(pedido.nome)}</strong>?<br>
-     <span style="font-size:.75rem;color:rgba(143,170,210,.55)">${escHTML(pedido.opcao)}</span>`;
-  document.getElementById("modal-overlay").classList.add("open");
+function abrirModal(id){
+  pedidoSelecionado = pedidosHoje.find(p => getPedidoId(p) === String(id));
+  if (!pedidoSelecionado) return;
+  document.getElementById("modalNome").textContent = getNome(pedidoSelecionado);
+  document.getElementById("modal").classList.add("open");
 }
 
 function fecharModal(){
-  document.getElementById("modal-overlay").classList.remove("open");
-  _pendente = null;
+  pedidoSelecionado = null;
+  document.getElementById("modal").classList.remove("open");
 }
 
-async function confirmarCheckin(){
-  if(!_pendente) return;
-  const p = _pendente;
-  fecharModal();
+async function confirmarRetirada(){
+  if (!pedidoSelecionado) return;
 
-  _feitos.add(p.spItemId);
-  renderLista();
-  mostrarToast("✓ " + p.nome + " — retirada confirmada");
+  try {
+    const semanaId = semanaIdAtual();
+    const dia = diaAtual();
+    const cid = getColaboradorId(pedidoSelecionado);
+    const nome = getNome(pedidoSelecionado);
 
-  try{
-    await createListItem(SP_CONFIG.lists.checkin,{
-      Title: p.spItemId,
-      PedidoId: p.spItemId,
-      NomeColaborador: p.nome,
-      OpcaoEscolhida: p.opcao,
-      Dia: diaHojeKey(),
-      DataHora: new Date().toISOString(),
-      Confirmado: true
-    });
-  }catch(e){
-    console.error("Erro ao registrar check-in:", e.message);
-    mostrarToast("Retirada marcada na tela. Falha ao salvar no SharePoint.");
+    if (SP.saveCheckIn) {
+      await SP.saveCheckIn(semanaId, cid, nome, dia, SP.getUserName ? SP.getUserName() : "Cozinha");
+    } else {
+      await SP.registrarCheckIn(semanaId, cid, nome, dia, SP.getUserName ? SP.getUserName() : "Cozinha");
+    }
+
+    fecharModal();
+    mostrarToast("Retirada confirmada");
+    await sincronizar();
+  } catch(e) {
+    alert("Erro ao confirmar retirada: " + (e.message || e));
   }
 }
 
@@ -416,103 +398,28 @@ function mostrarToast(msg){
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.classList.add("show");
-  setTimeout(()=>t.classList.remove("show"),2800);
+  setTimeout(()=>t.classList.remove("show"), 2200);
 }
 
-async function sincronizar(){
-  const icon = document.getElementById("sync-icon");
-  const label = document.getElementById("sync-label");
-  icon.classList.add("spinning");
-  label.textContent = "Atualizando…";
+function desenharMoleculas(){
+  const el = document.getElementById("molecule");
+  const pontos = [
+    [8,22,""],[24,31,"red"],[31,18,""],[47,41,"green"],[64,28,""],[76,18,""],[88,36,""],
+    [18,72,"green"],[42,66,""],[58,78,"green"],[79,70,""],[96,61,"green"]
+  ];
+  const linhas = [[0,1],[1,2],[3,4],[4,5],[5,6],[7,8],[8,9],[10,11]];
 
-  try{
-    await Promise.all([buscarCardapio(), buscarPedidos()]);
-    renderLista();
-
-    const agora = new Date();
-    const hora = `${String(agora.getHours()).padStart(2,"0")}:${String(agora.getMinutes()).padStart(2,"0")}`;
-    label.textContent = hora;
-    document.getElementById("footer-sync").textContent = "Última atualização às " + hora + " · Atualiza a cada 2 min";
-  }catch(e){
-    console.error("Erro ao sincronizar:", e);
-    label.textContent = "Erro";
-    document.getElementById("lista").innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">⚠️</div>
-        <div class="empty-title">Erro ao carregar dados</div>
-        <div class="empty-sub">${escHTML(e.message || e)}</div>
-      </div>`;
-  }finally{
-    icon.classList.remove("spinning");
-  }
+  el.innerHTML = linhas.map(([a,b])=>{
+    const [x1,y1]=pontos[a], [x2,y2]=pontos[b];
+    const dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy), ang=Math.atan2(dy,dx)*180/Math.PI;
+    return `<div class="line" style="left:${x1}%;top:${y1}%;width:${len}%;transform:rotate(${ang}deg)"></div>`;
+  }).join("") + pontos.map(([x,y,c])=>`<div class="dot ${c}" style="left:${x}%;top:${y}%"></div>`).join("");
 }
 
-document.getElementById("busca").addEventListener("input", e => {
-  _busca = e.target.value || "";
-  renderLista();
-});
-document.getElementById("limparBusca").addEventListener("click", () => {
-  document.getElementById("busca").value = "";
-  _busca = "";
-  renderLista();
-});
-
-(function techBackground(){
-  const canvas = document.getElementById("tech-bg");
-  const ctx = canvas.getContext("2d");
-  let W,H,nodes=[];
-
-  function resize(){
-    W = canvas.width = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-    nodes = Array.from({length:Math.min(44,Math.max(22,Math.floor(W/38)))},()=>({
-      x:Math.random()*W,y:Math.random()*H,
-      vx:(Math.random()-.5)*.28,vy:(Math.random()-.5)*.28,
-      r:1.8+Math.random()*2.4,type:Math.random()
-    }));
-  }
-
-  function drawHex(x,y,r,a){
-    ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.beginPath();
-    for(let i=0;i<6;i++){const ang=Math.PI/3*i;const px=Math.cos(ang)*r,py=Math.sin(ang)*r;i?ctx.lineTo(px,py):ctx.moveTo(px,py)}
-    ctx.closePath();ctx.strokeStyle="rgba(80,180,255,.075)";ctx.lineWidth=1;ctx.stroke();ctx.restore();
-  }
-
-  function frame(t){
-    ctx.clearRect(0,0,W,H);
-
-    for(let i=0;i<nodes.length;i++){
-      const a=nodes[i];
-      a.x+=a.vx;a.y+=a.vy;
-      if(a.x<0||a.x>W)a.vx*=-1;if(a.y<0||a.y>H)a.vy*=-1;
-
-      for(let j=i+1;j<nodes.length;j++){
-        const b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,dist=Math.hypot(dx,dy);
-        if(dist<145){
-          const alpha=(1-dist/145)*.16;
-          ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
-          ctx.strokeStyle=`rgba(90,170,255,${alpha})`;ctx.lineWidth=.75;ctx.stroke();
-        }
-      }
-    }
-
-    nodes.forEach(n=>{
-      const color = n.type>.82 ? "192,40,28" : n.type>.62 ? "64,208,144" : "100,190,255";
-      ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
-      ctx.fillStyle=`rgba(${color},.34)`;ctx.fill();
-      ctx.shadowBlur=16;ctx.shadowColor=`rgba(${color},.22)`;ctx.fill();ctx.shadowBlur=0;
-    });
-
-    for(let i=0;i<7;i++) drawHex((i*260 + (t*.018)%260)-80, 110+(i%3)*170, 34+(i%2)*13, t*.00012*(i+1));
-
-    requestAnimationFrame(frame);
-  }
-
-  resize();window.addEventListener("resize",resize);requestAnimationFrame(frame);
-})();
-
+desenharMoleculas();
+atualizarData();
 sincronizar();
-setInterval(sincronizar, 2*60*1000);
+setInterval(sincronizar, 120000);
 </script>
 </body>
 </html>
