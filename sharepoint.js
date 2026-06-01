@@ -840,3 +840,137 @@ const SP = {
 };
 
 window.SP = SP;
+
+// ============================================================
+// PATCH FINAL 2026-06-01 — Data_Ref, prazo robusto e histórico
+// ============================================================
+(function(){
+  if(!window.SP) return;
+  const SPX = window.SP;
+
+  SPX._normalizarDiaPatch = function(v){
+    return String(v || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .trim().toLowerCase();
+  };
+
+  SPX._dataISODateOnly = function(date){
+    const d = new Date(date);
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const day = String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${day}`;
+  };
+
+  SPX.getDateFromSemanaDia = function(semanaId, dia){
+    try{
+      const datas = this.getWeekDates(semanaId);
+      const mapa = {
+        segunda: 0,
+        terca: 1,
+        terça: 1,
+        quarta: 2,
+        quinta: 3,
+        sexta: 4
+      };
+      const idx = mapa[this._normalizarDiaPatch(dia)];
+      if(idx === undefined || !datas[idx]) return "";
+      return this._dataISODateOnly(datas[idx]);
+    }catch(_){
+      return "";
+    }
+  };
+
+  const oldGetPedidos = SPX.getPedidos ? SPX.getPedidos.bind(SPX) : null;
+  SPX.getPedidos = async function(semanaId = null, filtros = {}){
+    const items = await this.getItems("Pedidos");
+
+    let resultado = items;
+
+    if(semanaId){
+      resultado = resultado.filter(i => String(this.pick(i,"Semana_id","semana_id") || "") === String(semanaId));
+    }
+
+    if(filtros && filtros.dataInicio && filtros.dataFim){
+      const ini = String(filtros.dataInicio).slice(0,10);
+      const fim = String(filtros.dataFim).slice(0,10);
+
+      resultado = resultado.filter(i => {
+        let dataRef = this.pick(i,"Data_Ref","DataRef","data_ref");
+        if(!dataRef){
+          dataRef = this.getDateFromSemanaDia(
+            this.pick(i,"Semana_id","semana_id"),
+            this.pick(i,"Dia","dia")
+          );
+        }
+        dataRef = String(dataRef || "").slice(0,10);
+        return dataRef && dataRef >= ini && dataRef <= fim;
+      });
+    }
+
+    return resultado;
+  };
+
+  SPX.getPedidosPorPeriodo = async function(dataInicio, dataFim){
+    return this.getPedidos(null, { dataInicio, dataFim });
+  };
+
+  const oldSavePedido = SPX.savePedido ? SPX.savePedido.bind(SPX) : null;
+  SPX.savePedido = async function(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato, dadosExtras = {}){
+    const dataRef = dadosExtras.Data_Ref || dadosExtras.dataRef || dadosExtras.data_ref || this.getDateFromSemanaDia(semanaId, dia);
+
+    return this.createItem("Pedidos", {
+      Title: `${semanaId}-${colaboradorId}-${dia}`,
+      Semana_id: semanaId,
+      Colaborador_id: String(colaboradorId),
+      Colaborador_nome: colaboradorNome,
+      Dia: dia,
+      Opcao: opcao,
+      Nome_Prato: nomePrato || "",
+      Confirmado: dadosExtras.confirmado ?? dadosExtras.Confirmado ?? true,
+      Data_Hora: dadosExtras.dataHora || dadosExtras.Data_Hora || new Date().toISOString(),
+      Data_Ref: dataRef || null,
+      Centro_Custo: dadosExtras.centroCusto || dadosExtras.Centro_Custo || "",
+      Status: dadosExtras.status || dadosExtras.Status || "Confirmado",
+      Observacao: dadosExtras.observacao || dadosExtras.Observacao || "",
+      Origem: dadosExtras.origem || dadosExtras.Origem || "Refeitório",
+      Alterado_Por: dadosExtras.alteradoPor || dadosExtras.Alterado_Por || this.getUserName()
+    });
+  };
+
+  const oldUpdatePedido = SPX.updatePedido ? SPX.updatePedido.bind(SPX) : null;
+  SPX.updatePedido = async function(id, dados){
+    dados = dados || {};
+    if(dados.Data_Ref === undefined && dados.dataRef !== undefined) dados.Data_Ref = dados.dataRef;
+
+    if(oldUpdatePedido){
+      return oldUpdatePedido(id, dados);
+    }
+
+    return this.updateItem("Pedidos", id, dados);
+  };
+
+  SPX.getPrazoMarcacao = async function(){
+    const chaves = [
+      "prazo_limite",
+      "prazo_marcacao",
+      "data_limite_marcacao",
+      "horario_limite_marcacao",
+      "prazoLimite"
+    ];
+
+    for(const chave of chaves){
+      const valor = await this.getConfig(chave);
+      if(valor) return valor;
+    }
+
+    return null;
+  };
+
+  SPX.setPrazoMarcacao = async function(valor){
+    await this.setConfig("prazo_limite", valor);
+    await this.setConfig("prazo_marcacao", valor);
+    await this.setConfig("data_limite_marcacao", valor);
+    return true;
+  };
+})();
