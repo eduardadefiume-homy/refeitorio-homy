@@ -32,6 +32,10 @@ const SP = {
   async init() {
     if (this._msalInstance) return true;
 
+    if (!window.msal) {
+      throw new Error("Biblioteca MSAL não carregou. Verifique se o script msal-browser.min.js está antes do sharepoint.js.");
+    }
+
     const msalConfig = {
       auth: {
         clientId: this.clientId,
