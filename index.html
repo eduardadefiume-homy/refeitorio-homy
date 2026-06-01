@@ -147,6 +147,7 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
 .footer-dots{display:flex;gap:5px;align-items:center}
 .dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.1)}
 .dot.active{background:#c0281c;width:16px;border-radius:3px}
+.badge-open{background:rgba(34,200,121,.16)!important;color:#40d090!important;border:1px solid rgba(34,200,121,.28)!important}
 </style>
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <script src="sharepoint.js?v=home2"></script>
@@ -206,13 +207,13 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
       </div>
       <span class="card-arrow">›</span>
     </a>
-    <a class="menu-card disabled" href="marcar-refeicao.html" id="btn-marcar">
+    <a class="menu-card disabled" id="btn-marcar" href="marcar-refeicao.html">
       <div class="card-icon icon-red">✏️</div>
       <div class="card-info">
         <div class="card-title">Marcar refeição</div>
         <div class="card-desc">Pedidos liberados pela Luana</div>
       </div>
-      <span class="card-badge badge-loading" id="badge-marcar">Verificando…</span>
+      <span class="card-badge badge-loading" id="badge-marcar">ABRIR</span>
       <span class="card-arrow">›</span>
     </a>
   </nav>
@@ -390,64 +391,19 @@ requestAnimationFrame(frame);
 
 // ── verificar liberação via App Token (sem login do usuário) ──────────────────
 async function verificarLiberacao(){
-  const btn   = document.getElementById("btn-marcar");
+  const btn = document.getElementById("btn-marcar");
   const badge = document.getElementById("badge-marcar");
 
-  if(!btn || !badge) return;
+  if (!btn || !badge) return;
 
-  try {
-    if (!window.SP) throw new Error("sharepoint.js não carregado");
+  // A Home não deve travar o colaborador.
+  // A validação real fica dentro da página marcar-refeicao.html.
+  btn.classList.remove("disabled");
+  btn.removeAttribute("aria-disabled");
+  btn.setAttribute("href", "marcar-refeicao.html");
 
-    // Não força popup na tela inicial. Se já houver sessão, verifica em silêncio.
-    await SP.init();
-
-    if (!SP._account) {
-      badge.textContent = "Entrar para verificar";
-      badge.className = "card-badge badge-loading";
-
-      btn.classList.remove("disabled");
-      btn.removeAttribute("aria-disabled");
-
-      btn.onclick = async function(e) {
-        e.preventDefault();
-        try {
-          await SP.login();
-          const liberado = await SP.isCardapioLiberado();
-          _setEstado(btn, badge, liberado);
-          if (liberado) window.location.href = "marcar-refeicao.html";
-        } catch (erro) {
-          console.warn("[Refeitório] Login/verificação falhou:", erro);
-          _setEstado(btn, badge, false);
-        }
-      };
-
-      return;
-    }
-
-    const liberado = await SP.isCardapioLiberado();
-    _setEstado(btn, badge, liberado);
-
-  } catch(e){
-    console.warn("[Refeitório] Não foi possível verificar liberação:", e.message);
-    badge.textContent = "Verificar acesso";
-    badge.className = "card-badge badge-loading";
-
-    btn.classList.remove("disabled");
-    btn.removeAttribute("aria-disabled");
-
-    btn.onclick = async function(ev) {
-      ev.preventDefault();
-      try {
-        await SP.login();
-        const liberado = await SP.isCardapioLiberado();
-        _setEstado(btn, badge, liberado);
-        if (liberado) window.location.href = "marcar-refeicao.html";
-      } catch (erro) {
-        console.warn("[Refeitório] Login/verificação falhou:", erro);
-        _setEstado(btn, badge, false);
-      }
-    };
-  }
+  badge.textContent = "ABRIR";
+  badge.className = "card-badge badge-open";
 }
 
 function _setEstado(btn, badge, liberado){
@@ -465,11 +421,6 @@ function _setEstado(btn, badge, liberado){
 }
 
 
-document.addEventListener('click', function(e){
-  const card = e.target.closest('#btn-marcar');
-  if (!card) return;
-  if (card.classList.contains('disabled')) e.preventDefault();
-});
 </script>
 </body>
 </html>
