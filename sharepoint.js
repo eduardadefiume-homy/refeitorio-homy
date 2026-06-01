@@ -1026,3 +1026,115 @@ window.SP = SP;
     return true;
   };
 })();
+
+
+// ============================================================
+// HOTFIX OPERAÇÃO HOMY 2026-06-01
+// Corrige: valores, extras automáticos, extras separados, sync.
+// ============================================================
+(function(){
+  if(!window.SP) return;
+  const SP = window.SP;
+
+  function money(v){
+    const n = Number(String(v ?? 0).replace(/[R$\s.]/g,'').replace(',','.'));
+    return Number.isFinite(n) ? n : 0;
+  }
+  function norm(v){
+    return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  }
+
+  SP.isExtraPedido = function(p){
+    const origem = norm(this.pick(p,'Origem','origem','Tipo','tipo'));
+    const nome = norm(this.pick(p,'Colaborador_nome','Nome','Title'));
+    return origem.includes('extra') || ['investigador','guarda','prestador','visitante','motorista','marmita','outro'].includes(origem) || nome.includes('refeicao extra') || nome.includes('investigador') || nome.includes('guarda');
+  };
+
+  SP.createValorRefeicao = async function(dados){
+    const fields = {
+      Title: dados.title || dados.Title || 'Valor refeição',
+      Data_Inicio: dados.dataInicio || dados.Data_Inicio,
+      Data_Fim: dados.dataFim || dados.Data_Fim,
+      Valor_Vascon: money(dados.valorVascon ?? dados.Valor_Vascon),
+      Valor_Desconto: money(dados.valorDesconto ?? dados.valorDescontoFuncionario ?? dados.Valor_Desconto ?? dados.Valor_Desconto_Funcionario),
+      Observacao: dados.observacao || dados.Observacao || '',
+      Ativo: dados.ativo ?? dados.Ativo ?? true
+    };
+    try{
+      return await this.createItem('Valores de Refeição', fields);
+    }catch(e){
+      // Compatibilidade caso o ambiente tenha a coluna antiga.
+      if(String(e.message||e).includes('Valor_Desconto')){
+        delete fields.Valor_Desconto;
+        fields.Valor_Desconto_Funcionario = money(dados.valorDesconto ?? dados.valorDescontoFuncionario ?? dados.Valor_Desconto ?? dados.Valor_Desconto_Funcionario);
+        return await this.createItem('Valores de Refeição', fields);
+      }
+      throw e;
+    }
+  };
+
+  SP.updateValorRefeicao = async function(id,dados){
+    const fields = {};
+    if(dados.title!==undefined) fields.Title=dados.title;
+    if(dados.dataInicio!==undefined) fields.Data_Inicio=dados.dataInicio;
+    if(dados.dataFim!==undefined) fields.Data_Fim=dados.dataFim;
+    if(dados.valorVascon!==undefined) fields.Valor_Vascon=money(dados.valorVascon);
+    if(dados.valorDesconto!==undefined) fields.Valor_Desconto=money(dados.valorDesconto);
+    if(dados.observacao!==undefined) fields.Observacao=dados.observacao;
+    if(dados.ativo!==undefined) fields.Ativo=dados.ativo;
+    try{return await this.updateItem('Valores de Refeição', id, fields);}catch(e){
+      if(String(e.message||e).includes('Valor_Desconto')){ fields.Valor_Desconto_Funcionario=fields.Valor_Desconto; delete fields.Valor_Desconto; return await this.updateItem('Valores de Refeição', id, fields); }
+      throw e;
+    }
+  };
+
+  SP.addExtraPedido = async function(semanaId, dia, nome, tipo, opcao='principal', observacao='', adicionadoPor=null){
+    const normalDia=norm(dia), normalNome=norm(nome), normalTipo=norm(tipo);
+    const pedidos = await this.getPedidos(semanaId);
+    const existente = pedidos.find(p => norm(this.pick(p,'Dia'))===normalDia && norm(this.pick(p,'Colaborador_nome','Title','Nome'))===normalNome && norm(this.pick(p,'Origem','Tipo','tipo'))===normalTipo);
+    if(existente) return existente;
+
+    let extraItem=null;
+    try{
+      extraItem = await this.createItem('Extras',{
+        Title:`${semanaId}-${dia}-${nome}-${Date.now()}`,
+        Semana_id:semanaId, Dia:dia, Nome:nome, tipo:tipo, Opcao:opcao,
+        Observacao:observacao||'', Adicionado_Por:adicionadoPor||this.getUserName()
+      });
+    }catch(e){console.warn('[SP] Extra não salvo em Extras:',e);}
+
+    return await this.savePedido(semanaId, `EXTRA-${extraItem?.id || Date.now()}`, nome, dia, opcao, observacao || nome, {
+      confirmado:true, status:'Confirmado', origem:tipo||'Extra', observacao,
+      dataRef:this.getDataRefBySemanaDia ? this.getDataRefBySemanaDia(semanaId,dia) : null,
+      alteradoPor:adicionadoPor||this.getUserName()
+    });
+  };
+
+  SP.ensureExtraAutomaticoSemana = async function(semanaId){
+    const dias=['segunda','terca','quarta','quinta','sexta'];
+    const pedidos=await this.getPedidos(semanaId);
+    for(const dia of dias){
+      const existe=pedidos.some(p => norm(this.pick(p,'Dia'))===dia && norm(this.pick(p,'Colaborador_nome','Title','Nome')).includes('refeicao extra') && norm(this.pick(p,'Origem','Tipo','tipo')).includes('extra'));
+      if(!existe) await this.addExtraPedido(semanaId,dia,'Refeição extra','extra automatica','principal','Refeição extra automática');
+    }
+    await this.setConfig('sync_timestamp', new Date().toISOString());
+    return true;
+  };
+
+  SP.getDashboardResumo = async function(semanaId){
+    const [colabs,pedidos,extras,checkins] = await Promise.all([
+      this.getColaboradores(), this.getPedidos(semanaId), this.getExtras ? this.getExtras(semanaId) : Promise.resolve([]), this.getCheckIn ? this.getCheckIn(semanaId) : Promise.resolve([])
+    ]);
+    const pedidosColab = pedidos.filter(p=>!this.isExtraPedido(p));
+    const pedidosExtra = pedidos.filter(p=>this.isExtraPedido(p));
+    return {
+      colaboradoresAtivos: colabs.length,
+      pedidosConfirmadosColaboradores: pedidosColab.filter(p=>this.isTrue(this.pick(p,'Confirmado')) || norm(this.pick(p,'Status'))==='confirmado').length,
+      pendentesColaboradores: Math.max(0, colabs.length - pedidosColab.length),
+      extrasAtivos: extras.length,
+      extrasConfirmados: pedidosExtra.length,
+      totalPedidosHoje: pedidos.length,
+      checkinsHoje: checkins.length
+    };
+  };
+})();
