@@ -3219,6 +3219,133 @@ document.addEventListener("keydown", function(event){
 })();
 </script>
 
+
+
+<script>
+// ============================================================
+// HOTFIX UI/NEGÓCIO ADMIN — 2026-06-01
+// ============================================================
+(function(){
+  function $(id){return document.getElementById(id)}
+  function toastSafe(msg,type){ if(window.toast) toast(msg,type||'info'); else alert(msg); }
+  function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();}
+  function semanaAtual(){ return window.getSemanaIdAtualSelecionada ? window.getSemanaIdAtualSelecionada() : (window.SP?.getCurrentWeekId ? SP.getCurrentWeekId() : ''); }
+  const diaOrdem={segunda:1,terca:2,quarta:3,quinta:4,sexta:5};
+
+  // Corrige modal grande de Valores.
+  const css=document.createElement('style');
+  css.textContent=`
+    #modalValorRefeicao .modal-box{max-height:92vh;overflow:auto;width:min(520px,94vw)}
+    #modalValorRefeicao .modal-body{padding-bottom:.8rem}
+    .homy-filter-box{border:1px solid rgba(60,140,255,.22);background:rgba(8,31,68,.32);border-radius:14px;padding:.9rem;margin:0 0 1rem;display:flex;gap:.7rem;align-items:end;flex-wrap:wrap}
+    .homy-filter-box .form-group{min-width:150px;margin:0}.homy-filter-box .btn-secondary,.homy-filter-box .btn-primary{height:40px}
+  `;
+  document.head.appendChild(css);
+
+  // Reforça importação de centro de custo em Excel.
+  window.__homyMapColaboradorExcel = function(row){
+    const get=(names)=>{const keys=Object.keys(row||{}); for(const n of names){const nk=norm(n).replace(/[^a-z0-9]/g,''); const k=keys.find(x=>norm(x).replace(/[^a-z0-9]/g,'')===nk); if(k && String(row[k]).trim()) return String(row[k]).trim();} return '';};
+    return {
+      nome:get(['Nome','Colaborador','Funcionario','Funcionário','Nome completo','NOME']),
+      departamento:get(['Departamento','Setor','Área','Area','DEPARTAMENTO']),
+      email:get(['Email','E-mail','E_mail','Mail']),
+      tipo:get(['Tipo','tipo'])||'colaborador',
+      centroCusto:get(['Centro_Custo','Centro de Custo','Centro custo','CC','C.C.','Custo','CENTRO DE CUSTO'])
+    };
+  };
+  const oldImport=window.importarColaboradoresExcelArquivo;
+  window.importarColaboradoresExcelArquivo=async function(file){
+    if(!file) return;
+    if(typeof XLSX==='undefined') return toastSafe('Biblioteca de Excel não carregou.','error');
+    try{
+      await SP.init();
+      const buffer=await file.arrayBuffer(); const wb=XLSX.read(buffer,{type:'array'}); const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      const colaboradores=rows.map(window.__homyMapColaboradorExcel).filter(c=>c.nome);
+      if(!colaboradores.length) return toastSafe('Nenhum colaborador encontrado na planilha.','error');
+      if(!confirm('Foram encontrados '+colaboradores.length+' colaboradores. Deseja importar?')) return;
+      let ok=0, falhas=0;
+      for(const c of colaboradores){ try{ await SP.createColaborador(c); ok++; }catch(e){ console.warn(e,c); falhas++; } }
+      toastSafe('Importação finalizada: '+ok+' cadastrados'+(falhas?' / '+falhas+' falhas':''),'success');
+      if(window.loadColaboradores) await window.loadColaboradores();
+    }catch(e){ console.error(e); toastSafe('Erro ao importar colaboradores: '+(e.message||e),'error'); }
+  };
+
+  // Filtros e ordenação em Extras.
+  function instalarFiltrosExtras(){
+    const mod=$('mod-extras'); if(!mod || $('extraFiltroBox')) return;
+    const header=mod.querySelector('.section-header');
+    const box=document.createElement('div'); box.id='extraFiltroBox'; box.className='homy-filter-box';
+    box.innerHTML=`
+      <div class="form-group"><label class="form-label">Pesquisar</label><input class="form-input" id="fExtraTexto" placeholder="Nome/observação"></div>
+      <div class="form-group"><label class="form-label">Dia</label><select class="form-select" id="fExtraDia"><option value="">Todos</option><option value="segunda">Segunda</option><option value="terca">Terça</option><option value="quarta">Quarta</option><option value="quinta">Quinta</option><option value="sexta">Sexta</option></select></div>
+      <div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="fExtraTipo"><option value="">Todos</option><option value="extra automatica">Extra automática</option><option value="prestador">Prestador</option><option value="investigador">Investigador</option><option value="guarda">Guarda</option><option value="visitante">Visitante</option><option value="motorista">Motorista</option><option value="marmita">Marmita</option></select></div>
+      <button class="btn-primary" type="button" onclick="window.aplicarFiltroExtrasHomy()">🔎 Buscar</button><button class="btn-secondary" type="button" onclick="window.limparFiltroExtrasHomy()">Limpar</button>`;
+    header?.insertAdjacentElement('afterend', box);
+  }
+  window.aplicarFiltroExtrasHomy=function(){
+    const txt=norm($('fExtraTexto')?.value), dia=norm($('fExtraDia')?.value), tipo=norm($('fExtraTipo')?.value);
+    document.querySelectorAll('#extrasTable tr').forEach(tr=>{
+      const t=norm(tr.textContent), cells=[...tr.children].map(td=>norm(td.textContent));
+      const okTxt=!txt || t.includes(txt); const okDia=!dia || cells.some(c=>c===dia || c.includes(dia)); const okTipo=!tipo || t.includes(tipo);
+      tr.style.display=(okTxt&&okDia&&okTipo)?'':'none';
+    });
+  };
+  window.limparFiltroExtrasHomy=function(){ ['fExtraTexto','fExtraDia','fExtraTipo'].forEach(id=>{const e=$(id); if(e)e.value='';}); window.aplicarFiltroExtrasHomy(); };
+  const oldLoadExtras=window.loadExtras;
+  if(oldLoadExtras){
+    window.loadExtras=async function(){ const r=await oldLoadExtras.apply(this,arguments); instalarFiltrosExtras(); setTimeout(()=>{
+      const tbody=$('extrasTable'); if(tbody){ [...tbody.querySelectorAll('tr')].sort((a,b)=>{const ca=[...a.children].map(td=>norm(td.textContent)); const cb=[...b.children].map(td=>norm(td.textContent)); return (diaOrdem[ca[2]]||9)-(diaOrdem[cb[2]]||9) || ca[0].localeCompare(cb[0]);}).forEach(tr=>tbody.appendChild(tr)); }
+      window.aplicarFiltroExtrasHomy();
+    },100); return r; };
+  }
+
+  // Botões especiais: Investigador numerado e Guarda só escolhe dia.
+  window.abrirModalExtraPredefinido=function(tipo){
+    const modal=$('modalExtra'); if(!modal) return;
+    modal.dataset.predefinido=tipo||'';
+    const nome=$('extraNome'), tipoEl=$('extraTipo'), opcao=$('extraOpcao'), obs=$('extraObs');
+    if(tipo==='investigador'){ nome.value='Investigador'; tipoEl.value='investigador'; opcao.value='principal'; obs.value='Extra pré-cadastrado: Investigador'; }
+    if(tipo==='guarda'){ nome.value='Guarda'; tipoEl.value='guarda'; opcao.value='principal'; obs.value='Extra pré-cadastrado: Guarda'; }
+    [nome,tipoEl,opcao,obs].forEach(el=>{ if(el?.closest('.form-group')) el.closest('.form-group').style.display=tipo?'none':''; });
+    modal.classList.add('open');
+  };
+  const oldSalvarExtra=window.salvarExtraManual;
+  window.salvarExtraManual=async function(){
+    const modal=$('modalExtra'); const pre=modal?.dataset.predefinido||''; let dia=$('extraDia')?.value||'segunda';
+    if(pre==='investigador'){
+      const existentes=await SP.getPedidos(semanaAtual());
+      const count=existentes.filter(p=>norm(SP.pick(p,'Dia'))===norm(dia)&&norm(SP.pick(p,'Origem','tipo')).includes('investigador')).length;
+      await SP.addExtraPedido(semanaAtual(),dia,'Investigador '+(count+1),'investigador','principal','Extra pré-cadastrado: Investigador');
+    }else if(pre==='guarda'){
+      await SP.addExtraPedido(semanaAtual(),dia,'Guarda','guarda','principal','Extra pré-cadastrado: Guarda');
+    }else{
+      return oldSalvarExtra ? oldSalvarExtra.apply(this,arguments) : null;
+    }
+    modal?.classList.remove('open'); toastSafe('Extra pré-cadastrado adicionado.','success');
+    if(window.loadExtras) await window.loadExtras(semanaAtual()); if(window.loadPedidos) await window.loadPedidos(semanaAtual());
+  };
+
+  // Dashboard: separa colaboradores de extras nos números principais e cria cards extras.
+  async function atualizarDashboardHomy(){
+    try{
+      if(!$('mod-dashboard')?.classList.contains('active')) return;
+      const semana=semanaAtual(); const resumo=await SP.getDashboardResumo(semana);
+      const vals=[resumo.colaboradoresAtivos,resumo.pedidosConfirmadosColaboradores,resumo.pendentesColaboradores,resumo.checkinsHoje];
+      document.querySelectorAll('#mod-dashboard .stat-value').forEach((el,i)=>{ if(vals[i]!==undefined) el.textContent=vals[i]; });
+      let grid=document.querySelector('#mod-dashboard .stats-grid');
+      if(grid && !$('statsExtrasHomy')){
+        grid.insertAdjacentHTML('beforeend',`<div class="stat-card" id="statsExtrasHomy"><div class="stat-icon">➕</div><div class="stat-value" id="dashExtrasAtivos">0</div><div class="stat-label">extras ativos</div></div><div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" id="dashExtrasConfirmados">0</div><div class="stat-label">extras confirmados</div></div><div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="dashTotalHoje">0</div><div class="stat-label">total pedidos hoje</div></div>`);
+      }
+      if($('dashExtrasAtivos')) $('dashExtrasAtivos').textContent=resumo.extrasAtivos;
+      if($('dashExtrasConfirmados')) $('dashExtrasConfirmados').textContent=resumo.extrasConfirmados;
+      if($('dashTotalHoje')) $('dashTotalHoje').textContent=resumo.totalPedidosHoje;
+    }catch(e){console.warn('dashboard hotfix',e);}
+  }
+  setInterval(atualizarDashboardHomy,5000); setTimeout(atualizarDashboardHomy,1500);
+  document.addEventListener('click',()=>setTimeout(()=>{instalarFiltrosExtras(); atualizarDashboardHomy();},250),true);
+})();
+</script>
+
 </body>
 
 </html>
