@@ -154,7 +154,7 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
 .badge-open{background:rgba(34,200,121,.16)!important;color:#40d090!important;border:1px solid rgba(34,200,121,.28)!important}
 </style>
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-<script src="sharepoint.js?v=fix-msal"></script>
+<script src="sharepoint.js?v=homy-final-20260601-2"></script>
 </head>
 <body>
 
@@ -416,6 +416,11 @@ function _setEstado(btn, badge, liberado){
 }
 
 
+</script>
+
+<script>
+// HOTFIX HOMY — atualiza liberação do menu a cada 10s
+(function(){async function syncLocks(){try{if(!window.SP)return;await SP.init();const marc=SP.getMarcacaoLiberada?await SP.getMarcacaoLiberada():true;const card=SP.getCardapioVisivel?await SP.getCardapioVisivel():true;document.querySelectorAll('a[href*="marcar-refeicao"]').forEach(a=>{a.style.opacity=marc?'1':'.45';a.style.pointerEvents=marc?'auto':'none';});document.querySelectorAll('a[href*="cardapio-dia"],a[href*="cardapio-semana"]').forEach(a=>{a.style.opacity=card?'1':'.45';a.style.pointerEvents=card?'auto':'none';});}catch(e){console.warn(e)}}window.addEventListener('load',()=>{syncLocks();setInterval(syncLocks,10000);});})();
 </script>
 </body>
 </html>
