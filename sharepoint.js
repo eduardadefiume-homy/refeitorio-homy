@@ -69,35 +69,8 @@ const SP = {
   },
 
   async getToken() {
-    // Modo app-only: evita pedir acesso individual aos colaboradores.
-    if (this.appOnly && this.clientSecret && this.clientSecret !== "COLE_AQUI_O_CLIENT_SECRET") {
-      if (this._appToken && this._appTokenExpiresAt && Date.now() < this._appTokenExpiresAt) {
-        return this._appToken;
-      }
-
-      const res = await fetch(`https://login.microsoftonline.com/${this.tenantId}/oauth2/v2.0/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "client_credentials",
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
-          scope: "https://graph.microsoft.com/.default"
-        })
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Erro ao obter token app-only ${res.status}: ${err}`);
-      }
-
-      const data = await res.json();
-      this._appToken = data.access_token;
-      this._appTokenExpiresAt = Date.now() + ((data.expires_in || 3600) - 120) * 1000;
-      return this._appToken;
-    }
-
-    // Fallback antigo com MSAL/login, caso appOnly esteja desligado.
+    // GitHub Pages é front-end estático: NÃO usar clientSecret aqui.
+    // Para não expor segredo no Git, usamos autenticação delegada Microsoft.
     await this.init();
 
     if (!this._account) {
@@ -113,12 +86,30 @@ const SP = {
       return result.accessToken;
     } catch (e) {
       const result = await this._msalInstance.acquireTokenPopup({
-        scopes: this.scopes
+        scopes: this.scopes,
+        account: this._account || undefined
       });
 
       this._account = result.account || this._account;
       return result.accessToken;
     }
+  },
+
+  async ensureLogin() {
+    await this.init();
+    if (!this._account) await this.login();
+    return true;
+  },
+
+  getUserName() {
+    return this._account?.name || this._account?.username || "Usuário Homy";
+  },
+
+  async logout() {
+    await this.init();
+    const account = this._account;
+    this._account = null;
+    if (account) await this._msalInstance.logoutPopup({ account });
   },
 
   async graph(method, endpoint, body = null) {
@@ -720,9 +711,6 @@ const SP = {
     });
   },
 
-  getUserName() {
-    return this._account ? this._account.name : "Usuário";
-  },
 
   getUserEmail() {
     return this._account ? this._account.username : "";
