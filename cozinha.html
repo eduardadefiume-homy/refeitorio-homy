@@ -20,12 +20,64 @@
   --text:#e8f0ff;--muted:rgba(143,170,210,.64);--blue:#61b8ff;--red:#c0281c;--green:#22c879;
 }
 html,body{min-height:100%;background:var(--bg);font-family:Barlow,sans-serif;color:var(--text);overflow-x:hidden}
-body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(30,80,200,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(30,80,200,.055) 1px,transparent 1px);background-size:56px 56px}
-body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse 60% 35% at 50% 100%,rgba(20,70,170,.22),transparent 72%),radial-gradient(ellipse 55% 28% at 50% 0%,rgba(192,40,28,.075),transparent 70%)}
-.molecule{position:fixed;inset:0;z-index:0;opacity:.65;pointer-events:none;animation:moleculeFloatFinal 9s ease-in-out infinite alternate}@keyframes moleculeFloatFinal{0%{transform:translate3d(-10px,-6px,0) scale(1)}50%{transform:translate3d(12px,8px,0) scale(1.015)}100%{transform:translate3d(-4px,14px,0) scale(1.03)}}
-.dot{position:absolute;width:7px;height:7px;border-radius:50%;background:#2f8dcc;box-shadow:0 0 12px rgba(80,180,255,.8)}
-.dot.red{background:#c0281c}.dot.green{background:#22c879}
-.line{position:absolute;height:1px;background:rgba(80,150,255,.14);transform-origin:left center}
+body:before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 42% at 18% 8%,rgba(35,98,210,.20),transparent 60%),
+    radial-gradient(ellipse 62% 40% at 88% 88%,rgba(24,190,125,.12),transparent 64%),
+    radial-gradient(ellipse 50% 34% at 50% 105%,rgba(192,40,28,.10),transparent 70%),
+    linear-gradient(180deg,#040c1a 0%,#041126 58%,#030912 100%);
+}
+body:after{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(72,138,255,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(72,138,255,.045) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.25));
+}
+.tech-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+#techCanvas{position:absolute;inset:0;width:100%;height:100%;opacity:.82}
+.scan-line{
+  position:absolute;left:-20%;right:-20%;top:-12%;height:160px;
+  background:linear-gradient(180deg,transparent,rgba(80,170,255,.055),rgba(34,200,121,.03),transparent);
+  transform:rotate(-7deg);
+  animation:scanMove 11s ease-in-out infinite;
+}
+@keyframes scanMove{
+  0%{top:-20%;opacity:0}
+  16%{opacity:1}
+  70%{opacity:.75}
+  100%{top:108%;opacity:0}
+}
+.chem-symbol{
+  position:absolute;width:150px;height:132px;opacity:.12;
+  filter:drop-shadow(0 0 22px rgba(80,170,255,.25));
+  animation:chemFloat 12s ease-in-out infinite alternate;
+}
+.chem-symbol.s1{left:8%;top:14%;animation-duration:15s}
+.chem-symbol.s2{right:8%;top:16%;animation-duration:18s;transform:scale(.8) rotate(18deg)}
+.chem-symbol.s3{left:52%;bottom:7%;animation-duration:20s;transform:scale(1.15) rotate(-10deg)}
+.chem-symbol::before{
+  content:"";position:absolute;inset:18px;border:1px solid rgba(122,190,255,.52);
+  clip-path:polygon(25% 6%,75% 6%,100% 50%,75% 94%,25% 94%,0 50%);
+}
+.chem-symbol::after{
+  content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;
+  background:rgba(34,200,121,.75);
+  box-shadow:
+    -48px -42px 0 rgba(97,184,255,.75),
+    48px -42px 0 rgba(97,184,255,.7),
+    65px 0 0 rgba(192,40,28,.68),
+    48px 42px 0 rgba(97,184,255,.72),
+    -48px 42px 0 rgba(97,184,255,.72),
+    -65px 0 0 rgba(34,200,121,.65);
+}
+@keyframes chemFloat{
+  0%{translate:0 0;opacity:.08}
+  50%{translate:14px -18px;opacity:.16}
+  100%{translate:-10px 12px;opacity:.11}
+}
 .app{position:relative;z-index:1;min-height:100vh;padding-bottom:2rem}
 .header{position:sticky;top:0;z-index:10;background:rgba(4,12,26,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:.95rem 1rem .75rem}
 .top{display:flex;align-items:center;justify-content:space-between;gap:1rem}
@@ -83,7 +135,13 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radi
 </head>
 
 <body>
-<div class="molecule" id="molecule"></div>
+<div class="tech-bg" aria-hidden="true">
+  <canvas id="techCanvas"></canvas>
+  <div class="scan-line"></div>
+  <div class="chem-symbol s1"></div>
+  <div class="chem-symbol s2"></div>
+  <div class="chem-symbol s3"></div>
+</div>
 
 <div class="modal-bg" id="modal">
   <div class="modal">
@@ -432,22 +490,140 @@ function mostrarToast(msg){
   setTimeout(()=>t.classList.remove("show"), 2200);
 }
 
-function desenharMoleculas(){
-  const el = document.getElementById("molecule");
-  const pontos = [
-    [8,22,""],[24,31,"red"],[31,18,""],[47,41,"green"],[64,28,""],[76,18,""],[88,36,""],
-    [18,72,"green"],[42,66,""],[58,78,"green"],[79,70,""],[96,61,"green"]
-  ];
-  const linhas = [[0,1],[1,2],[3,4],[4,5],[5,6],[7,8],[8,9],[10,11]];
+function iniciarFundoTecnologico(){
+  const canvas = document.getElementById("techCanvas");
+  if (!canvas) return;
 
-  el.innerHTML = linhas.map(([a,b])=>{
-    const [x1,y1]=pontos[a], [x2,y2]=pontos[b];
-    const dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy), ang=Math.atan2(dy,dx)*180/Math.PI;
-    return `<div class="line" style="left:${x1}%;top:${y1}%;width:${len}%;transform:rotate(${ang}deg)"></div>`;
-  }).join("") + pontos.map(([x,y,c])=>`<div class="dot ${c}" style="left:${x}%;top:${y}%"></div>`).join("");
+  const ctx = canvas.getContext("2d");
+  let w = 0;
+  let h = 0;
+  let dpr = 1;
+  let particles = [];
+  let rafId = null;
+
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    const qtd = Math.max(46, Math.min(82, Math.floor(w / 22)));
+    particles = Array.from({length:qtd}, (_,i)=>criarParticula(i));
+  }
+
+  function criarParticula(i){
+    const tipo = i % 11 === 0 ? "red" : i % 5 === 0 ? "green" : "blue";
+    return {
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - .5) * .34,
+      vy: (Math.random() - .5) * .28,
+      r: tipo === "red" ? 2.4 : tipo === "green" ? 2.7 : 2.1 + Math.random() * 1.4,
+      tipo,
+      fase: Math.random() * Math.PI * 2
+    };
+  }
+
+  function cor(p, alpha){
+    if (p.tipo === "red") return `rgba(192,40,28,${alpha})`;
+    if (p.tipo === "green") return `rgba(34,200,121,${alpha})`;
+    return `rgba(97,184,255,${alpha})`;
+  }
+
+  function desenharHexagonos(t){
+    const estruturas = [
+      {x:w*.18,y:h*.18,s:58,a:.16},
+      {x:w*.82,y:h*.24,s:74,a:.12},
+      {x:w*.62,y:h*.78,s:86,a:.10}
+    ];
+
+    estruturas.forEach((m,idx)=>{
+      ctx.save();
+      ctx.translate(m.x + Math.sin(t/1700+idx)*18, m.y + Math.cos(t/2100+idx)*14);
+      ctx.rotate(Math.sin(t/3600+idx)*.18);
+      ctx.strokeStyle = `rgba(97,184,255,${m.a})`;
+      ctx.lineWidth = 1;
+
+      ctx.beginPath();
+      for(let i=0;i<6;i++){
+        const ang = Math.PI/3*i + Math.PI/6;
+        const x = Math.cos(ang)*m.s;
+        const y = Math.sin(ang)*m.s;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      for(let i=0;i<6;i++){
+        const ang = Math.PI/3*i + Math.PI/6;
+        const x = Math.cos(ang)*m.s;
+        const y = Math.sin(ang)*m.s;
+        ctx.beginPath();
+        ctx.arc(x,y,3.2,0,Math.PI*2);
+        ctx.fillStyle = i%3===0 ? "rgba(34,200,121,.22)" : "rgba(97,184,255,.24)";
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  function loop(t){
+    ctx.clearRect(0,0,w,h);
+
+    desenharHexagonos(t);
+
+    for(const p of particles){
+      p.x += p.vx + Math.sin(t/1800 + p.fase) * .055;
+      p.y += p.vy + Math.cos(t/2200 + p.fase) * .045;
+
+      if(p.x < -20) p.x = w + 20;
+      if(p.x > w + 20) p.x = -20;
+      if(p.y < -20) p.y = h + 20;
+      if(p.y > h + 20) p.y = -20;
+    }
+
+    for(let i=0;i<particles.length;i++){
+      for(let j=i+1;j<particles.length;j++){
+        const a = particles[i], b = particles[j];
+        const dx = a.x-b.x, dy = a.y-b.y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        const max = 145;
+        if(dist < max){
+          const alpha = (1 - dist/max) * .22;
+          ctx.beginPath();
+          ctx.moveTo(a.x,a.y);
+          ctx.lineTo(b.x,b.y);
+          ctx.strokeStyle = `rgba(97,184,255,${alpha})`;
+          ctx.lineWidth = .8;
+          ctx.stroke();
+        }
+      }
+    }
+
+    for(const p of particles){
+      const pulse = .65 + Math.sin(t/650 + p.fase) * .35;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.r + pulse*.8,0,Math.PI*2);
+      ctx.fillStyle = cor(p,.62);
+      ctx.shadowColor = p.tipo === "green" ? "rgba(34,200,121,.75)" : p.tipo === "red" ? "rgba(192,40,28,.72)" : "rgba(97,184,255,.75)";
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    rafId = requestAnimationFrame(loop);
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+  rafId = requestAnimationFrame(loop);
 }
 
-desenharMoleculas();
+iniciarFundoTecnologico();
 atualizarData();
 
 async function iniciarCozinha(){
@@ -460,7 +636,7 @@ async function iniciarCozinha(){
       throw new Error("sharepoint.js não ficou disponível. Confirme se o arquivo sharepoint.js está na raiz do GitHub Pages.");
     }
     await sincronizar();
-    setInterval(sincronizar, 120000);
+    setInterval(sincronizar, 30000);
   } catch(e) {
     console.error("Erro ao iniciar cozinha:", e);
     if (lista) {
