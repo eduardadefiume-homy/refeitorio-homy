@@ -449,8 +449,33 @@ function desenharMoleculas(){
 
 desenharMoleculas();
 atualizarData();
-sincronizar();
-setInterval(sincronizar, 120000);
+
+async function iniciarCozinha(){
+  const lista = document.getElementById("lista");
+  try {
+    if (window.HOMY_SP_READY) {
+      await window.HOMY_SP_READY;
+    }
+    if (!window.SP) {
+      throw new Error("sharepoint.js não ficou disponível. Confirme se o arquivo sharepoint.js está na raiz do GitHub Pages.");
+    }
+    await sincronizar();
+    setInterval(sincronizar, 120000);
+  } catch(e) {
+    console.error("Erro ao iniciar cozinha:", e);
+    if (lista) {
+      lista.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">⚠️</div>
+          <div class="empty-title">Não foi possível conectar</div>
+          <div class="empty-sub">${e.message || e}</div>
+          <button class="connect" onclick="location.reload()">Recarregar</button>
+        </div>`;
+    }
+  }
+}
+
+iniciarCozinha();
 </script>
 </body>
 </html>
