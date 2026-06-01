@@ -215,7 +215,7 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
       <div class="card-icon icon-red">✏️</div>
       <div class="card-info">
         <div class="card-title">Marcar refeição</div>
-        <div class="card-desc">Pedidos liberados pela Luana</div>
+        <div class="card-desc">Pedidos liberados pelo administrador</div>
       </div>
       <span class="card-badge badge-loading" id="badge-marcar">ABRIR</span>
       <span class="card-arrow">›</span>
@@ -434,8 +434,8 @@ function _setEstado(btn, badge, liberado){
       const card = SP.getCardapioVisivel ? await SP.getCardapioVisivel() : true;
       const block=(a,msg)=>{a.dataset.hrefOriginal=a.dataset.hrefOriginal||a.getAttribute('href');a.setAttribute('href','javascript:void(0)');a.style.opacity='.42';a.style.filter='grayscale(.4)';a.onclick=function(e){e.preventDefault(); alert(msg); return false;};};
       const free=(a)=>{if(a.dataset.hrefOriginal)a.setAttribute('href',a.dataset.hrefOriginal);a.style.opacity='1';a.style.filter='';a.onclick=null;};
-      document.querySelectorAll('a[href*="marcar-refeicao"],a[data-href-original*="marcar-refeicao"]').forEach(a=>marc?free(a):block(a,'Marcação bloqueada pela Luana no Admin.'));
-      document.querySelectorAll('a[href*="cardapio-dia"],a[href*="cardapio-semana"],a[data-href-original*="cardapio-dia"],a[data-href-original*="cardapio-semana"]').forEach(a=>card?free(a):block(a,'Cardápio bloqueado pela Luana no Admin.'));
+      document.querySelectorAll('a[href*="marcar-refeicao"],a[data-href-original*="marcar-refeicao"]').forEach(a=>marc?free(a):block(a,'Marcação bloqueada no painel administrador.'));
+      document.querySelectorAll('a[href*="cardapio-dia"],a[href*="cardapio-semana"],a[data-href-original*="cardapio-dia"],a[data-href-original*="cardapio-semana"]').forEach(a=>card?free(a):block(a,'Cardápio bloqueado no painel administrador.'));
     }catch(e){console.warn('syncLocksStrong',e);}
   }
   window.addEventListener('load',()=>{syncLocksStrong();setInterval(syncLocksStrong,5000);});
