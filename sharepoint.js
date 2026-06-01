@@ -204,8 +204,16 @@ const SP = {
   async getItems(listName) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
-    const data = await this.graph("GET", `/sites/${siteId}/lists/${listId}/items?expand=fields`);
-    return (data.value || []).map(i => ({ id: i.id, ...i.fields }));
+    let endpoint = `/sites/${siteId}/lists/${listId}/items?expand=fields&$top=999`;
+    const items = [];
+
+    while (endpoint) {
+      const data = await this.graph("GET", endpoint);
+      items.push(...(data.value || []));
+      endpoint = data["@odata.nextLink"] ? data["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "") : null;
+    }
+
+    return items.map(i => ({ id: i.id, ...i.fields }));
   },
 
   async createItem(listName, fields) {
