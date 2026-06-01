@@ -3346,6 +3346,133 @@ document.addEventListener("keydown", function(event){
 })();
 </script>
 
+
+
+<style id="homy-final-visual-business-fixes">
+  #modalValorRefeicao{align-items:center!important;justify-content:center!important;padding:16px!important;overflow:auto!important}
+  #modalValorRefeicao .modal-box{width:min(500px,94vw)!important;max-height:86vh!important;display:flex!important;flex-direction:column!important;overflow:hidden!important}
+  #modalValorRefeicao .modal-body{overflow:auto!important;padding:1rem 1.2rem!important}
+  #modalValorRefeicao .form-grid{grid-template-columns:1fr!important;gap:.75rem!important}
+  #modalValorRefeicao .modal-footer{flex-shrink:0!important;background:#0b1a35!important;padding:.9rem 1.2rem!important}
+</style>
+<script>
+// ============================================================
+// HOTFIX FINAL ADMIN — PDF Vascon, extras e valores
+// ============================================================
+(function(){
+  function $(id){return document.getElementById(id)}
+  function toastSafe(msg,type){ if(window.toast) toast(msg,type||'info'); else alert(msg); }
+  const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  const diaOrdem={segunda:1,terca:2,terça:2,quarta:3,quinta:4,sexta:5};
+  const diaLabel={segunda:'Segunda',terca:'Terça',terça:'Terça',quarta:'Quarta',quinta:'Quinta',sexta:'Sexta'};
+  function semanaAtual(){ return window.getSemanaIdAtualSelecionada ? window.getSemanaIdAtualSelecionada() : (window.SP?.getCurrentWeekId ? SP.getCurrentWeekId() : ''); }
+
+  // PDF: conecta o botão ao extrator real e tenta OCR quando o PDF for imagem.
+  async function loadScriptOnce(src,globalName){
+    if(globalName && window[globalName]) return;
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('Falha ao carregar '+src));document.head.appendChild(s);});
+  }
+  async function extrairTextoPdfFinal(file){
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js','pdfjsLib');
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let texto=''; const canvases=[];
+    for(let p=1;p<=Math.min(pdf.numPages,2);p++){
+      const page=await pdf.getPage(p); const content=await page.getTextContent();
+      const pageText=content.items.map(i=>i.str).join(' '); texto+='\n'+pageText;
+      const viewport=page.getViewport({scale:3}); const canvas=document.createElement('canvas'); canvas.width=viewport.width; canvas.height=viewport.height;
+      await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise; canvases.push(canvas);
+    }
+    if(texto.replace(/\s/g,'').length<120){
+      await loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js','Tesseract');
+      for(const c of canvases){
+        const r=await Tesseract.recognize(c,'por+eng'); texto+='\n'+(r.data.text||'');
+      }
+    }
+    return texto;
+  }
+  function parseCardapioVasconFinal(texto){
+    const raw=String(texto||'').toUpperCase().replace(/\r/g,'\n');
+    const dias=[['segunda','SEGUNDA'],['terca','TERÇA|TERCA'],['quarta','QUARTA'],['quinta','QUINTA'],['sexta','SEXTA']];
+    const result={segunda:{},terca:{},quarta:{},quinta:{},sexta:{}};
+    for(let i=0;i<dias.length;i++){
+      const [key,pat]=dias[i]; const next=dias.slice(i+1).map(d=>d[1]).join('|')||'OBS';
+      const re=new RegExp('('+pat+')[\\s\\S]*?(?=('+next+'|OBS|$))','i'); const m=raw.match(re); if(!m) continue;
+      const block=m[0].replace(/\([^)]*\)/g,' ');
+      const lines=block.split(/\n|\s{2,}/).map(x=>x.replace(/[^A-ZÀ-Ú0-9 \-]/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean)
+        .filter(x=>!/VASCON|SERVICOS|SERVIÇOS|DATA|PRATO PRINCIPAL|OPCAO|OPÇÃO|CARDAPIO|CARDÁPIO|SEGUNDA|TERCA|TERÇA|QUARTA|QUINTA|SEXTA|SOBREMESA|OBS/.test(x));
+      const has=(rx)=>lines.find(x=>rx.test(x));
+      const carne=has(/LINGUI|STEAK|FIL[EÉ] DE PEIXE|COXA DE FRANGO|BIFE ACEBOLADO|TOSCANA|FRANGO ENSOPADA|CARNE/);
+      const massa=has(/ENROLADINHO|GRAVATINHA|RAVIOLI|MACARR[AÃ]O|MOLHO/);
+      const lanche=has(/X[- ]?SALADA|HAMB[UÚ]RGUER|LANCHE/);
+      const light=lines.filter(x=>/OMELETE|MANDIOCA|CHIC[OÓ]RIA|SALADA DA PISTA|ALM[OÔ]NDEGA|COUVE|PUR[EÊ]|ABOBRINHA|LIGHT/.test(x));
+      const used=new Set([carne,massa,lanche,...light].filter(Boolean));
+      const principal=lines.filter(x=>!used.has(x)).slice(0,8).join('; ');
+      if(principal) result[key].principal=principal;
+      if(light.length) result[key].light=light.join('; ');
+      if(carne) result[key].carne=carne;
+      if(massa) result[key].massa=massa;
+      if(lanche) result[key].lanche=lanche;
+    }
+    return result;
+  }
+  window.processarPdfCardapioV20 = async function(file){
+    if(!file) return;
+    try{
+      toastSafe('Processando PDF da Vascon. Aguarde a leitura automática/OCR...','info');
+      const texto=await extrairTextoPdfFinal(file);
+      const parsed=parseCardapioVasconFinal(texto);
+      const total=Object.values(parsed).reduce((s,d)=>s+Object.keys(d).length,0);
+      if(!total){ toastSafe('Não consegui extrair o cardápio automaticamente. Use Editar manual para preencher e salvar.','error'); return; }
+      window.CARDAPIO_EDIT=parsed;
+      if(window.renderCardapioForm) window.renderCardapioForm();
+      const form=$('cardapioForm'); if(form) form.style.display='block';
+      toastSafe('Cardápio extraído. Revise e clique em Salvar no SharePoint.','success');
+    }catch(e){ console.error(e); toastSafe('Erro ao processar PDF: '+(e.message||e),'error'); }
+  };
+  window.handlePDFUpload = window.processarPdfCardapioV20;
+
+  // Extras: mostra apenas 1 refeição extra automática por dia e ordena por dia/tipo.
+  function limparDuplicadosVisuaisExtras(){
+    const tbody=$('extrasTable'); if(!tbody) return;
+    const seen=new Set();
+    const rows=[...tbody.querySelectorAll('tr')];
+    rows.forEach(tr=>{
+      const cells=[...tr.children].map(td=>norm(td.textContent));
+      const nome=cells[0]||'', tipo=cells[1]||'', dia=cells[2]||'';
+      const auto=nome.includes('refeicao extra') && tipo.includes('extra automatica');
+      const key='auto-'+dia;
+      if(auto){ if(seen.has(key)){ tr.style.display='none'; tr.dataset.homyDuplicate='1'; return; } seen.add(key); }
+      tr.style.display=''; tr.dataset.homyDuplicate='0';
+    });
+    [...tbody.querySelectorAll('tr')].sort((a,b)=>{
+      const ca=[...a.children].map(td=>norm(td.textContent)); const cb=[...b.children].map(td=>norm(td.textContent));
+      return (diaOrdem[ca[2]]||9)-(diaOrdem[cb[2]]||9) || ca[1].localeCompare(cb[1]) || ca[0].localeCompare(cb[0]);
+    }).forEach(tr=>tbody.appendChild(tr));
+  }
+  const oldAplicarFiltro=window.aplicarFiltroExtrasHomy;
+  window.aplicarFiltroExtrasHomy=function(){ if(oldAplicarFiltro) oldAplicarFiltro(); limparDuplicadosVisuaisExtras(); };
+  const oldLoadExtras=window.loadExtras;
+  if(oldLoadExtras && !oldLoadExtras.__homyFinal2){
+    const fn=async function(){ const r=await oldLoadExtras.apply(this,arguments); setTimeout(()=>{limparDuplicadosVisuaisExtras(); if(window.aplicarFiltroExtrasHomy) window.aplicarFiltroExtrasHomy();},200); return r; };
+    fn.__homyFinal2=true; window.loadExtras=fn;
+  }
+
+  // Botões pré-cadastrados: investigador/guarda só adicionam quando clicados.
+  window.abrirModalExtraPredefinido=function(tipo){
+    const modal=$('modalExtra'); if(!modal) return;
+    modal.dataset.predefinido=tipo||'';
+    const nome=$('extraNome'), tipoEl=$('extraTipo'), opcao=$('extraOpcao'), obs=$('extraObs');
+    if(tipo==='investigador'){ if(nome)nome.value='Investigador'; if(tipoEl)tipoEl.value='investigador'; if(opcao)opcao.value='principal'; if(obs)obs.value='Extra pré-cadastrado: Investigador'; }
+    else if(tipo==='guarda'){ if(nome)nome.value='Guarda'; if(tipoEl)tipoEl.value='guarda'; if(opcao)opcao.value='principal'; if(obs)obs.value='Extra pré-cadastrado: Guarda'; }
+    [nome,tipoEl,opcao,obs].forEach(el=>{ if(el?.closest('.form-group')) el.closest('.form-group').style.display=tipo?'none':''; });
+    modal.classList.add('open');
+  };
+
+  setInterval(limparDuplicadosVisuaisExtras,1200);
+})();
+</script>
+
 </body>
 
 </html>
