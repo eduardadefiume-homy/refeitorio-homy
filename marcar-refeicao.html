@@ -218,6 +218,16 @@ body::after{
 /* garante que o conteúdo fique acima do fundo */
 .header,.main-content,.cards-area,.week-nav,.day-tabs-wrap,.view,.content,.app,#app,#splash,.modal-overlay,.modal-bg{position:relative;z-index:1}
 
+
+/* HOTFIX RESPONSIVO MARCAÇÃO — cards não vazam da tela */
+.view,.content{width:100%;max-width:100vw;overflow-x:hidden}
+.func-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))!important;width:100%!important;max-width:100%!important}
+.func-card{min-width:0!important;max-width:100%!important;overflow:hidden!important}
+.func-info{min-width:0!important;overflow:hidden!important}
+.func-name,.func-dept{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+@media(max-width:900px){.content{padding:1rem!important}.func-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important}.header-inner{max-width:100%!important}}
+@media(max-width:620px){.func-grid{grid-template-columns:1fr!important}.prazo-badge{font-size:.68rem!important;padding:7px 9px!important}.header-title{font-size:1rem!important}.header-sub{font-size:.58rem!important}.search-input{font-size:.95rem!important}}
+
 </style>
 </head>
 <body>
@@ -932,7 +942,7 @@ window.addEventListener("load", carregarPrazoMarcacao);
         if(!overlay){
           overlay=document.createElement('div'); overlay.id='homyBlockOverlay';
           overlay.style.cssText='position:fixed;inset:0;z-index:999;background:rgba(3,8,20,.92);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;text-align:center;padding:2rem;color:#e8f0ff;font-family:Barlow,sans-serif';
-          overlay.innerHTML='<div style="max-width:420px;border:1px solid rgba(255,180,0,.3);background:rgba(255,180,0,.08);border-radius:22px;padding:2rem"><div style="font-size:2.5rem;margin-bottom:.8rem">🔒</div><div style="font-family:Barlow Condensed,sans-serif;font-size:1.8rem;font-weight:700;text-transform:uppercase">Marcação bloqueada</div><p style="color:rgba(200,220,255,.75);margin-top:.7rem;line-height:1.5">A Luana bloqueou a marcação no painel administrador.</p><a href="index.html" style="display:inline-block;margin-top:1rem;padding:.7rem 1rem;border-radius:10px;background:rgba(26,100,200,.25);border:1px solid rgba(80,150,255,.35);color:#9bd2ff;text-decoration:none;font-weight:700">Voltar</a></div>';
+          overlay.innerHTML='<div style="max-width:420px;border:1px solid rgba(255,180,0,.3);background:rgba(255,180,0,.08);border-radius:22px;padding:2rem"><div style="font-size:2.5rem;margin-bottom:.8rem">🔒</div><div style="font-family:Barlow Condensed,sans-serif;font-size:1.8rem;font-weight:700;text-transform:uppercase">Marcação bloqueada</div><p style="color:rgba(200,220,255,.75);margin-top:.7rem;line-height:1.5">A marcação foi bloqueada no painel administrador.</p><a href="index.html" style="display:inline-block;margin-top:1rem;padding:.7rem 1rem;border-radius:10px;background:rgba(26,100,200,.25);border:1px solid rgba(80,150,255,.35);color:#9bd2ff;text-decoration:none;font-weight:700">Voltar</a></div>';
           document.body.appendChild(overlay);
         }
       }else if(overlay){ overlay.remove(); }
