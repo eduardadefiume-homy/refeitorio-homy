@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#040c1a">
-<link rel="icon" type="image/png" href="favicon.png">
+<link rel="icon" type="image/png" href="favicon.png?v=home2">
 <title>Refeitório · Homy Química</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -28,8 +28,7 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
   margin-bottom:20vh;
 }
 
-.logo-circle{
-  width:220px;height:220px;border-radius:50%;
+.logo-circle{width:150px;height:150px;border-radius:50%;
   background:radial-gradient(circle at 40% 35%,rgba(40,80,200,0.3) 0%,rgba(20,50,140,0.18) 55%,transparent 100%);
   border:1.5px solid rgba(60,140,255,0.25);
   display:flex;align-items:center;justify-content:center;
@@ -68,8 +67,7 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
 }
 @keyframes spin{to{transform:rotate(360deg)}}
 
-.logo-circle img{
-  width:168px;height:168px;object-fit:contain;
+.logo-circle img{width:76px;height:76px;object-fit:contain;
   filter:drop-shadow(0 4px 22px rgba(26,80,220,0.6)) drop-shadow(0 0 40px rgba(192,40,28,0.3));
 }
 
@@ -150,6 +148,8 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
 .dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.1)}
 .dot.active{background:#c0281c;width:16px;border-radius:3px}
 </style>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="sharepoint.js?v=home2"></script>
 </head>
 <body>
 
@@ -195,6 +195,14 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
       <div class="card-info">
         <div class="card-title">Cardápio da semana</div>
         <div class="card-desc">Segunda à sexta, cardápio completo</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </a>
+    <a class="menu-card" href="cozinha.html">
+      <div class="card-icon icon-blue">👩‍🍳</div>
+      <div class="card-info">
+        <div class="card-title">Cozinha</div>
+        <div class="card-desc">Lista do dia e confirmação de retirada</div>
       </div>
       <span class="card-arrow">›</span>
     </a>
@@ -387,69 +395,58 @@ async function verificarLiberacao(){
 
   if(!btn || !badge) return;
 
-  if(SP_CONFIG.clientSecret === "COLE_AQUI_O_CLIENT_SECRET"){
-    console.warn("[Refeitório] clientSecret não configurado — botão bloqueado.");
-    _setEstado(btn, badge, false);
-    return;
-  }
-
   try {
-    const tokenRes = await fetch(
-      `https://login.microsoftonline.com/${SP_CONFIG.tenantId}/oauth2/v2.0/token`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type:    "client_credentials",
-          client_id:     SP_CONFIG.clientId,
-          client_secret: SP_CONFIG.clientSecret,
-          scope:         "https://graph.microsoft.com/.default"
-        })
-      }
-    );
+    if (!window.SP) throw new Error("sharepoint.js não carregado");
 
-    if(!tokenRes.ok) throw new Error("Token error " + tokenRes.status);
-    const { access_token } = await tokenRes.json();
+    // Não força popup na tela inicial. Se já houver sessão, verifica em silêncio.
+    await SP.init();
 
-    const siteRes = await fetch(
-      `https://graph.microsoft.com/v1.0/sites/${SP_CONFIG.siteHostname}:${SP_CONFIG.sitePath}`,
-      { headers: { Authorization: "Bearer " + access_token } }
-    );
+    if (!SP._account) {
+      badge.textContent = "Entrar para verificar";
+      badge.className = "card-badge badge-loading";
 
-    if(!siteRes.ok) throw new Error("Site error " + siteRes.status);
-    const { id: siteId } = await siteRes.json();
+      btn.classList.remove("disabled");
+      btn.removeAttribute("aria-disabled");
 
-    const listRes = await fetch(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(SP_CONFIG.listName)}/items?expand=fields&$top=999`,
-      { headers: { Authorization: "Bearer " + access_token } }
-    );
+      btn.onclick = async function(e) {
+        e.preventDefault();
+        try {
+          await SP.login();
+          const liberado = await SP.isCardapioLiberado();
+          _setEstado(btn, badge, liberado);
+          if (liberado) window.location.href = "marcar-refeicao.html";
+        } catch (erro) {
+          console.warn("[Refeitório] Login/verificação falhou:", erro);
+          _setEstado(btn, badge, false);
+        }
+      };
 
-    if(!listRes.ok) throw new Error("List error " + listRes.status);
-    const { value: items } = await listRes.json();
+      return;
+    }
 
-    const chavesLiberacao = [
-      "marcacao_liberada",
-      "cardapio_liberado",
-      "pedidos_liberados",
-      "liberar_marcacao",
-      "liberar_pedidos"
-    ];
-
-    const valoresVerdadeiros = ["sim", "true", "1", "yes", "ativo", "liberado", "liberada"];
-
-    const liberado = (items || []).some(item => {
-      const f = item.fields || {};
-      const chave = (f.Chave || f.Title || f.chave || "").toString().trim().toLowerCase();
-      const valor = (f.Valor || f.valor || f.Value || "").toString().trim().toLowerCase();
-
-      return chavesLiberacao.includes(chave) && valoresVerdadeiros.includes(valor);
-    });
-
+    const liberado = await SP.isCardapioLiberado();
     _setEstado(btn, badge, liberado);
 
   } catch(e){
     console.warn("[Refeitório] Não foi possível verificar liberação:", e.message);
-    _setEstado(btn, badge, false);
+    badge.textContent = "Verificar acesso";
+    badge.className = "card-badge badge-loading";
+
+    btn.classList.remove("disabled");
+    btn.removeAttribute("aria-disabled");
+
+    btn.onclick = async function(ev) {
+      ev.preventDefault();
+      try {
+        await SP.login();
+        const liberado = await SP.isCardapioLiberado();
+        _setEstado(btn, badge, liberado);
+        if (liberado) window.location.href = "marcar-refeicao.html";
+      } catch (erro) {
+        console.warn("[Refeitório] Login/verificação falhou:", erro);
+        _setEstado(btn, badge, false);
+      }
+    };
   }
 }
 
@@ -467,6 +464,12 @@ function _setEstado(btn, badge, liberado){
   }
 }
 
+
+document.addEventListener('click', function(e){
+  const card = e.target.closest('#btn-marcar');
+  if (!card) return;
+  if (card.classList.contains('disabled')) e.preventDefault();
+});
 </script>
 </body>
 </html>
