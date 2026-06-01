@@ -197,7 +197,7 @@ function hoje(){
 }
 
 function semanaIdAtual(){
-  if (window.SP && typeof SP.getCurrentWeekId === "function") return SP.getCurrentWeekId();
+  if (window.SP && typeof window.SP.getCurrentWeekId === "function") return window.SP.getCurrentWeekId();
   const d = new Date();
   d.setHours(0,0,0,0);
   d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
@@ -254,14 +254,14 @@ function isCheckinFeito(p){
   return checkinsHoje.some(c => {
     const cPid = String(itemValor(c, "Pedido_id", "pedido_id"));
     const cCid = String(itemValor(c, "Colaborador_id", "colaborador_id"));
-    const retirou = SP && SP.isTrue ? SP.isTrue(itemValor(c, "Retirou", "retirou")) : true;
+    const retirou = window.SP && window.SP.isTrue ? window.SP.isTrue(itemValor(c, "Retirou", "retirou")) : true;
     return retirou && ((pid && cPid === pid) || (cid && cCid === cid));
   });
 }
 
 async function carregarCardapio(semanaId, dia){
   try {
-    const cardapio = await SP.getCardapio(semanaId);
+    const cardapio = await window.SP.getCardapio(semanaId);
     const itens = cardapio.filter(c => normalizar(itemValor(c,"Dia","dia")) === normalizar(dia));
     if (!itens.length) {
       document.getElementById("cardapioHoje").textContent = "Nenhum cardápio cadastrado para hoje.";
@@ -290,9 +290,9 @@ async function sincronizar(){
   try {
     if (!window.SP) throw new Error("sharepoint.js não carregado");
 
-    await SP.init();
+    await window.SP.init();
 
-    if (!SP._account) {
+    if (!window.SP._account) {
       lista.innerHTML = `
         <div class="empty">
           <div class="empty-icon">🔐</div>
@@ -308,11 +308,11 @@ async function sincronizar(){
 
     await carregarCardapio(semanaId, dia);
 
-    const pedidos = await SP.getPedidos(semanaId);
+    const pedidos = await window.SP.getPedidos(semanaId);
     pedidosHoje = pedidos.filter(p => normalizar(itemValor(p,"Dia","dia")) === normalizar(dia) && pedidoConta(p));
 
     try {
-      checkinsHoje = await SP.getCheckIn(semanaId, dia);
+      checkinsHoje = await window.SP.getCheckIn(semanaId, dia);
     } catch(e) {
       console.warn("CheckIn:", e);
       checkinsHoje = [];
@@ -333,7 +333,7 @@ async function sincronizar(){
 
 async function conectar(){
   try {
-    await SP.login();
+    await window.SP.login();
     await sincronizar();
   } catch(e) {
     alert("Não foi possível conectar: " + (e.message || e));
@@ -411,10 +411,10 @@ async function confirmarRetirada(){
     const cid = getColaboradorId(pedidoSelecionado);
     const nome = getNome(pedidoSelecionado);
 
-    if (SP.saveCheckIn) {
-      await SP.saveCheckIn(semanaId, cid, nome, dia, SP.getUserName ? SP.getUserName() : "Cozinha");
+    if (window.SP.saveCheckIn) {
+      await window.SP.saveCheckIn(semanaId, cid, nome, dia, window.SP.getUserName ? window.SP.getUserName() : "Cozinha");
     } else {
-      await SP.registrarCheckIn(semanaId, cid, nome, dia, SP.getUserName ? SP.getUserName() : "Cozinha");
+      await window.SP.registrarCheckIn(semanaId, cid, nome, dia, window.SP.getUserName ? window.SP.getUserName() : "Cozinha");
     }
 
     fecharModal();
