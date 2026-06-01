@@ -149,8 +149,6 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
 .dot.active{background:#c0281c;width:16px;border-radius:3px}
 .badge-open{background:rgba(34,200,121,.16)!important;color:#40d090!important;border:1px solid rgba(34,200,121,.28)!important}
 </style>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-<script src="sharepoint.js?v=home2"></script>
 </head>
 <body>
 
@@ -393,17 +391,8 @@ requestAnimationFrame(frame);
 async function verificarLiberacao(){
   const btn = document.getElementById("btn-marcar");
   const badge = document.getElementById("badge-marcar");
-
-  if (!btn || !badge) return;
-
-  // A Home não deve travar o colaborador.
-  // A validação real fica dentro da página marcar-refeicao.html.
-  btn.classList.remove("disabled");
-  btn.removeAttribute("aria-disabled");
-  btn.setAttribute("href", "marcar-refeicao.html");
-
-  badge.textContent = "ABRIR";
-  badge.className = "card-badge badge-open";
+  if(btn){ btn.classList.remove("disabled"); btn.removeAttribute("aria-disabled"); btn.setAttribute("href","marcar-refeicao.html"); }
+  if(badge){ badge.textContent="ABRIR"; badge.className="card-badge badge-open"; }
 }
 
 function _setEstado(btn, badge, liberado){
