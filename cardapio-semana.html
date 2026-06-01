@@ -201,156 +201,85 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 </div>
  
 <script>
-const MESES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+window.HOMY_SP_READY = (function(){
+  function loadScript(src){
+    return new Promise(function(resolve,reject){
+      var s=document.createElement("script");
+      s.src=src;
+      s.onload=resolve;
+      s.onerror=function(){reject(new Error("Falha ao carregar: "+src));};
+      document.head.appendChild(s);
+    });
+  }
+
+  return loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js")
+    .catch(function(){
+      return loadScript("https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js");
+    })
+    .then(function(){
+      if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
+      return loadScript("sharepoint.js?v=real-data-20260601");
+    })
+    .then(function(){
+      if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
+      return window.SP;
+    });
+})();
+</script>
+<script>
 const DIAS_KEY=["seg","ter","qua","qui","sex"];
- 
-const NOTAS={
-  principal:"Prato completo com proteína, acompanhamentos e sobremesa.",
-  light:"Substitui o cardápio completo por opção de menor teor calórico.",
-  carne:"Substitui apenas a proteína. Todos os acompanhamentos são iguais ao Principal.",
-  massa:"Inclui somente a massa do dia, sem os demais acompanhamentos do Principal.",
-  lanche:"Opção exclusiva das sextas-feiras. Substitui o almoço.",
-};
- 
-const CARDAPIO={
-  seg:{label:"Segunda",opcoes:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Frango Grelhado ao Limão",detalhes:["Arroz branco e integral","Feijão carioca","Salada de alface e tomate","Sobremesa: fruta da estação"]},
-    {tag:"light",tagClass:"tag-light",nome:"Salada Completa com Atum",detalhes:["Folhas verdes, tomate cereja, pepino","Proteína: atum ao natural","Molho de azeite e limão","Sem carboidrato simples"]},
-    {tag:"carne",tagClass:"tag-carne",nome:"Bife Acebolado",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao principal"]},
-    {tag:"massa",tagClass:"tag-massa",nome:"Espaguete ao Sugo",detalhes:["Somente a massa do dia","Molho de tomate com manjericão"]},
-  ]},
-  ter:{label:"Terça",opcoes:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Carne Assada com Legumes",detalhes:["Arroz com brócolis","Feijão preto","Couve refogada","Sobremesa: pudim"]},
-    {tag:"light",tagClass:"tag-light",nome:"Peito de Peru Grelhado",detalhes:["Salada de quinoa e legumes","Vinagrete de pimenta","Baixo teor calórico"]},
-    {tag:"carne",tagClass:"tag-carne",nome:"Frango à Parmegiana",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao principal"]},
-    {tag:"massa",tagClass:"tag-massa",nome:"Penne ao Alho e Óleo",detalhes:["Somente a massa do dia","Com lascas de alho dourado"]},
-  ]},
-  qua:{label:"Quarta",opcoes:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Peixe Grelhado com Ervas",detalhes:["Arroz branco","Lentilha refogada","Salada de rúcula","Sobremesa: gelatina"]},
-    {tag:"light",tagClass:"tag-light",nome:"Sopa de Legumes Detox",detalhes:["Caldo de legumes frescos","Cenoura, abobrinha, chuchu","Sem adição de gordura","Opção vegana"]},
-    {tag:"carne",tagClass:"tag-carne",nome:"Costelinha de Porco",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao principal"]},
-    {tag:"massa",tagClass:"tag-massa",nome:"Nhoque ao Molho Branco",detalhes:["Somente a massa do dia","Molho bechamel leve"]},
-  ]},
-  qui:{label:"Quinta",opcoes:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Frango Caipira ao Molho",detalhes:["Arroz integral","Feijão verde","Farofa de mandioca","Sobremesa: banana caramelada"]},
-    {tag:"light",tagClass:"tag-light",nome:"Wrap de Frango Grelhado",detalhes:["Tortilla integral, cream cheese light","Alface, tomate e cenoura ralada","Rico em proteína, baixo em carboidrato"]},
-    {tag:"carne",tagClass:"tag-carne",nome:"Alcatra Grelhada",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao principal"]},
-    {tag:"massa",tagClass:"tag-massa",nome:"Lasanha de Frango",detalhes:["Somente a massa do dia","Molho branco e tomate"]},
-  ]},
-  sex:{label:"Sexta",opcoes:[
-    {tag:"principal",tagClass:"tag-principal",nome:"Frango Grelhado com Ervas",detalhes:["Arroz branco e integral","Feijão carioca","Salada de folhas","Sobremesa: fruta da estação"]},
-    {tag:"light",tagClass:"tag-light",nome:"Salada Caesar com Frango",detalhes:["Alface romana, croutons integrais","Frango grelhado fatiado","Molho caesar light","Baixo teor calórico"]},
-    {tag:"carne",tagClass:"tag-carne",nome:"Bife à Milanesa",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao principal"]},
-    {tag:"massa",tagClass:"tag-massa",nome:"Espaguete à Carbonara",detalhes:["Somente a massa do dia","Molho cremoso com ervas"]},
-  ],lanche:[
-    {tag:"lanche",tagClass:"tag-lanche",nome:"Lanche do Dia 🍔",detalhes:["Pão de hambúrguer artesanal","Hambúrguer bovino 150g","Queijo, alface, tomate e cebola","Batata rústica assada + refri"]},
-  ]},
-};
- 
-// MODAL
-function openModal(op){
-  document.getElementById("modalTag").textContent=op.tag;
-  document.getElementById("modalTag").className="modal-tag "+op.tagClass;
-  document.getElementById("modalTitle").textContent=op.nome;
-  const body=document.getElementById("modalBody");
-  body.innerHTML=op.detalhes.map(d=>"<div class=\"modal-detail\"><span class=\"modal-detail-text\">"+d+"</span></div>").join("");
-  if(NOTAS[op.tag]){
-    const note=document.createElement("div");
-    note.className="modal-note";
-    note.textContent="ℹ️  "+NOTAS[op.tag];
-    body.appendChild(note);
-  }
-  document.getElementById("modalOverlay").classList.add("open");
-  document.body.style.overflow="hidden";
-}
-function closeModal(){
-  document.getElementById("modalOverlay").classList.remove("open");
-  document.body.style.overflow="";
-}
-document.getElementById("modalClose").addEventListener("click",closeModal);
-document.getElementById("modalOverlay").addEventListener("click",function(e){if(e.target===this)closeModal();});
-document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal();});
- 
-function getWeekDates(off=0){
-  const today=new Date(),day=today.getDay(),mon=new Date(today);
-  mon.setDate(today.getDate()-(day===0?6:day-1)+(off*7));
-  return Array.from({length:5},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
-}
- 
+const DIAS_LABEL={seg:"Segunda",ter:"Terça",qua:"Quarta",qui:"Quinta",sex:"Sexta"};
+const MESES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+const TAG_CLASS={principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
 let weekOffset=0;
-function buildUI(){
-  const dates=getWeekDates(weekOffset),today=new Date();
-  const f=dates[0],l=dates[4];
-  document.getElementById("weekRange").textContent=
-    f.getDate()+"/"+(f.getMonth()+1).toString().padStart(2,"0")+" – "+
-    l.getDate()+"/"+(l.getMonth()+1).toString().padStart(2,"0")+"/"+l.getFullYear();
-  const jan1=new Date(today.getFullYear(),0,1);
-  document.getElementById("weekBadge").textContent="Semana "+Math.ceil(((today-jan1)/86400000+jan1.getDay()+1)/7);
-  const tabsEl=document.getElementById("dayTabs");
-  tabsEl.innerHTML="";
-  let def=null;
-  DIAS_KEY.forEach((key,i)=>{
-    const d=dates[i],isToday=d.toDateString()===today.toDateString()&&weekOffset===0;
-    if(isToday)def=key;
-    const t=document.createElement("div");
-    t.className="day-tab"+(isToday?" today":"");
-    t.dataset.day=key;
-    t.innerHTML="<span class=\"day-name\">"+["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][d.getDay()]+"</span><span class=\"day-num\">"+d.getDate()+"</span>"+(isToday?"<div class=\"day-today-dot\"></div>":"");
-    t.addEventListener("click",()=>setDay(key,dates));
-    tabsEl.appendChild(t);
-  });
-  setDay(def||"seg",dates);
+let CARDAPIO={seg:[],ter:[],qua:[],qui:[],sex:[]};
+let DATAS=[];
+
+function val(obj,...keys){ for(const k of keys){ if(obj && obj[k] !== undefined && obj[k] !== null) return obj[k]; } return ""; }
+function normalizarDia(v){ const s=String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""); if(s.startsWith("seg"))return"seg"; if(s.startsWith("ter"))return"ter"; if(s.startsWith("qua"))return"qua"; if(s.startsWith("qui"))return"qui"; if(s.startsWith("sex"))return"sex"; return s; }
+function detalhesLista(v){ return String(v||"").split(/\n|;/).map(x=>x.trim()).filter(Boolean); }
+function addWeeks(date,w){ const d=new Date(date); d.setDate(d.getDate()+w*7); return d; }
+function getSemanaId(date){ return SP && SP.getSemanaId ? SP.getSemanaId(date) : ""; }
+
+function openModal(op){ document.getElementById("modalTag").textContent=op.tag; document.getElementById("modalTag").className="modal-tag "+op.tagClass; document.getElementById("modalTitle").textContent=op.nome; document.getElementById("modalBody").innerHTML=op.detalhes.map(d=>'<div class="modal-detail"><span class="modal-detail-text">'+d+'</span></div>').join(""); document.getElementById("modalOverlay").classList.add("open"); document.body.style.overflow="hidden"; }
+function closeModal(){ document.getElementById("modalOverlay").classList.remove("open"); document.body.style.overflow=""; }
+document.getElementById("modalClose").addEventListener("click",closeModal); document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();}); document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+
+function makeCard(op){ const card=document.createElement("div"); card.className="option-card"; card.innerHTML='<div class="option-header"><span class="option-tag '+op.tagClass+'">'+op.tag+'</span><span class="option-name">'+op.nome+'</span></div><div class="option-body">'+op.detalhes.map(x=>'<div class="option-detail">'+x+'</div>').join("")+'</div><div class="option-hint">Toque para ver detalhes</div>'; card.addEventListener("click",()=>openModal(op)); return card; }
+
+function renderTabs(){
+  const hoje=new Date(); const f=DATAS[0], l=DATAS[4];
+  document.getElementById("weekRange").textContent=f.getDate()+"/"+String(f.getMonth()+1).padStart(2,"0")+" – "+l.getDate()+"/"+String(l.getMonth()+1).padStart(2,"0")+"/"+l.getFullYear();
+  document.getElementById("weekBadge").textContent="Semana "+(getSemanaId(f).split("-W")[1]||"");
+  const tabs=document.getElementById("dayTabs"); tabs.innerHTML=""; let def="seg";
+  DIAS_KEY.forEach((key,i)=>{ const d=DATAS[i]; const isToday=d.toDateString()===hoje.toDateString(); if(isToday) def=key; const t=document.createElement("div"); t.className="day-tab"+(isToday?" today":""); t.dataset.day=key; t.innerHTML='<span class="day-name">'+["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][d.getDay()]+'</span><span class="day-num">'+d.getDate()+'</span>'+(isToday?'<div class="day-today-dot"></div>':''); t.addEventListener("click",()=>setDay(key)); tabs.appendChild(t); });
+  setDay(def);
 }
- 
-function makeCard(op){
-  const card=document.createElement("div");
-  card.className="option-card";
-  card.innerHTML=
-    "<div class=\"option-header\"><span class=\"option-tag "+op.tagClass+"\">"+op.tag+"</span><span class=\"option-name\">"+op.nome+"</span></div>"+
-    "<div class=\"option-body\">"+op.detalhes.map(x=>"<div class=\"option-detail\">"+x+"</div>").join("")+"</div>"+
-    "<div class=\"option-hint\">Toque para ver detalhes</div>";
-  card.addEventListener("click",()=>openModal(op));
-  return card;
-}
- 
-function setDay(key,dates){
-  const idx=DIAS_KEY.indexOf(key),d=dates[idx],today=new Date();
+function setDay(key){
+  const idx=DIAS_KEY.indexOf(key), d=DATAS[idx], hoje=new Date();
   document.querySelectorAll(".day-tab").forEach(t=>t.classList.toggle("active",t.dataset.day===key));
-  const area=document.getElementById("cardsArea");
-  area.innerHTML="";
-  const data=CARDAPIO[key];
-  if(!data)return;
-  const panel=document.createElement("div");
-  panel.className="day-panel active";
-  const isToday=d.toDateString()===today.toDateString()&&weekOffset===0;
-  panel.innerHTML="<div class=\"day-header\"><span class=\"day-header-date\">"+data.label+", "+d.getDate()+" de "+MESES[d.getMonth()]+"</span>"+(isToday?"<span class=\"day-header-badge\">Hoje</span>":"")+"</div>";
- 
-  const nota=document.createElement("div");
-  nota.className="nota-card";
-  nota.innerHTML="<span class=\"nota-icon\">ℹ️</span><span class=\"nota-text\"><strong>Carne</strong> substitui apenas a proteína · <strong>Light</strong> muda o cardápio completo · <strong>Massa</strong> inclui somente a massa do dia · <strong>Toque em qualquer opção</strong> para ver mais detalhes.</span>";
-  panel.appendChild(nota);
- 
-  const grid=document.createElement("div");
-  grid.className="options-grid";
-  data.opcoes.forEach(op=>grid.appendChild(makeCard(op)));
-  panel.appendChild(grid);
- 
-  if(data.lanche){
-    const lbl=document.createElement("div");
-    lbl.className="section-label";
-    lbl.textContent="🍔  Opção de lanche — exclusivo da sexta";
-    panel.appendChild(lbl);
-    const lg=document.createElement("div");
-    lg.className="lanche-grid";
-    data.lanche.forEach(op=>lg.appendChild(makeCard(op)));
-    panel.appendChild(lg);
-  }
-  area.appendChild(panel);
+  const area=document.getElementById("cardsArea"); area.innerHTML="";
+  const panel=document.createElement("div"); panel.className="day-panel active";
+  const isToday=d.toDateString()===hoje.toDateString();
+  panel.innerHTML='<div class="day-header"><span class="day-header-date">'+DIAS_LABEL[key]+', '+d.getDate()+' de '+MESES[d.getMonth()]+'</span>'+(isToday?'<span class="day-header-badge">Hoje</span>':'')+'</div>';
+  const itens=CARDAPIO[key]||[];
+  if(!itens.length){ panel.innerHTML += '<div class="nota-card"><span class="nota-icon">ℹ️</span><span class="nota-text">Nenhum cardápio real cadastrado para este dia no Admin.</span></div>'; area.appendChild(panel); return; }
+  const nota=document.createElement("div"); nota.className="nota-card"; nota.innerHTML='<span class="nota-icon">ℹ️</span><span class="nota-text"><strong>Dados reais do Admin.</strong> Qualquer alteração salva no SharePoint aparecerá aqui ao atualizar a página.</span>'; panel.appendChild(nota);
+  const grid=document.createElement("div"); grid.className="options-grid"; itens.forEach(op=>grid.appendChild(makeCard(op))); panel.appendChild(grid); area.appendChild(panel);
 }
- 
-document.getElementById("prevWeek").addEventListener("click",()=>{weekOffset--;buildUI();});
-document.getElementById("nextWeek").addEventListener("click",()=>{weekOffset++;buildUI();});
-buildUI();
+async function carregarSemana(){
+  try{
+    await window.HOMY_SP_READY; await SP.ensureLogin();
+    const base=addWeeks(new Date(),weekOffset); const semanaId=getSemanaId(base); DATAS=SP.getWeekDates(semanaId);
+    CARDAPIO={seg:[],ter:[],qua:[],qui:[],sex:[]};
+    const itens=await SP.getCardapio(semanaId);
+    (itens||[]).forEach(i=>{ const dia=normalizarDia(val(i,"Dia","dia")); if(!CARDAPIO[dia]) return; const tag=String(val(i,"Opcao","opcao")||"principal").toLowerCase(); CARDAPIO[dia].push({tag,tagClass:TAG_CLASS[tag]||"tag-principal",nome:val(i,"Nome_Prato","nomePrato","Prato","Title")||"Prato não informado",detalhes:detalhesLista(val(i,"Detalhes","detalhes"))}); });
+    renderTabs();
+  }catch(e){ console.error("Erro ao carregar cardápio real:",e); document.getElementById("cardsArea").innerHTML='<div class="nota-card"><span class="nota-icon">⚠️</span><span class="nota-text">Não foi possível conectar ao SharePoint. Verifique o login Microsoft.</span></div>'; }
+}
+document.getElementById("prevWeek").addEventListener("click",()=>{weekOffset--;carregarSemana();});
+document.getElementById("nextWeek").addEventListener("click",()=>{weekOffset++;carregarSemana();});
+carregarSemana();
 </script>
 </body>
 </html>
