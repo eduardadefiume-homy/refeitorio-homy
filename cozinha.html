@@ -224,10 +224,10 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=final-20260601-2").catch(function(){
-        return loadScript("./sharepoint.js?v=final-20260601-2");
+      return loadScript("sharepoint.js?v=homy-final-20260601-2").catch(function(){
+        return loadScript("./sharepoint.js?v=homy-final-20260601-2");
       }).catch(function(){
-        return loadScript("../sharepoint.js?v=final-20260601-2");
+        return loadScript("../sharepoint.js?v=homy-final-20260601-2");
       });
     })
     .then(function(){
