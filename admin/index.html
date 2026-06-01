@@ -3473,6 +3473,306 @@ document.addEventListener("keydown", function(event){
 })();
 </script>
 
+
+
+<script id="homy-admin-final-corrections-20260601">
+// ============================================================
+// CORREÇÃO DEFINITIVA ADMIN — PDF, Extras, Valores, Pedidos, Operação
+// ============================================================
+(function(){
+  const $ = id => document.getElementById(id);
+  const norm = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  const clean = v => norm(v).replace(/[^a-z0-9]/g,'');
+  const toastSafe=(m,t)=> window.toast ? toast(m,t||'info') : alert(m);
+  const diaOrdem={segunda:1,terca:2,terça:2,quarta:3,quinta:4,sexta:5};
+  const dias=['segunda','terca','quarta','quinta','sexta'];
+  function semanaAtual(){ return window.getSemanaIdAtualSelecionada ? window.getSemanaIdAtualSelecionada() : (window.SP?.getCurrentWeekId ? SP.getCurrentWeekId() : ''); }
+  function pick(obj,...keys){ for(const k of keys){ if(obj && obj[k]!==undefined && obj[k]!==null) return obj[k]; } return ''; }
+  function isExtraAuto(x){ return clean(pick(x,'Nome','Colaborador_nome','Title'))==='refeicaoextra' && clean(pick(x,'tipo','Tipo','Origem')).includes('extra'); }
+
+  const css=document.createElement('style');
+  css.textContent=`
+    #modalValorRefeicao{align-items:center!important;justify-content:center!important;padding:12px!important;overflow:auto!important}
+    #modalValorRefeicao .modal-box{width:min(500px,94vw)!important;max-height:84vh!important;overflow:hidden!important;display:flex!important;flex-direction:column!important}
+    #modalValorRefeicao .modal-body{overflow:auto!important;max-height:calc(84vh - 130px)!important;padding:1rem!important}
+    #modalValorRefeicao .form-grid{grid-template-columns:1fr!important;gap:.7rem!important}
+    #modalValorRefeicao .modal-footer{position:sticky!important;bottom:0!important;background:#0b1a35!important;padding:.85rem 1rem!important;z-index:5!important}
+    .homy-op-extra{color:#ffd36d!important;font-weight:700}
+    .homy-hidden-dup{display:none!important}
+  `;
+  document.head.appendChild(css);
+
+  // ========= CARDÁPIO VASCON: ler PDF por posição e salvar direto no SharePoint =========
+  async function loadScriptOnce(src,globalName){
+    if(globalName && window[globalName]) return;
+    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('Falha ao carregar '+src)); document.head.appendChild(s); });
+  }
+
+  function optionFromX(x, xs){
+    if(!xs.light) return 'principal';
+    if(x < xs.light - 8) return 'principal';
+    if(!xs.carne || x < xs.carne - 8) return 'light';
+    if(!xs.massa || x < xs.massa - 8) return 'carne';
+    if(!xs.lanche || x < xs.lanche - 8) return 'massa';
+    return 'lanche';
+  }
+
+  async function extrairVasconPorLayout(file){
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js','pdfjsLib');
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const result={segunda:{},terca:{},quarta:{},quinta:{},sexta:{}};
+
+    for(let pg=1; pg<=Math.min(pdf.numPages,2); pg++){
+      const page=await pdf.getPage(pg);
+      const content=await page.getTextContent();
+      const items=content.items.map(i=>({text:String(i.str||'').trim(), x:i.transform[4], y:Math.round(i.transform[5])})).filter(i=>i.text);
+      if(!items.length) continue;
+
+      let xs={};
+      for(const it of items){
+        const c=clean(it.text);
+        if(c.includes('light')) xs.light=it.x;
+        if(c.includes('carne')) xs.carne=it.x;
+        if(c.includes('massa')) xs.massa=it.x;
+        if(c.includes('lanche')) xs.lanche=it.x;
+      }
+      if(!xs.light){ xs={light:390,carne:570,massa:690,lanche:790}; }
+
+      const rows={};
+      for(const it of items){ (rows[it.y]=rows[it.y]||[]).push(it); }
+      const sortedRows=Object.keys(rows).map(Number).sort((a,b)=>b-a).map(y=>rows[y].sort((a,b)=>a.x-b.x));
+      let diaAtual='';
+      for(const row of sortedRows){
+        const line=row.map(i=>i.text).join(' ').toUpperCase();
+        if(/SEGUNDA/.test(line)) diaAtual='segunda';
+        else if(/TER[ÇC]A/.test(line)) diaAtual='terca';
+        else if(/QUARTA/.test(line)) diaAtual='quarta';
+        else if(/QUINTA/.test(line)) diaAtual='quinta';
+        else if(/SEXTA/.test(line)) diaAtual='sexta';
+        if(!diaAtual) continue;
+        if(/VASCON|DATA|PRATO PRINCIPAL|OP[ÇC][AÃ]O|SERVI[ÇC]OS|OBS|CARD[AÁ]PIO/.test(line)) continue;
+
+        for(const it of row){
+          let txt=it.text.replace(/\([^)]*\)/g,'').replace(/\s+/g,' ').trim();
+          if(!txt || /^[0-9\/]+$/.test(txt)) continue;
+          const up=txt.toUpperCase();
+          if(/SEGUNDA|TER[ÇC]A|QUARTA|QUINTA|SEXTA|VASCON|DATA|OP[ÇC][AÃ]O|PRATO|SOBREMESA|FOLHA|OBS/.test(up)) continue;
+          if(it.x < 70) continue; // coluna do dia
+          const opcao=optionFromX(it.x,xs);
+          result[diaAtual][opcao]=(result[diaAtual][opcao] ? result[diaAtual][opcao]+'; ' : '') + txt;
+        }
+      }
+    }
+    return result;
+  }
+
+  async function salvarCardapioExtraido(parsed){
+    const semana=semanaAtual();
+    let total=0;
+    await SP.init();
+    for(const dia of dias){
+      const data=parsed[dia]||{};
+      for(const opcao of ['principal','light','carne','massa','lanche']){
+        const nome=String(data[opcao]||'').trim();
+        if(!nome) continue;
+        await SP.saveCardapio(semana,dia,opcao,nome,'Extraído automaticamente do PDF Vascon');
+        total++;
+      }
+    }
+    await SP.setConfig('cardapio_ultima_atualizacao', new Date().toISOString());
+    return total;
+  }
+
+  window.processarPdfCardapioV20 = async function(file){
+    if(!file) return;
+    try{
+      toastSafe('Processando PDF da Vascon. Aguarde a leitura automática...','info');
+      const parsed=await extrairVasconPorLayout(file);
+      const total=await salvarCardapioExtraido(parsed);
+      if(!total){ toastSafe('Não consegui extrair o PDF automaticamente. Use Editar manual.','error'); return; }
+      toastSafe('Cardápio salvo no SharePoint com '+total+' itens.','success');
+      if(window.loadCardapio) await window.loadCardapio(semanaAtual());
+      if(window.reloadCurrentModule) window.reloadCurrentModule();
+    }catch(e){ console.error(e); toastSafe('Erro ao processar/salvar PDF: '+(e.message||e),'error'); }
+  };
+  window.handlePDFUpload = window.processarPdfCardapioV20;
+
+  // ========= EXTRAS: render próprio com filtro real =========
+  function getExtraRows(list){
+    const seenAuto=new Set();
+    return (list||[]).filter(x=>{
+      if(isExtraAuto(x)){
+        const dia=clean(pick(x,'Dia'));
+        if(seenAuto.has(dia)) return false;
+        seenAuto.add(dia);
+      }
+      return true;
+    }).sort((a,b)=>(diaOrdem[norm(pick(a,'Dia'))]||9)-(diaOrdem[norm(pick(b,'Dia'))]||9) || norm(pick(a,'tipo','Tipo')).localeCompare(norm(pick(b,'tipo','Tipo'))) || norm(pick(a,'Nome','Title')).localeCompare(norm(pick(b,'Nome','Title'))));
+  }
+
+  function extraPassaFiltro(x){
+    const txt=norm($('fExtraTexto')?.value), dia=norm($('fExtraDia')?.value), tipo=norm($('fExtraTipo')?.value);
+    const all=norm([pick(x,'Nome','Title'),pick(x,'Observacao','Observação'),pick(x,'tipo','Tipo'),pick(x,'Dia')].join(' '));
+    return (!txt || all.includes(txt)) && (!dia || norm(pick(x,'Dia'))===dia) && (!tipo || norm(pick(x,'tipo','Tipo')).includes(tipo));
+  }
+
+  window.loadExtras = async function(){
+    const tbody=$('extrasTable'); if(!tbody) return;
+    try{
+      await SP.init();
+      const semana=semanaAtual();
+      let extras=await SP.getExtras(semana);
+      extras=getExtraRows(extras).filter(extraPassaFiltro);
+      if(!extras.length){ tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:rgba(143,170,210,.45);padding:2rem">Nenhum extra cadastrado.</td></tr>`; return; }
+      tbody.innerHTML=extras.map(e=>{
+        const id=e.id||e.ID||'';
+        const nome=pick(e,'Nome','Title')||'Extra';
+        const tipo=pick(e,'tipo','Tipo')||'extra';
+        const dia=pick(e,'Dia')||'';
+        const opcao=pick(e,'Opcao','Opção')||'principal';
+        const obs=pick(e,'Observacao','Observação')||'';
+        return `<tr>
+          <td>${nome}</td><td><span class="badge badge-yellow">${tipo}</span></td><td>${dia}</td><td><span class="badge badge-blue">${opcao}</span></td><td>${obs}</td>
+          <td><div class="table-actions"><button class="btn-icon" onclick="abrirModalExtraEditarHomy('${id}')">✏️</button><button class="btn-icon danger" onclick="removerExtra('${id}')">🗑️</button></div></td>
+        </tr>`;
+      }).join('');
+    }catch(e){ tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:#ff8080;padding:2rem">Erro: ${e.message||e}</td></tr>`; }
+  };
+
+  window.aplicarFiltroExtrasHomy = function(){ window.loadExtras(); };
+  window.limparFiltroExtrasHomy = function(){ ['fExtraTexto','fExtraDia','fExtraTipo'].forEach(id=>{const el=$(id); if(el) el.value='';}); window.loadExtras(); };
+  ['fExtraTexto','fExtraDia','fExtraTipo'].forEach(id=>setTimeout(()=>{const el=$(id); if(el && !el.dataset.homyFilterBound){el.dataset.homyFilterBound='1'; el.addEventListener(id==='fExtraTexto'?'input':'change',()=>window.loadExtras());}},1200));
+
+  window.abrirModalExtraPredefinido=function(tipo){
+    const modal=$('modalExtra'); if(!modal) return;
+    modal.dataset.predefinido=tipo||'';
+    const nome=$('extraNome'), tipoEl=$('extraTipo'), opcao=$('extraOpcao'), obs=$('extraObs');
+    if(tipo==='investigador'){ if(nome) nome.value='Investigador'; if(tipoEl) tipoEl.value='investigador'; if(opcao) opcao.value='principal'; if(obs) obs.value='Investigador'; }
+    if(tipo==='guarda'){ if(nome) nome.value='Guarda'; if(tipoEl) tipoEl.value='guarda'; if(opcao) opcao.value='principal'; if(obs) obs.value='Guarda'; }
+    [nome,tipoEl,opcao,obs].forEach(el=>{ if(el?.closest('.form-group')) el.closest('.form-group').style.display=tipo?'none':''; });
+    modal.classList.add('open');
+  };
+
+  window.abrirModalExtra=function(){
+    const modal=$('modalExtra'); if(!modal) return;
+    modal.dataset.predefinido='';
+    ['extraNome','extraTipo','extraOpcao','extraObs'].forEach(id=>{const el=$(id); if(el?.closest('.form-group')) el.closest('.form-group').style.display=''; if(el) el.value='';});
+    const d=$('extraDia'); if(d) d.value='segunda';
+    modal.classList.add('open');
+  };
+
+  window.salvarExtraManual=async function(){
+    const modal=$('modalExtra'); const pre=modal?.dataset.predefinido||'';
+    let dia=$('extraDia')?.value||'segunda', nome=$('extraNome')?.value?.trim()||'', tipo=$('extraTipo')?.value||'prestador', opcao=$('extraOpcao')?.value||'principal', obs=$('extraObs')?.value?.trim()||'';
+    try{
+      await SP.init();
+      if(pre==='investigador'){
+        const pedidos=await SP.getPedidos(semanaAtual());
+        const qtd=pedidos.filter(p=>norm(pick(p,'Dia'))===norm(dia)&&norm(pick(p,'Origem','Tipo','tipo')).includes('investigador')).length;
+        nome='Investigador '+(qtd+1); tipo='investigador'; opcao='principal'; obs='Investigador';
+      }else if(pre==='guarda'){
+        nome='Guarda'; tipo='guarda'; opcao='principal'; obs='Guarda';
+      }
+      if(!nome){ toastSafe('Informe o nome do extra/visitante.','error'); return; }
+      await SP.addExtraPedido(semanaAtual(),dia,nome,tipo,opcao,obs,SP.getUserName ? SP.getUserName() : 'Admin');
+      modal?.classList.remove('open');
+      toastSafe('Extra salvo.','success');
+      await window.loadExtras(); if(window.loadPedidos) await window.loadPedidos(semanaAtual()); if(window.loadOperacaoDia) await window.loadOperacaoDia(semanaAtual());
+    }catch(e){ console.error(e); toastSafe('Erro ao salvar extra: '+(e.message||e),'error'); }
+  };
+
+  function bindExtrasButtons(){
+    const b1=$('btnExtraInvestigador'); if(b1 && !b1.dataset.homyClick){ b1.dataset.homyClick='1'; b1.onclick=()=>window.abrirModalExtraPredefinido('investigador'); }
+    const b2=$('btnExtraGuarda'); if(b2 && !b2.dataset.homyClick){ b2.dataset.homyClick='1'; b2.onclick=()=>window.abrirModalExtraPredefinido('guarda'); }
+    const b3=$('btnAdicionarExtra'); if(b3 && !b3.dataset.homyClick){ b3.dataset.homyClick='1'; b3.onclick=()=>window.abrirModalExtra(); }
+    const s=$('salvarExtra'); if(s && !s.dataset.homyClick2){ s.dataset.homyClick2='1'; s.onclick=(e)=>{e.preventDefault(); window.salvarExtraManual();}; }
+  }
+
+  window.removerExtra=async function(id){
+    try{
+      if(!confirm('Excluir este extra e o pedido vinculado?')) return;
+      await SP.init();
+      const extras=await SP.getExtras(semanaAtual());
+      const extra=extras.find(e=>String(e.id||e.ID)===String(id));
+      if(extra && SP.deleteExtraComPedido) await SP.deleteExtraComPedido(extra); else await SP.deleteExtra(id);
+      toastSafe('Extra excluído.','success');
+      await window.loadExtras(); if(window.loadPedidos) await window.loadPedidos(semanaAtual()); if(window.loadOperacaoDia) await window.loadOperacaoDia(semanaAtual());
+    }catch(e){ console.error(e); toastSafe('Erro ao excluir extra: '+(e.message||e),'error'); }
+  };
+
+  window.removerPedido = window.excluirPedido = async function(id){
+    try{
+      if(!confirm('Excluir este pedido?')) return;
+      await SP.init(); await SP.deletePedido(id);
+      toastSafe('Pedido excluído.','success');
+      if(window.loadPedidos) await window.loadPedidos(semanaAtual()); if(window.loadOperacaoDia) await window.loadOperacaoDia(semanaAtual());
+    }catch(e){ console.error(e); toastSafe('Erro ao excluir pedido: '+(e.message||e),'error'); }
+  };
+
+  // ========= OPERAÇÃO DO DIA limpa, dedupada e com nomes corretos =========
+  window.loadOperacaoDia = async function(semanaId){
+    const tbody=$('operacaoTable'); if(!tbody) return;
+    try{
+      await SP.init();
+      if(SP.cleanupExtraAutomaticoSemana) await SP.cleanupExtraAutomaticoSemana(semanaId||semanaAtual());
+      const diaSel=$('operacaoDia')?.value||'segunda'; const statusFiltro=$('operacaoFiltroStatus')?.value||''; const busca=norm($('operacaoBusca')?.value||'');
+      let pedidos=await SP.getPedidos(semanaId||semanaAtual());
+      const seenAuto=new Set();
+      pedidos=pedidos.filter(p=>{
+        if(norm(pick(p,'Dia'))!==norm(diaSel)) return false;
+        if(isExtraAuto({Nome:pick(p,'Colaborador_nome','Title','Nome'),tipo:pick(p,'Origem','Tipo','tipo'),Dia:pick(p,'Dia')})){
+          const k=norm(pick(p,'Dia'));
+          if(seenAuto.has(k)) return false; seenAuto.add(k);
+        }
+        return true;
+      });
+      if(statusFiltro) pedidos=pedidos.filter(p=>norm(pick(p,'Status'))===norm(statusFiltro) || (statusFiltro==='Confirmado' && SP.isTrue(pick(p,'Confirmado'))));
+      if(busca) pedidos=pedidos.filter(p=>norm([pick(p,'Colaborador_nome','Title','Nome'),pick(p,'Centro_Custo'),pick(p,'Origem','Tipo')].join(' ')).includes(busca));
+      const total=pedidos.length, principal=pedidos.filter(p=>norm(pick(p,'Opcao'))==='principal').length, light=pedidos.filter(p=>norm(pick(p,'Opcao'))==='light').length, cancel=pedidos.filter(p=>['cancelado','bloqueado','afastado','ferias','férias','nao vai almocar','não vai almoçar'].includes(norm(pick(p,'Status')))).length;
+      if($('opTotalConfirmado')) $('opTotalConfirmado').textContent=total;
+      if($('opTotalPrincipal')) $('opTotalPrincipal').textContent=principal;
+      if($('opTotalLight')) $('opTotalLight').textContent=light;
+      if($('opTotalCancelado')) $('opTotalCancelado').textContent=cancel;
+      if(!pedidos.length){ tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;color:rgba(143,170,210,.45);padding:2rem">Nenhum pedido encontrado para este dia.</td></tr>`; return; }
+      tbody.innerHTML=pedidos.map(p=>{
+        const id=p.id||''; const nome=pick(p,'Colaborador_nome','Title','Nome')||'—'; const origem=pick(p,'Origem','Tipo','tipo')||'Refeitório'; const isExtra=SP.isExtraPedido?SP.isExtraPedido(p):false;
+        const status=pick(p,'Status') || (SP.isTrue(pick(p,'Confirmado'))?'Confirmado':'Pendente');
+        return `<tr>
+          <td class="${isExtra?'homy-op-extra':''}">${nome}</td><td>${pick(p,'Centro_Custo')||'—'}</td><td><span class="badge badge-blue">${pick(p,'Opcao')||'—'}</span></td><td>${pick(p,'Nome_Prato')||'—'}</td><td><span class="badge badge-green">${status}</span></td><td>${origem}</td>
+          <td><div class="table-actions"><button class="btn-icon" onclick="alterarStatusOperacao('${id}','Confirmado')">✅</button><button class="btn-icon danger" onclick="alterarStatusOperacao('${id}','Cancelado')">❌</button><button class="btn-icon" onclick="alterarStatusOperacao('${id}','Não vai almoçar')">🚫</button><button class="btn-icon danger" onclick="excluirPedido('${id}')">🗑️</button></div></td>
+        </tr>`;
+      }).join('');
+    }catch(e){ console.error(e); tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;color:#ff8080;padding:2rem">Erro: ${e.message||e}</td></tr>`; }
+  };
+
+  // ========= VALORES: força uso das colunas reais via SP dinâmico =========
+  window.salvarValorRefeicaoHomy = async function(){
+    try{
+      await SP.init();
+      const dados={
+        title:$('valorTitulo')?.value||'Valor refeição', dataInicio:$('valorDataInicio')?.value, dataFim:$('valorDataFim')?.value,
+        valorVascon:$('valorVascon')?.value, valorDesconto:$('valorDesconto')?.value, observacao:$('valorObs')?.value||'', ativo:($('valorAtivo')?.value||'sim')!=='nao'
+      };
+      if(!dados.dataInicio || !dados.dataFim){ toastSafe('Informe data início e fim.','error'); return; }
+      await SP.createValorRefeicao(dados);
+      $('modalValorRefeicao')?.classList.remove('open'); toastSafe('Valor salvo no SharePoint.','success'); if(window.loadValores) await window.loadValores();
+    }catch(e){ console.error(e); toastSafe('Erro ao salvar valor: '+(e.message||e),'error'); }
+  };
+  function bindValor(){ const b=$('salvarValorRefeicao'); if(b){ b.onclick=(e)=>{e.preventDefault(); window.salvarValorRefeicaoHomy();}; } }
+
+  async function startup(){
+    try{ await SP.init(); if(SP.cleanupExtraAutomaticoSemana) await SP.cleanupExtraAutomaticoSemana(semanaAtual()); }catch(e){}
+    bindExtrasButtons(); bindValor();
+    if($('mod-extras')?.classList.contains('active')) window.loadExtras();
+  }
+  document.addEventListener('DOMContentLoaded',startup);
+  setInterval(()=>{bindExtrasButtons();bindValor();},1000);
+  setTimeout(startup,800); setTimeout(startup,2200);
+})();
+</script>
+
 </body>
 
 </html>
