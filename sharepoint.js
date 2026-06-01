@@ -840,3 +840,189 @@ var SP = window.SP = {
 };
 
 window.SP = SP;
+// ============================================================
+// HOTFIX HOMY 2026-06-01 — regras finais de dados
+// ============================================================
+(function(){
+  if(!window.SP) return;
+  const SP = window.SP;
+
+  SP.normalizeText = function(v){
+    return String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
+  };
+
+  SP.getCurrentWeekId = function(date = new Date()){
+    return this.getSemanaId ? this.getSemanaId(date) : (()=>{
+      const d = new Date(date); d.setHours(0,0,0,0);
+      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+      const w1 = new Date(d.getFullYear(),0,4);
+      const week = 1 + Math.round(((d-w1)/86400000 - 3 + ((w1.getDay()+6)%7))/7);
+      return `${d.getFullYear()}-W${String(week).padStart(2,"0")}`;
+    })();
+  };
+
+  SP.dateOnly = function(date){
+    const d = new Date(date);
+    if(isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+
+  SP.getDataRefBySemanaDia = function(semanaId, dia){
+    const mapa = {segunda:0,terca:1,terça:1,quarta:2,quinta:3,sexta:4};
+    const idx = mapa[this.normalizeText(dia)];
+    if(idx === undefined || !semanaId) return this.dateOnly(new Date());
+    const datas = this.getWeekDates ? this.getWeekDates(semanaId) : [];
+    return datas[idx] ? this.dateOnly(datas[idx]) : this.dateOnly(new Date());
+  };
+
+  const _savePedidoBase = SP.savePedido;
+  SP.savePedido = async function(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato, dadosExtras = {}){
+    const extra = Object.assign({}, dadosExtras);
+    extra.Data_Ref = extra.Data_Ref || extra.dataRef || this.getDataRefBySemanaDia(semanaId, dia);
+    const item = await this.createItem("Pedidos", {
+      Title: `${semanaId}-${colaboradorId}-${dia}`,
+      Semana_id: semanaId,
+      Colaborador_id: String(colaboradorId),
+      Colaborador_nome: colaboradorNome,
+      Dia: dia,
+      Opcao: opcao,
+      Nome_Prato: nomePrato || "",
+      Confirmado: extra.confirmado ?? extra.Confirmado ?? false,
+      Data_Hora: extra.dataHora || extra.Data_Hora || new Date().toISOString(),
+      Data_Ref: extra.Data_Ref,
+      Centro_Custo: extra.centroCusto || extra.Centro_Custo || "",
+      Status: extra.status || extra.Status || "Confirmado",
+      Observacao: extra.observacao || extra.Observacao || "",
+      Origem: extra.origem || extra.Origem || "Refeitório",
+      Alterado_Por: extra.alteradoPor || extra.Alterado_Por || this.getUserName()
+    });
+    return item;
+  };
+
+  SP.getPedidosPorPeriodo = async function(dataInicio, dataFim){
+    const items = await this.getItems("Pedidos");
+    return items.filter(p=>{
+      let d = this.pick(p,"Data_Ref","DataRef","data_ref");
+      if(!d){
+        const semana = this.pick(p,"Semana_id","semana_id");
+        const dia = this.pick(p,"Dia","dia");
+        d = this.getDataRefBySemanaDia(semana,dia);
+      }
+      d = String(d || "").slice(0,10);
+      return d && d >= dataInicio && d <= dataFim;
+    });
+  };
+
+  SP.isConfigOn = function(valor){
+    const v = this.normalizeText(valor);
+    return ["sim","true","1","yes","ativo","liberado"].includes(v);
+  };
+
+  SP.isConfigOff = function(valor){
+    const v = this.normalizeText(valor);
+    return ["nao","não","false","0","no","inativo","bloqueado"].includes(v);
+  };
+
+  SP.getMarcacaoLiberada = async function(){
+    const chaves = ["marcacao_liberada","pedidos_liberados","cardapio_liberado"];
+    const vals = [];
+    for(const c of chaves){ vals.push(await this.getConfig(c)); }
+    if(vals.some(v=>this.isConfigOff(v))) return false;
+    if(vals.some(v=>this.isConfigOn(v))) return true;
+    return true;
+  };
+
+  SP.isCardapioLiberado = async function(){
+    return this.getMarcacaoLiberada();
+  };
+
+  SP.getCardapioVisivel = async function(){
+    const vals = [await this.getConfig("cardapio_visivel"), await this.getConfig("cardapio_liberado")];
+    if(vals.some(v=>this.isConfigOff(v))) return false;
+    if(vals.some(v=>this.isConfigOn(v))) return true;
+    return true;
+  };
+
+  SP.setCardapioVisivel = async function(visivel){
+    const valor = visivel ? "sim" : "nao";
+    await this.setConfig("cardapio_visivel", valor);
+    return true;
+  };
+
+  SP.setMarcacaoLiberada = async function(liberado){
+    const valor = liberado ? "sim" : "nao";
+    await this.setConfig("marcacao_liberada", valor);
+    await this.setConfig("pedidos_liberados", valor);
+    await this.setConfig("cardapio_liberado", valor);
+    await this.setConfig("sync_timestamp", new Date().toISOString());
+    return true;
+  };
+
+  SP.getPrazoMarcacao = async function(){
+    const chaves = ["prazo_limite","prazo_marcacao","data_limite_marcacao","horario_limite_marcacao"];
+    for(const c of chaves){
+      const v = await this.getConfig(c);
+      if(v) return v;
+    }
+    return null;
+  };
+
+  SP.setPrazoMarcacao = async function(valor){
+    await this.setConfig("prazo_limite", valor);
+    await this.setConfig("prazo_marcacao", valor);
+    await this.setConfig("sync_timestamp", new Date().toISOString());
+    return true;
+  };
+
+  SP.addExtraPedido = async function(semanaId, dia, nome, tipo, opcao="principal", observacao="", adicionadoPor=null){
+    const normalDia = this.normalizeText(dia);
+    const normalNome = this.normalizeText(nome);
+    const pedidos = await this.getPedidos(semanaId);
+    const existente = pedidos.find(p =>
+      this.normalizeText(this.pick(p,"Colaborador_nome","Title")) === normalNome &&
+      this.normalizeText(this.pick(p,"Dia")) === normalDia &&
+      ["extra","extra automatica","extra automática","investigador","guarda","prestador","visitante","motorista","marmita","outro"].includes(this.normalizeText(this.pick(p,"Origem","Tipo","tipo")))
+    );
+    if(existente) return existente;
+
+    let extraItem = null;
+    try{
+      extraItem = await this.createItem("Extras", {
+        Title: `${semanaId}-${dia}-${nome}`,
+        Semana_id: semanaId,
+        Dia: dia,
+        Nome: nome,
+        tipo: tipo,
+        Opcao: opcao,
+        Observacao: observacao || "",
+        Adicionado_Por: adicionadoPor || this.getUserName()
+      });
+    }catch(e){ console.warn("Não salvou em Extras, seguirá criando pedido:", e); }
+
+    return this.savePedido(
+      semanaId,
+      `EXTRA-${extraItem?.id || Date.now()}`,
+      nome,
+      dia,
+      opcao,
+      observacao || nome,
+      {
+        confirmado:true,
+        status:"Confirmado",
+        origem: tipo || "Extra",
+        observacao,
+        dataRef:this.getDataRefBySemanaDia(semanaId,dia),
+        alteradoPor: adicionadoPor || this.getUserName()
+      }
+    );
+  };
+
+  SP.ensureExtraAutomaticoSemana = async function(semanaId){
+    const dias = ["segunda","terca","quarta","quinta","sexta"];
+    for(const dia of dias){
+      await this.addExtraPedido(semanaId,dia,"Refeição extra","extra automatica","principal","Refeição extra automática");
+    }
+    await this.setConfig("sync_timestamp", new Date().toISOString());
+    return true;
+  };
+})();
