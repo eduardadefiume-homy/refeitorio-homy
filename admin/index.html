@@ -241,6 +241,21 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 .action-row{display:flex;align-items:center;justify-content:space-between;gap:0.8rem;flex-wrap:wrap;margin-bottom:1rem}
 .action-group{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
 
+
+.pedidos-filtros-final{
+  display:flex;
+  gap:0.75rem;
+  margin-bottom:0.85rem;
+  flex-wrap:wrap;
+  align-items:flex-end;
+  padding:0.9rem;
+  border-radius:14px;
+  border:1px solid rgba(60,140,255,0.18);
+  background:rgba(26,58,110,0.12);
+}
+.filtro-bloco-final{display:flex;flex-direction:column;gap:0.35rem}
+.filtro-botoes-final{display:flex;gap:0.55rem;align-items:flex-end;flex-wrap:wrap}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -416,24 +431,52 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <button class="btn-secondary" id="btnExportarPedidos">📥 Exportar Excel</button>
         </div>
 
-        <div style="display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap">
-          <select class="form-select" id="filtroDia" style="width:auto">
-            <option value="">Todos os dias</option>
-            <option value="segunda">Segunda</option>
-            <option value="terca">Terça</option>
-            <option value="quarta">Quarta</option>
-            <option value="quinta">Quinta</option>
-            <option value="sexta">Sexta</option>
-          </select>
-          <select class="form-select" id="filtroOpcao" style="width:auto">
-            <option value="">Todas as opções</option>
-            <option value="principal">Principal</option>
-            <option value="light">Light</option>
-            <option value="carne">Carne</option>
-            <option value="massa">Massa</option>
-            <option value="lanche">Lanche</option>
-          </select>
+        <div class="pedidos-filtros-final">
+          <div class="filtro-bloco-final">
+            <label class="form-label">Semana</label>
+            <input class="form-input" id="filtroSemanaHistorico" placeholder="Ex.: 2026-W22" style="width:150px">
+          </div>
+
+          <div class="filtro-bloco-final">
+            <label class="form-label">Data inicial</label>
+            <input type="date" class="form-input" id="filtroDataInicioPedidos" style="width:155px">
+          </div>
+
+          <div class="filtro-bloco-final">
+            <label class="form-label">Data final</label>
+            <input type="date" class="form-input" id="filtroDataFimPedidos" style="width:155px">
+          </div>
+
+          <div class="filtro-bloco-final">
+            <label class="form-label">Dia</label>
+            <select class="form-select" id="filtroDia" style="width:145px">
+              <option value="">Todos os dias</option>
+              <option value="segunda">Segunda</option>
+              <option value="terca">Terça</option>
+              <option value="quarta">Quarta</option>
+              <option value="quinta">Quinta</option>
+              <option value="sexta">Sexta</option>
+            </select>
+          </div>
+
+          <div class="filtro-bloco-final">
+            <label class="form-label">Opção</label>
+            <select class="form-select" id="filtroOpcao" style="width:160px">
+              <option value="">Todas as opções</option>
+              <option value="principal">Principal</option>
+              <option value="light">Light</option>
+              <option value="carne">Carne</option>
+              <option value="massa">Massa</option>
+              <option value="lanche">Lanche</option>
+            </select>
+          </div>
+
+          <div class="filtro-botoes-final">
+            <button class="btn-primary" id="btnBuscarPedidosHistorico" type="button">🔎 Buscar</button>
+            <button class="btn-secondary" id="btnLimparPedidosHistorico" type="button">Limpar filtros</button>
+          </div>
         </div>
+        <div class="alert alert-info" id="pedidosFiltroInfo">ℹ️ Exibindo pedidos da semana atual. Use Semana ou Período para consultar histórico.</div>
 
         <div class="table-wrap">
           <table class="table">
@@ -2690,6 +2733,253 @@ document.addEventListener("keydown", function(event){
 
 <script src="js/admin-dashboard-pendentes.js?v=20260529-1510"></script>
 <script src="js/admin-relatorios.js?v=20260529-1510"></script>
+
+<script>
+// ============================================================
+// PATCH FINAL 2026-06-01 — Pedidos histórico + Data_Ref + prazo
+// ============================================================
+(function(){
+  let modoFiltroPedidos = "semanaAtual";
+  let ultimoFiltroPedidos = {};
+
+  function normalizarTextoFinal(v){
+    return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
+  }
+
+  function valorPedidoFinal(p, ...keys){
+    for(const k of keys){
+      if(p && p[k] !== undefined && p[k] !== null) return p[k];
+    }
+    return "";
+  }
+
+  function semanaAtualAdminFinal(){
+    if(typeof getSemanaIdAtualSelecionada === "function") return getSemanaIdAtualSelecionada();
+    if(typeof getSemanaAtualAdminV20 === "function") return getSemanaAtualAdminV20();
+    if(typeof SP !== "undefined" && SP.getSemanaId) return SP.getSemanaId(new Date());
+    return "";
+  }
+
+  function getWeekDatesAdminFinal(semanaId){
+    if(typeof SP !== "undefined" && SP.getWeekDates) return SP.getWeekDates(semanaId);
+    const parts = String(semanaId).split("-W");
+    const year = Number(parts[0]);
+    const week = Number(parts[1]);
+    const jan4 = new Date(year,0,4);
+    const start = new Date(jan4);
+    start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (week - 1) * 7);
+    return Array.from({length:5},(_,i)=>{
+      const d = new Date(start);
+      d.setDate(start.getDate()+i);
+      return d;
+    });
+  }
+
+  function dateOnlyAdminFinal(date){
+    const d = new Date(date);
+    if(isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  function dataRefPedidoFinal(p){
+    let data = valorPedidoFinal(p,"Data_Ref","DataRef","data_ref");
+    if(data) return String(data).slice(0,10);
+
+    const semana = valorPedidoFinal(p,"Semana_id","semana_id");
+    const dia = normalizarTextoFinal(valorPedidoFinal(p,"Dia","dia"));
+    const mapa = {segunda:0,terca:1,terça:1,quarta:2,quinta:3,sexta:4};
+    const idx = mapa[dia];
+
+    if(semana && idx !== undefined){
+      const datas = getWeekDatesAdminFinal(semana);
+      return datas[idx] ? dateOnlyAdminFinal(datas[idx]) : "";
+    }
+
+    const dataHora = valorPedidoFinal(p,"Data_Hora","DataHora","data_hora");
+    return dataHora ? String(dataHora).slice(0,10) : "";
+  }
+
+  async function buscarPedidosFinal(){
+    const semanaDigitada = (document.getElementById("filtroSemanaHistorico")?.value || "").trim();
+    const dataInicio = document.getElementById("filtroDataInicioPedidos")?.value || "";
+    const dataFim = document.getElementById("filtroDataFimPedidos")?.value || "";
+
+    let pedidos = [];
+    let descricao = "";
+
+    if(semanaDigitada){
+      pedidos = await SP.getPedidos(semanaDigitada);
+      modoFiltroPedidos = "semana";
+      ultimoFiltroPedidos = {semana:semanaDigitada};
+      descricao = `Exibindo pedidos da semana ${semanaDigitada}.`;
+    }else if(dataInicio && dataFim){
+      if(SP.getPedidosPorPeriodo){
+        pedidos = await SP.getPedidosPorPeriodo(dataInicio, dataFim);
+      }else{
+        const todos = await SP.getItems("Pedidos");
+        pedidos = todos.filter(p=>{
+          const d = dataRefPedidoFinal(p);
+          return d && d >= dataInicio && d <= dataFim;
+        });
+      }
+      modoFiltroPedidos = "periodo";
+      ultimoFiltroPedidos = {dataInicio,dataFim};
+      descricao = `Exibindo pedidos do período ${dataInicio.split("-").reverse().join("/")} até ${dataFim.split("-").reverse().join("/")}.`;
+    }else{
+      const semana = semanaAtualAdminFinal();
+      pedidos = await SP.getPedidos(semana);
+      modoFiltroPedidos = "semanaAtual";
+      ultimoFiltroPedidos = {semana};
+      descricao = `Exibindo pedidos da semana atual: ${semana}.`;
+    }
+
+    renderPedidosFinal(pedidos, descricao);
+  }
+
+  function renderPedidosFinal(pedidos, descricao){
+    const tbody = document.getElementById("pedidosTable");
+    const info = document.getElementById("pedidosFiltroInfo");
+    if(info) info.innerHTML = "ℹ️ " + (descricao || "Exibindo pedidos.");
+
+    const filtroDia = normalizarTextoFinal(document.getElementById("filtroDia")?.value || "");
+    const filtroOpcao = normalizarTextoFinal(document.getElementById("filtroOpcao")?.value || "");
+
+    let lista = Array.isArray(pedidos) ? pedidos : [];
+
+    if(filtroDia){
+      lista = lista.filter(p => normalizarTextoFinal(valorPedidoFinal(p,"Dia","dia")) === filtroDia);
+    }
+
+    if(filtroOpcao){
+      lista = lista.filter(p => normalizarTextoFinal(valorPedidoFinal(p,"Opcao","opcao")) === filtroOpcao);
+    }
+
+    if(!tbody) return;
+
+    if(!lista.length){
+      const mensagem = modoFiltroPedidos === "periodo"
+        ? "Nenhum pedido encontrado para o período selecionado."
+        : "Nenhum pedido encontrado para os filtros selecionados.";
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:rgba(143,170,210,0.4);padding:2rem">${mensagem}</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = lista.map(p=>{
+      const id = valorPedidoFinal(p,"id","ID");
+      const nome = valorPedidoFinal(p,"Colaborador_nome","colaborador_nome","Nome","Title");
+      const dia = valorPedidoFinal(p,"Dia","dia");
+      const opcao = valorPedidoFinal(p,"Opcao","opcao");
+      const prato = valorPedidoFinal(p,"Nome_Prato","nome_prato","Prato");
+      const confirmado = valorPedidoFinal(p,"Confirmado","confirmado") === true || String(valorPedidoFinal(p,"Confirmado","confirmado")).toLowerCase() === "true";
+      const status = valorPedidoFinal(p,"Status","status") || (confirmado ? "Confirmado" : "Pendente");
+      const statusClass = normalizarTextoFinal(status).includes("confirm") ? "badge-green" : "badge-yellow";
+      return `
+        <tr>
+          <td>${nome || "-"}</td>
+          <td>${dia || "-"}</td>
+          <td>${opcao || "-"}</td>
+          <td>${prato || "-"}</td>
+          <td><span class="badge ${statusClass}">${status}</span></td>
+          <td>
+            <div class="table-actions">
+              <button class="btn-icon" title="Editar" onclick="abrirModalEditarPedido('${id}','${String(nome).replace(/'/g,"&#39;")}','${dia}','${opcao}')">✏️</button>
+              <button class="btn-icon danger" title="Excluir" onclick="excluirPedido('${id}')">🗑️</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  window.loadPedidos = async function(semanaId){
+    try{
+      await SP.init();
+      const semana = semanaId || semanaAtualAdminFinal();
+      const pedidos = await SP.getPedidos(semana);
+      modoFiltroPedidos = "semanaAtual";
+      ultimoFiltroPedidos = {semana};
+      renderPedidosFinal(pedidos, `Exibindo pedidos da semana atual: ${semana}.`);
+    }catch(e){
+      console.error("Erro ao carregar pedidos:", e);
+      const tbody = document.getElementById("pedidosTable");
+      if(tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:rgba(255,120,120,0.8);padding:2rem">Erro ao carregar pedidos: ${e.message || e}</td></tr>`;
+    }
+  };
+
+  async function salvarPrazoFinal(){
+    const data = document.getElementById("prazoData")?.value;
+    const hora = document.getElementById("prazoHora")?.value || "18:00";
+
+    if(!data){
+      toast("Informe a data limite.","error");
+      return;
+    }
+
+    try{
+      await SP.init();
+      const valor = `${data}T${hora}:00`;
+      if(SP.setPrazoMarcacao){
+        await SP.setPrazoMarcacao(valor);
+      }else{
+        await SP.setConfig("prazo_limite", valor);
+        await SP.setConfig("prazo_marcacao", valor);
+      }
+      toast("Prazo salvo no SharePoint.","success");
+    }catch(e){
+      toast("Erro ao salvar prazo: " + (e.message || e), "error");
+    }
+  }
+
+  function bindPedidosFinal(){
+    const btnBuscar = document.getElementById("btnBuscarPedidosHistorico");
+    const btnLimpar = document.getElementById("btnLimparPedidosHistorico");
+    const filtroDia = document.getElementById("filtroDia");
+    const filtroOpcao = document.getElementById("filtroOpcao");
+    const btnPrazo = document.getElementById("btnSalvarPrazo");
+
+    if(btnBuscar && !btnBuscar.dataset.boundFinal){
+      btnBuscar.dataset.boundFinal = "1";
+      btnBuscar.addEventListener("click", buscarPedidosFinal);
+    }
+
+    if(btnLimpar && !btnLimpar.dataset.boundFinal){
+      btnLimpar.dataset.boundFinal = "1";
+      btnLimpar.addEventListener("click", ()=>{
+        const semana = document.getElementById("filtroSemanaHistorico");
+        const ini = document.getElementById("filtroDataInicioPedidos");
+        const fim = document.getElementById("filtroDataFimPedidos");
+        if(semana) semana.value = "";
+        if(ini) ini.value = "";
+        if(fim) fim.value = "";
+        if(filtroDia) filtroDia.value = "";
+        if(filtroOpcao) filtroOpcao.value = "";
+        window.loadPedidos(semanaAtualAdminFinal());
+      });
+    }
+
+    [filtroDia,filtroOpcao].forEach(el=>{
+      if(el && !el.dataset.boundFinal){
+        el.dataset.boundFinal = "1";
+        el.addEventListener("change", buscarPedidosFinal);
+      }
+    });
+
+    if(btnPrazo && !btnPrazo.dataset.boundFinal){
+      btnPrazo.dataset.boundFinal = "1";
+      btnPrazo.addEventListener("click", function(ev){
+        ev.preventDefault();
+        ev.stopPropagation();
+        salvarPrazoFinal();
+      }, true);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", bindPedidosFinal);
+  setTimeout(bindPedidosFinal, 500);
+  setTimeout(bindPedidosFinal, 1500);
+})();
+</script>
+
 </body>
 
 </html>
