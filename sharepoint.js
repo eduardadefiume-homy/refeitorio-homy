@@ -8,8 +8,8 @@ const SP = {
   appOnly: false,
   tenantId: "a2850abc-334a-4805-b6b2-420b4aef68a9",
   siteUrl: "homyquimica.sharepoint.com",
-  sitePath: "/sites/Refeitrio-Homy",
-  scopes: ["https://graph.microsoft.com/Sites.ReadWrite.All", "User.Read"],
+  sitePath: "/sites/Refeitorio-Homy",
+  scopes: ["Sites.ReadWrite.All", "User.Read"],
 
   _msalInstance: null,
   _account: null,
@@ -36,7 +36,8 @@ const SP = {
       auth: {
         clientId: this.clientId,
         authority: `https://login.microsoftonline.com/${this.tenantId}`,
-        redirectUri: window.location.origin + window.location.pathname
+        redirectUri: window.location.origin + window.location.pathname,
+        navigateToLoginRequestUrl: false
       },
       cache: {
         cacheLocation: "sessionStorage",
@@ -47,9 +48,24 @@ const SP = {
     this._msalInstance = new msal.PublicClientApplication(msalConfig);
     await this._msalInstance.initialize();
 
+    // Igual ao Ramais Homy: trata o retorno do login e reaproveita sessão.
+    const redirectResult = await this._msalInstance.handleRedirectPromise();
+    if (redirectResult && redirectResult.account) {
+      this._account = redirectResult.account;
+      this._msalInstance.setActiveAccount(this._account);
+      return true;
+    }
+
+    const active = this._msalInstance.getActiveAccount();
+    if (active) {
+      this._account = active;
+      return true;
+    }
+
     const accounts = this._msalInstance.getAllAccounts();
     if (accounts.length > 0) {
       this._account = accounts[0];
+      this._msalInstance.setActiveAccount(this._account);
       return true;
     }
 
@@ -59,22 +75,20 @@ const SP = {
   async login() {
     await this.init();
 
-    const result = await this._msalInstance.loginPopup({
-      scopes: this.scopes,
-      prompt: "select_account"
+    // Login por redirect, igual Ramais: mais estável no GitHub Pages que popup.
+    await this._msalInstance.loginRedirect({
+      scopes: this.scopes
     });
 
-    this._account = result.account;
-    return true;
+    return false;
   },
 
   async getToken() {
-    // GitHub Pages é front-end estático: NÃO usar clientSecret aqui.
-    // Para não expor segredo no Git, usamos autenticação delegada Microsoft.
     await this.init();
 
     if (!this._account) {
       await this.login();
+      return null;
     }
 
     try {
@@ -85,19 +99,25 @@ const SP = {
 
       return result.accessToken;
     } catch (e) {
-      const result = await this._msalInstance.acquireTokenPopup({
+      console.warn("[SP] Token silencioso falhou; redirecionando para login.", e);
+
+      await this._msalInstance.acquireTokenRedirect({
         scopes: this.scopes,
-        account: this._account || undefined
+        account: this._account
       });
 
-      this._account = result.account || this._account;
-      return result.accessToken;
+      return null;
     }
   },
 
   async ensureLogin() {
     await this.init();
-    if (!this._account) await this.login();
+
+    if (!this._account) {
+      await this.login();
+      return false;
+    }
+
     return true;
   },
 
@@ -109,11 +129,14 @@ const SP = {
     await this.init();
     const account = this._account;
     this._account = null;
-    if (account) await this._msalInstance.logoutPopup({ account });
+    if (account) {
+      await this._msalInstance.logoutRedirect({ account });
+    }
   },
 
   async graph(method, endpoint, body = null) {
     const token = await this.getToken();
+    if (!token) return null;
 
     const res = await fetch(`https://graph.microsoft.com/v1.0${endpoint}`, {
       method,
@@ -136,9 +159,28 @@ const SP = {
   async getSiteId() {
     if (this._siteId) return this._siteId;
 
-    const data = await this.graph("GET", `/sites/${this.siteUrl}:${this.sitePath}`);
-    this._siteId = data.id;
-    return this._siteId;
+    const paths = [
+      this.sitePath,
+      "/sites/Refeitorio-Homy",
+      "/sites/Refeitrio-Homy"
+    ].filter((value, index, array) => value && array.indexOf(value) === index);
+
+    let lastError = null;
+
+    for (const path of paths) {
+      try {
+        const data = await this.graph("GET", `/sites/${this.siteUrl}:${path}`);
+        if (data && data.id) {
+          this._siteId = data.id;
+          this.sitePath = path;
+          return this._siteId;
+        }
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    throw lastError || new Error("Site do SharePoint não encontrado.");
   },
 
   async getListId(listName) {
