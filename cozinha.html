@@ -80,8 +80,6 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radi
 .confirm{background:linear-gradient(135deg,#22c879,#15834d);color:white}
 @media(max-width:600px){.brand-title{font-size:.95rem}.weekday{font-size:1.35rem}.content{padding:.85rem}.btn-voltar span{display:none}}
 </style>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-<script src="sharepoint.js?v=fix-msal"></script>
 </head>
 
 <body>
@@ -151,6 +149,32 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;background:radi
   </main>
 </div>
 
+<script>
+window.HOMY_SP_READY = (function(){
+  function loadScript(src){
+    return new Promise(function(resolve,reject){
+      var s=document.createElement("script");
+      s.src=src;
+      s.onload=resolve;
+      s.onerror=function(){reject(new Error("Falha ao carregar: "+src));};
+      document.head.appendChild(s);
+    });
+  }
+
+  return loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js")
+    .catch(function(){
+      return loadScript("https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js");
+    })
+    .then(function(){
+      if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
+      return loadScript("sharepoint.js?v=real-data-20260601");
+    })
+    .then(function(){
+      if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
+      return window.SP;
+    });
+})();
+</script>
 <script>
 const DIAS = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
 const DIAS_CHAVE = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
