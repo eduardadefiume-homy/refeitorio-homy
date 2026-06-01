@@ -4,8 +4,8 @@
 
 const SP = {
   clientId: "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
-  clientSecret: "25e6e2a6-1201-4a48-bb21-0424244eb1ed",
-  appOnly: true,
+  clientSecret: "",
+  appOnly: false,
   tenantId: "a2850abc-334a-4805-b6b2-420b4aef68a9",
   siteUrl: "homyquimica.sharepoint.com",
   sitePath: "/sites/Refeitrio-Homy",
@@ -193,6 +193,11 @@ const SP = {
   // COLABORADORES
   // Colunas: Nome, Departamento, Email, Ativo, tipo, Centro_Custo
   // ============================================================
+
+  async getTodosColaboradores() {
+    return this.getItems("Colaboradores");
+  },
+
   async getColaboradores() {
     const items = await this.getItems("Colaboradores");
     return items.filter(i => this.isTrue(this.pick(i, "Ativo")));
@@ -625,6 +630,11 @@ const SP = {
       Dia: dia,
       ...fields
     });
+  },
+
+
+  async saveCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
+    return this.registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor);
   },
 
   // ============================================================
