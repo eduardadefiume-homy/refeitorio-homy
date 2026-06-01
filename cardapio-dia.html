@@ -160,157 +160,99 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 </div>
 
 <script>
-// --- DADOS FICTÍCIOS ---
-const hoje = new Date();
-const DIAS=["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
-const MESES=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-document.getElementById("headerDate").textContent=DIAS[hoje.getDay()]+", "+hoje.getDate()+" de "+MESES[hoje.getMonth()];
+window.HOMY_SP_READY = (function(){
+  function loadScript(src){
+    return new Promise(function(resolve,reject){
+      var s=document.createElement("script");
+      s.src=src;
+      s.onload=resolve;
+      s.onerror=function(){reject(new Error("Falha ao carregar: "+src));};
+      document.head.appendChild(s);
+    });
+  }
 
-const CARDAPIO_HOJE=[
-  {tag:"principal",tagClass:"tag-principal",nome:"Frango Grelhado ao Limão",detalhes:["Arroz branco e integral","Feijão carioca","Salada de alface e tomate","Sobremesa: fruta da estação"]},
-  {tag:"light",tagClass:"tag-light",nome:"Salada Completa com Atum",detalhes:["Folhas verdes, tomate cereja, pepino","Proteína: atum ao natural","Molho de azeite e limão","Sem carboidrato simples"]},
-  {tag:"carne",tagClass:"tag-carne",nome:"Bife Acebolado",detalhes:["Substitui apenas a proteína principal","Acompanhamentos iguais ao principal"]},
-  {tag:"massa",tagClass:"tag-massa",nome:"Espaguete ao Sugo",detalhes:["Somente a massa do dia","Molho de tomate com manjericão"]},
-];
+  return loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js")
+    .catch(function(){
+      return loadScript("https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js");
+    })
+    .then(function(){
+      if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
+      return loadScript("sharepoint.js?v=real-data-20260601");
+    })
+    .then(function(){
+      if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
+      return window.SP;
+    });
+})();
+</script>
+<script>
+const DIAS = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+const MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+const TAG_CLASS = {principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
+let CARDAPIO_HOJE = [];
+let FUNCIONARIOS = [];
 
-const TAG_COLORS={
-  principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"
-};
-
-const FUNCIONARIOS=[
-  {nome:"Ana Paula Rodrigues",opcao:"principal",dept:"Comercial"},
-  {nome:"Bruno Henrique Costa",opcao:"carne",dept:"Faturamento"},
-  {nome:"Carlos Eduardo Martins",opcao:"light",dept:"RH"},
-  {nome:"Daniela Souza Lima",opcao:"massa",dept:"TI"},
-  {nome:"Eduardo Ferreira Santos",opcao:"principal",dept:"Comercial"},
-  {nome:"Fernanda Oliveira Mendes",opcao:"principal",dept:"PCP/Produção"},
-  {nome:"Gabriel Alves Pereira",opcao:"carne",dept:"Faturamento"},
-  {nome:"Helena Costa Silva",opcao:"light",dept:"Sala Administrativa"},
-  {nome:"Igor Nascimento Rocha",opcao:"principal",dept:"Almoxarifado"},
-  {nome:"Julia Campos Neves",opcao:"massa",dept:"Comercial"},
-  {nome:"Kevin Luiz Barbosa",opcao:"principal",dept:"RH"},
-  {nome:"Larissa Melo Carvalho",opcao:"carne",dept:"TI"},
-  {nome:"Marcos Vinicius Teixeira",opcao:"principal",dept:"PCP/Produção"},
-  {nome:"Natalia Freitas Pinto",opcao:"light",dept:"Faturamento"},
-  {nome:"Otávio Ribeiro Gomes",opcao:"principal",dept:"Comercial"},
-  {nome:"Patricia Andrade Lopes",opcao:"massa",dept:"Sala Administrativa"},
-  {nome:"Rafael Moreira Castro",opcao:"carne",dept:"RH"},
-  {nome:"Sabrina Torres Dias",opcao:"principal",dept:"Comercial"},
-  {nome:"Thiago Batista Cunha",opcao:"light",dept:"Faturamento"},
-  {nome:"Vanessa Lima Araújo",opcao:"principal",dept:"PCP/Produção"},
-  {nome:"Wellington José Cardoso",opcao:"carne",dept:"Almoxarifado"},
-  {nome:"Ximena Paula Correia",opcao:"principal",dept:"RH"},
-  {nome:"Yasmin Ferreira Sousa",opcao:"massa",dept:"Comercial"},
-  {nome:"Zé Carlos Machado",opcao:"principal",dept:"TI"},
-  {nome:"Maria Eduarda Garcia Defiume",opcao:"principal",dept:"TI"},
-].sort((a,b)=>a.nome.localeCompare(b.nome));
-
-// pega dados da opcao pelo tag
-function getOpcaoData(tag){
-  return CARDAPIO_HOJE.find(c=>c.tag===tag)||null;
+function val(obj,...keys){ for(const k of keys){ if(obj && obj[k] !== undefined && obj[k] !== null) return obj[k]; } return ""; }
+function normalizarDia(v){
+  const s = String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  if(s.startsWith("seg")) return "seg"; if(s.startsWith("ter")) return "ter"; if(s.startsWith("qua")) return "qua"; if(s.startsWith("qui")) return "qui"; if(s.startsWith("sex")) return "sex"; return s;
 }
+function diaHojeKey(){ return ["dom","seg","ter","qua","qui","sex","sab"][new Date().getDay()]; }
+function detalhesLista(v){ return String(v||"").split(/\n|;/).map(x=>x.trim()).filter(Boolean); }
+function getInitials(nome){ const p=String(nome||"").trim().split(/\s+/); return ((p[0]?.[0]||"")+(p.length>1?p[p.length-1][0]:"")).toUpperCase(); }
+function getOpcaoData(tag){ return CARDAPIO_HOJE.find(c=>String(c.tag).toLowerCase()===String(tag).toLowerCase())||null; }
 
-function getInitials(nome){
-  const parts=nome.trim().split(" ");
-  return (parts[0][0]+(parts.length>1?parts[parts.length-1][0]:"")).toUpperCase();
-}
-
-// --- MODAL ---
 function openModal(content){
   document.getElementById("modal").innerHTML=content;
   document.getElementById("modalOverlay").classList.add("open");
   document.body.style.overflow="hidden";
-  document.getElementById("modal").querySelector(".modal-close").addEventListener("click",closeModal);
+  const close=document.getElementById("modal").querySelector(".modal-close");
+  if(close) close.addEventListener("click",closeModal);
 }
-function closeModal(){
-  document.getElementById("modalOverlay").classList.remove("open");
-  document.body.style.overflow="";
-}
-document.getElementById("modalOverlay").addEventListener("click",function(e){if(e.target===this)closeModal();});
-document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal();});
+function closeModal(){ document.getElementById("modalOverlay").classList.remove("open"); document.body.style.overflow=""; }
+document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
 
 function openCardapioModal(op){
-  const content=
-    '<div class="modal-header">'+
-    '<span class="modal-tag '+op.tagClass+'">'+op.tag+'</span>'+
-    '<span class="modal-title">'+op.nome+'</span>'+
-    '<div class="modal-close">&#10005;</div>'+
-    '</div>'+
-    '<div class="modal-body">'+
-    op.detalhes.map(d=>'<div class="modal-detail"><span class="modal-detail-text">'+d+'</span></div>').join("")+
-    '</div>';
-  openModal(content);
+  openModal('<div class="modal-header"><span class="modal-tag '+op.tagClass+'">'+op.tag+'</span><span class="modal-title">'+op.nome+'</span><div class="modal-close">&#10005;</div></div><div class="modal-body">'+op.detalhes.map(d=>'<div class="modal-detail"><span class="modal-detail-text">'+d+'</span></div>').join("")+'</div>');
 }
-
 function openFuncModal(func){
   const op=getOpcaoData(func.opcao);
-  const initials=getInitials(func.nome);
-  const content=
-    '<div class="modal-func-header">'+
-    '<div class="modal-func-avatar">'+initials+'</div>'+
-    '<div class="modal-func-info">'+
-    '<div class="modal-func-name">'+func.nome+'</div>'+
-    '<div class="modal-func-dept">'+func.dept+'</div>'+
-    '</div>'+
-    '<div class="modal-close">&#10005;</div>'+
-    '</div>'+
-    '<div class="modal-func-body">'+
-    '<div class="modal-func-label">Pedido de hoje</div>'+
-    (op?
-      '<div class="modal-func-pedido">'+
-      '<div class="modal-func-pedido-header">'+
-      '<span class="option-tag '+op.tagClass+'">'+op.tag+'</span>'+
-      '<span class="modal-func-pedido-name">'+op.nome+'</span>'+
-      '</div>'+
-      '<div class="modal-func-pedido-body">'+
-      op.detalhes.map(d=>'<div class="modal-func-pedido-detail">'+d+'</div>').join("")+
-      '</div></div>'
-    :'<div class="modal-note">⚠️ Este colaborador não realizou pedido para hoje.</div>')+
-    '</div>';
-  openModal(content);
+  openModal('<div class="modal-func-header"><div class="modal-func-avatar">'+getInitials(func.nome)+'</div><div class="modal-func-info"><div class="modal-func-name">'+func.nome+'</div><div class="modal-func-dept">'+(func.dept||"")+'</div></div><div class="modal-close">&#10005;</div></div><div class="modal-func-body"><div class="modal-func-label">Pedido de hoje</div>'+(op?'<div class="modal-func-pedido"><div class="modal-func-pedido-header"><span class="option-tag '+op.tagClass+'">'+op.tag+'</span><span class="modal-func-pedido-name">'+op.nome+'</span></div><div class="modal-func-pedido-body">'+op.detalhes.map(d=>'<div class="modal-func-pedido-detail">'+d+'</div>').join("")+'</div></div>':'<div class="modal-note">⚠️ Este colaborador não realizou pedido para hoje.</div>')+'</div>');
 }
 
-// --- RENDER CARDÁPIO ---
-const cgrid=document.getElementById("cardapioGrid");
-CARDAPIO_HOJE.forEach(op=>{
-  const card=document.createElement("div");
-  card.className="option-card";
-  card.innerHTML=
-    '<div class="option-header"><span class="option-tag '+op.tagClass+'">'+op.tag+'</span><span class="option-name">'+op.nome+'</span></div>'+
-    '<div class="option-body">'+op.detalhes.map(d=>'<div class="option-detail">'+d+'</div>').join("")+'</div>'+
-    '<div class="option-hint">Toque para ver detalhes</div>';
-  card.addEventListener("click",()=>openCardapioModal(op));
-  cgrid.appendChild(card);
-});
-
-// --- RENDER FUNCIONÁRIOS ---
-let funcsFiltrados=[...FUNCIONARIOS];
-
+function renderCardapio(){
+  const grid=document.getElementById("cardapioGrid"); grid.innerHTML="";
+  if(!CARDAPIO_HOJE.length){ grid.innerHTML='<div class="modal-note">Nenhum cardápio real cadastrado para hoje no Admin.</div>'; return; }
+  CARDAPIO_HOJE.forEach(op=>{ const card=document.createElement("div"); card.className="option-card"; card.innerHTML='<div class="option-header"><span class="option-tag '+op.tagClass+'">'+op.tag+'</span><span class="option-name">'+op.nome+'</span></div><div class="option-body">'+op.detalhes.map(d=>'<div class="option-detail">'+d+'</div>').join("")+'</div><div class="option-hint">Toque para ver detalhes</div>'; card.addEventListener("click",()=>openCardapioModal(op)); grid.appendChild(card); });
+}
 function renderFuncs(lista){
-  const grid=document.getElementById("funcGrid");
-  grid.innerHTML="";
+  const grid=document.getElementById("funcGrid"); grid.innerHTML="";
   document.getElementById("searchCount").textContent=lista.length+" colaborador"+(lista.length!==1?"es":"")+" encontrado"+(lista.length!==1?"s":"");
-  lista.forEach(func=>{
-    const op=getOpcaoData(func.opcao);
-    const card=document.createElement("div");
-    card.className="func-card"+(op?"":" nao-marcou");
-    card.innerHTML=
-      '<div class="func-name">'+func.nome+'</div>'+
-      '<div class="func-opcao">'+
-      (op?'<span class="func-tag '+op.tagClass+'">'+func.opcao+'</span><span class="func-status">'+op.nome+'</span>':'<span class="func-status">Não marcou</span>')+
-      '</div>';
-    card.addEventListener("click",()=>openFuncModal(func));
-    grid.appendChild(card);
-  });
+  lista.forEach(func=>{ const op=getOpcaoData(func.opcao); const card=document.createElement("div"); card.className="func-card"+(op?"":" nao-marcou"); card.innerHTML='<div class="func-name">'+func.nome+'</div><div class="func-opcao">'+(op?'<span class="func-tag '+op.tagClass+'">'+func.opcao+'</span><span class="func-status">'+op.nome+'</span>':'<span class="func-status">Não marcou</span>')+'</div>'; card.addEventListener("click",()=>openFuncModal(func)); grid.appendChild(card); });
 }
 
-document.getElementById("searchInput").addEventListener("input",function(){
-  const q=this.value.toLowerCase().trim();
-  const filtrado=q?FUNCIONARIOS.filter(f=>f.nome.toLowerCase().includes(q)):FUNCIONARIOS;
-  renderFuncs(filtrado);
-});
+document.getElementById("searchInput").addEventListener("input",function(){ const q=this.value.toLowerCase().trim(); renderFuncs(q?FUNCIONARIOS.filter(f=>f.nome.toLowerCase().includes(q)):FUNCIONARIOS); });
 
-renderFuncs(FUNCIONARIOS);
+async function carregarDadosReais(){
+  const hoje=new Date();
+  document.getElementById("headerDate").textContent=DIAS[hoje.getDay()]+", "+hoje.getDate()+" de "+MESES[hoje.getMonth()];
+  try{
+    await window.HOMY_SP_READY;
+    await SP.ensureLogin();
+    const semanaId = SP.getSemanaId ? SP.getSemanaId(hoje) : "";
+    const dia = diaHojeKey();
+    const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId)]);
+    CARDAPIO_HOJE = (cardapioSemana||[]).filter(i=>normalizarDia(val(i,"Dia","dia"))===dia).map(i=>{ const tag=String(val(i,"Opcao","opcao")||"principal").toLowerCase(); return {tag, tagClass:TAG_CLASS[tag]||"tag-principal", nome:val(i,"Nome_Prato","nomePrato","Prato","Title")||"Prato não informado", detalhes:detalhesLista(val(i,"Detalhes","detalhes"))}; });
+    FUNCIONARIOS = (pedidosSemana||[]).filter(p=>normalizarDia(val(p,"Dia","dia"))===dia).map(p=>({nome:val(p,"Colaborador_nome","colaborador_nome","Title")||"Colaborador", dept:val(p,"Departamento","departamento","Centro_Custo","centroCusto")||"", opcao:String(val(p,"Opcao","opcao")||"").toLowerCase()})).sort((a,b)=>a.nome.localeCompare(b.nome));
+    renderCardapio(); renderFuncs(FUNCIONARIOS);
+  }catch(e){
+    console.error("Erro ao carregar dados reais:", e);
+    document.getElementById("cardapioGrid").innerHTML='<div class="modal-note">Não foi possível conectar ao SharePoint. Verifique o login Microsoft e tente novamente.</div>';
+    renderFuncs([]);
+  }
+}
+carregarDadosReais();
 </script>
 </body>
 </html>
