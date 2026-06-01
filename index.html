@@ -422,5 +422,26 @@ function _setEstado(btn, badge, liberado){
 // HOTFIX HOMY — atualiza liberação do menu a cada 10s
 (function(){async function syncLocks(){try{if(!window.SP)return;await SP.init();const marc=SP.getMarcacaoLiberada?await SP.getMarcacaoLiberada():true;const card=SP.getCardapioVisivel?await SP.getCardapioVisivel():true;document.querySelectorAll('a[href*="marcar-refeicao"]').forEach(a=>{a.style.opacity=marc?'1':'.45';a.style.pointerEvents=marc?'auto':'none';});document.querySelectorAll('a[href*="cardapio-dia"],a[href*="cardapio-semana"]').forEach(a=>{a.style.opacity=card?'1':'.45';a.style.pointerEvents=card?'auto':'none';});}catch(e){console.warn(e)}}window.addEventListener('load',()=>{syncLocks();setInterval(syncLocks,10000);});})();
 </script>
+
+<script>
+// HOTFIX bloqueio instantâneo do refeitório
+(function(){
+  async function syncLocksStrong(){
+    try{
+      if(!window.SP) return;
+      await SP.init();
+      const marc = SP.getMarcacaoLiberada ? await SP.getMarcacaoLiberada() : true;
+      const card = SP.getCardapioVisivel ? await SP.getCardapioVisivel() : true;
+      const block=(a,msg)=>{a.dataset.hrefOriginal=a.dataset.hrefOriginal||a.getAttribute('href');a.setAttribute('href','javascript:void(0)');a.style.opacity='.42';a.style.filter='grayscale(.4)';a.onclick=function(e){e.preventDefault(); alert(msg); return false;};};
+      const free=(a)=>{if(a.dataset.hrefOriginal)a.setAttribute('href',a.dataset.hrefOriginal);a.style.opacity='1';a.style.filter='';a.onclick=null;};
+      document.querySelectorAll('a[href*="marcar-refeicao"],a[data-href-original*="marcar-refeicao"]').forEach(a=>marc?free(a):block(a,'Marcação bloqueada pela Luana no Admin.'));
+      document.querySelectorAll('a[href*="cardapio-dia"],a[href*="cardapio-semana"],a[data-href-original*="cardapio-dia"],a[data-href-original*="cardapio-semana"]').forEach(a=>card?free(a):block(a,'Cardápio bloqueado pela Luana no Admin.'));
+    }catch(e){console.warn('syncLocksStrong',e);}
+  }
+  window.addEventListener('load',()=>{syncLocksStrong();setInterval(syncLocksStrong,5000);});
+  document.addEventListener('visibilitychange',syncLocksStrong);
+})();
+</script>
+
 </body>
 </html>
