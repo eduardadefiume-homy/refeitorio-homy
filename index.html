@@ -7,11 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#040c1a">
 
-<link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=ramais-v1">
-<link rel="icon" type="image/png" sizes="256x256" href="homy-icon-256.png?v=ramais-v1">
-<link rel="icon" type="image/png" sizes="512x512" href="homy-icon-512.png?v=ramais-v1">
-<link rel="shortcut icon" href="favicon.ico?v=ramais-v1">
-<link rel="apple-touch-icon" href="apple-touch-icon.png?v=ramais-v1">
+<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
+<link rel="icon" type="image/png" sizes="256x256" href="favicon.png?v=fix-msal">
+<link rel="icon" type="image/png" sizes="512x512" href="favicon.png?v=fix-msal">
+<link rel="shortcut icon" href="favicon.png?v=fix-msal">
 <title>Refeitório · Homy Química</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -154,6 +153,8 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
 .dot.active{background:#c0281c;width:16px;border-radius:3px}
 .badge-open{background:rgba(34,200,121,.16)!important;color:#40d090!important;border:1px solid rgba(34,200,121,.28)!important}
 </style>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="sharepoint.js?v=fix-msal"></script>
 </head>
 <body>
 
@@ -163,7 +164,7 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
   <canvas id="particle-canvas"></canvas>
   <div class="splash-center">
     <div class="logo-circle" id="logoCircle">
-      <img src="homy-icon-512.png?v=ramais-v1" alt="Homy">
+      <img src="favicon.png?v=fix-msal" alt="">
     </div>
     <div class="logo-shadow-el" id="logoShadow"></div>
     <div class="splash-title-block" id="titleBlock">
@@ -178,7 +179,7 @@ html,body{width:100%;height:100%;background:#040c1a;overflow:hidden;font-family:
   <canvas id="app-bg-canvas"></canvas>
   <div class="app-header">
     <div class="app-logo-mini">
-      <img src="homy-icon-512.png?v=ramais-v1" alt="Homy">
+      <img src="favicon.png?v=fix-msal" alt="">
     </div>
     <div class="app-title">Refeitório</div>
     <div class="app-subtitle">Homy Química</div>
