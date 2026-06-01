@@ -2980,6 +2980,245 @@ document.addEventListener("keydown", function(event){
 })();
 </script>
 
+
+
+<!-- HOTFIX HOMY 2026-06-01 — regras finais Admin -->
+<script>
+(function(){
+  function $(id){return document.getElementById(id)}
+  function n(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase()}
+  function semanaAtual(){
+    if(window.getSemanaIdAtualSelecionada) return window.getSemanaIdAtualSelecionada();
+    if(window.getSemanaId) return window.getSemanaId();
+    if(window.SP && SP.getCurrentWeekId) return SP.getCurrentWeekId();
+    const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-((d.getDay()+6)%7));
+    const w1=new Date(d.getFullYear(),0,4); const w=1+Math.round(((d-w1)/86400000-3+((w1.getDay()+6)%7))/7);
+    return `${d.getFullYear()}-W${String(w).padStart(2,"0")}`;
+  }
+  function toastSafe(msg,type){ if(window.toast) toast(msg,type||"info"); else alert(msg); }
+  function esc(v){return String(v||"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));}
+
+  function dataRefPorDia(semana,dia){
+    if(window.SP && SP.getDataRefBySemanaDia) return SP.getDataRefBySemanaDia(semana,dia);
+    return new Date().toISOString().slice(0,10);
+  }
+
+  async function salvarExtraCore({nome,tipo,dia,opcao,obs}){
+    await SP.init();
+    const semana=semanaAtual();
+    if(SP.addExtraPedido){
+      await SP.addExtraPedido(semana,dia,nome,tipo,opcao,obs,SP.getUserName ? SP.getUserName() : "Admin");
+    }else{
+      await SP.addItem("Extras",{Title:`${semana}-${dia}-${nome}`,Semana_id:semana,Dia:dia,Nome:nome,tipo:tipo,Opcao:opcao,Observacao:obs||"",Adicionado_Por:SP.getUserName ? SP.getUserName() : "Admin"});
+      await SP.savePedido(semana,`EXTRA-${Date.now()}`,nome,dia,opcao,obs||nome,{confirmado:true,status:"Confirmado",origem:tipo,observacao:obs,dataRef:dataRefPorDia(semana,dia)});
+    }
+  }
+
+  window.abrirModalExtraPredefinido = function(tipo){
+    const modal = $("modalExtra");
+    if(!modal) return;
+    const nome = $("extraNome"), tipoEl=$("extraTipo"), opcao=$("extraOpcao"), obs=$("extraObs");
+    if(tipo === "investigador"){
+      if(nome) nome.value = "Investigador";
+      if(tipoEl) tipoEl.value = "investigador";
+      if(opcao) opcao.value = "principal";
+      if(obs) obs.value = "Extra pré-cadastrado: Investigador";
+    }else if(tipo === "guarda"){
+      if(nome) nome.value = "Guarda";
+      if(tipoEl) tipoEl.value = "guarda";
+      if(opcao) opcao.value = "principal";
+      if(obs) obs.value = "Extra pré-cadastrado: Guarda";
+    }
+    [nome,tipoEl,opcao,obs].forEach(el=>{ if(el) el.closest('.form-group').style.display = tipo ? 'none' : ''; });
+    modal.dataset.predefinido = tipo || "";
+    modal.classList.add("open");
+  };
+
+  window.abrirModalExtra = function(){
+    const modal = $("modalExtra");
+    if(!modal) return;
+    modal.dataset.predefinido = "";
+    ["extraNome","extraTipo","extraOpcao","extraObs"].forEach(id=>{ const el=$(id); if(el) el.closest('.form-group').style.display=''; });
+    modal.classList.add("open");
+  };
+
+  window.salvarExtraManual = async function(){
+    const modal=$("modalExtra");
+    const pre = modal?.dataset.predefinido || "";
+    let nome = $("extraNome")?.value.trim() || "";
+    let tipo = $("extraTipo")?.value || "visitante";
+    let dia = $("extraDia")?.value || "segunda";
+    let opcao = $("extraOpcao")?.value || "principal";
+    let obs = $("extraObs")?.value.trim() || "";
+
+    if(pre === "investigador") { nome="Investigador"; tipo="investigador"; opcao="principal"; obs="Extra pré-cadastrado: Investigador"; }
+    if(pre === "guarda") { nome="Guarda"; tipo="guarda"; opcao="principal"; obs="Extra pré-cadastrado: Guarda"; }
+
+    if(!nome){ toastSafe("Informe o nome do extra/visitante.","error"); return; }
+    try{
+      await salvarExtraCore({nome,tipo,dia,opcao,obs});
+      if(modal) modal.classList.remove("open");
+      toastSafe("Extra salvo e refletido em Pedidos/Cozinha.","success");
+      if(window.loadExtras) await window.loadExtras(semanaAtual());
+      if(window.loadPedidos) await window.loadPedidos(semanaAtual());
+    }catch(e){ console.error(e); toastSafe("Erro ao salvar extra: "+(e.message||e),"error"); }
+  };
+
+  async function aplicarExtraAutomatico(){
+    try{
+      if(!$('toggleExtra')?.checked) return;
+      await SP.init();
+      if(SP.ensureExtraAutomaticoSemana) await SP.ensureExtraAutomaticoSemana(semanaAtual());
+      if(window.loadPedidos) await window.loadPedidos(semanaAtual());
+    }catch(e){ console.warn('Extra automático:',e); }
+  }
+
+  function melhorarExtrasUI(){
+    const tipoEl=$("extraTipo");
+    if(tipoEl && ![...tipoEl.options].some(o=>o.value==="prestador")){
+      tipoEl.insertAdjacentHTML("beforeend",'<option value="prestador">Prestador</option><option value="investigador">Investigador</option><option value="guarda">Guarda</option>');
+    }
+    const header=document.querySelector('#mod-extras .section-header');
+    if(header && !$("btnExtraInvestigador")){
+      const box=document.createElement('div');
+      box.style.display='flex'; box.style.gap='.55rem'; box.style.flexWrap='wrap';
+      box.innerHTML=`
+        <button class="btn-primary" id="btnAdicionarExtra" type="button" onclick="abrirModalExtra()">+ Adicionar extra</button>
+        <button class="btn-secondary" id="btnExtraInvestigador" type="button" onclick="abrirModalExtraPredefinido('investigador')">+ Extra Investigador</button>
+        <button class="btn-secondary" id="btnExtraGuarda" type="button" onclick="abrirModalExtraPredefinido('guarda')">+ Extra Guarda</button>`;
+      const old=header.querySelector('#btnAdicionarExtra'); if(old) old.remove();
+      header.appendChild(box);
+    }
+    const salvar=$("salvarExtra");
+    if(salvar && !salvar.dataset.homyFinal){ salvar.dataset.homyFinal='1'; salvar.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();window.salvarExtraManual();},true); }
+    const cancel=$("cancelModalExtra"); if(cancel && !cancel.dataset.homyFinal){ cancel.dataset.homyFinal='1'; cancel.addEventListener('click',()=>$("modalExtra")?.classList.remove('open')); }
+    const close=$("closeModalExtra"); if(close && !close.dataset.homyFinal){ close.dataset.homyFinal='1'; close.addEventListener('click',()=>$("modalExtra")?.classList.remove('open')); }
+  }
+
+  function limparConfiguracoesFixos(){
+    const toggleFixos=$("toggleFixos");
+    if(toggleFixos){ const wrap=toggleFixos.closest('.toggle-wrap'); if(wrap) wrap.style.display='none'; }
+    const fixosTitle=[...document.querySelectorAll('#mod-configuracoes .section-title')].find(x=>n(x.textContent).includes('fixos permanentes'));
+    if(fixosTitle){ const parent=fixosTitle.closest('div[style*="margin-top"]') || fixosTitle.parentElement; if(parent) parent.style.display='none'; }
+  }
+
+  async function salvarPrazoHomyFinal(){
+    const data=$("prazoData")?.value; const hora=$("prazoHora")?.value || "10:00";
+    if(!data){ toastSafe("Informe a data limite.","error"); return; }
+    try{ await SP.init(); await SP.setPrazoMarcacao(`${data}T${hora}:00`); toastSafe("Prazo salvo e sincronizado com o Refeitório.","success"); }
+    catch(e){ toastSafe("Erro ao salvar prazo: "+(e.message||e),"error"); }
+  }
+
+  function bindDashboardFinal(){
+    const marc=$("toggleMarcacao");
+    if(marc && !marc.dataset.homyFinal){
+      marc.dataset.homyFinal='1';
+      marc.addEventListener('change',async function(e){
+        e.stopImmediatePropagation();
+        try{ await SP.setMarcacaoLiberada(this.checked); toastSafe(this.checked?'Marcação liberada no refeitório.':'Marcação bloqueada no refeitório.','success'); }
+        catch(err){ toastSafe('Erro ao atualizar liberação: '+(err.message||err),'error'); }
+      },true);
+    }
+    const card=$("toggleCardapio");
+    if(card && !card.dataset.homyFinal){
+      card.dataset.homyFinal='1';
+      card.addEventListener('change',async function(e){
+        e.stopImmediatePropagation();
+        try{ await SP.setCardapioVisivel(this.checked); toastSafe(this.checked?'Cardápio liberado no refeitório.':'Cardápio ocultado no refeitório.','success'); }
+        catch(err){ toastSafe('Erro ao atualizar cardápio: '+(err.message||err),'error'); }
+      },true);
+    }
+    const extra=$("toggleExtra");
+    if(extra && !extra.dataset.homyFinal){
+      extra.dataset.homyFinal='1';
+      extra.addEventListener('change',async function(){
+        await SP.setConfig('refeicao_extra_automatica', this.checked?'sim':'nao');
+        if(this.checked) await aplicarExtraAutomatico();
+        toastSafe(this.checked?'Refeição extra automática ativada para a semana.':'Refeição extra automática desativada.','success');
+      });
+    }
+    const btnPrazo=$("btnSalvarPrazo");
+    if(btnPrazo && !btnPrazo.dataset.homyFinal2){ btnPrazo.dataset.homyFinal2='1'; btnPrazo.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();salvarPrazoHomyFinal();},true); }
+  }
+
+  // PDF Vascon: tenta extrair texto; se o PDF for imagem, usa OCR no navegador.
+  async function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('Falha ao carregar '+src));document.head.appendChild(s);});}
+  async function extrairTextoPdf(file){
+    if(!window.pdfjsLib){ await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'); pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; }
+    const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let texto=''; const canvases=[];
+    for(let p=1;p<=Math.min(pdf.numPages,2);p++){
+      const page=await pdf.getPage(p); const content=await page.getTextContent();
+      texto += '\n' + content.items.map(i=>i.str).join(' ');
+      if(texto.trim().length<80){
+        const viewport=page.getViewport({scale:2.8}); const canvas=document.createElement('canvas'); canvas.width=viewport.width; canvas.height=viewport.height;
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise; canvases.push(canvas);
+      }
+    }
+    if(texto.trim().length<80 && canvases.length){
+      if(!window.Tesseract){ await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'); }
+      for(const c of canvases){ const r=await Tesseract.recognize(c,'por+eng'); texto += '\n' + (r.data.text||''); }
+    }
+    return texto;
+  }
+
+  function parseVascon(texto){
+    const t=String(texto||'').replace(/\r/g,'\n').replace(/[ \t]+/g,' ').toUpperCase();
+    const dias=['SEGUNDA','TERCA','TERÇA','QUARTA','QUINTA','SEXTA'];
+    const aliases={SEGUNDA:'segunda',TERCA:'terca','TERÇA':'terca',QUARTA:'quarta',QUINTA:'quinta',SEXTA:'sexta'};
+    const linhas=t.split(/\n|(?=SEGUNDA|TERCA|TERÇA|QUARTA|QUINTA|SEXTA)/).map(x=>x.trim()).filter(Boolean);
+    const joined=linhas.join('\n');
+    let result={segunda:{},terca:{},quarta:{},quinta:{},sexta:{}};
+    for(let i=0;i<dias.length;i++){
+      const d=dias[i]; const dia=aliases[d]; const re=new RegExp(d+'[\\s\\S]*?(?=TERCA|TERÇA|QUARTA|QUINTA|SEXTA|OBS:|$)','i');
+      const m=joined.match(re); if(!m) continue; const block=m[0];
+      const lines=block.split('\n').map(x=>x.replace(/\([^)]*\)/g,'').trim()).filter(x=>x && !/PRATO PRINCIPAL|OPCAO|OPÇÃO|DATA|VASCON|SERVICOS|OBS/.test(x));
+      const carne=lines.find(x=>/LINGUICA|LINGUIÇA|STEAK|FIL[EÉ] DE PEIXE|COXA DE FRANGO|BIFE ACEBOLADO|TOSCANA|FRANGO ENSOPADA/.test(x));
+      const massa=lines.find(x=>/ENROLADINHO|GRAVATINHA|RAVIOLI|MACARRAO|MACARRÃO|MOLHO/.test(x));
+      const lanche=lines.find(x=>/X[- ]?SALADA|HAMBURGUER|HAMBÚRGUER|LANCHE/.test(x));
+      const lightCandidates=lines.filter(x=>/OMELETE|MANDIOCA|CHICORIA|CHICÓRIA|SALADA DA PISTA|ALMONDEGAS|ALMÔNDEGAS|COUVE|FILE DE PEIXE ASSADO|PUR[EÊ]|ABOBRINHA/.test(x));
+      const principal=lines.filter(x=>![carne,massa,lanche,...lightCandidates].includes(x)).slice(1,8).join('; ');
+      if(principal) result[dia].principal=principal;
+      if(lightCandidates.length) result[dia].light=lightCandidates.join('; ');
+      if(carne) result[dia].carne=carne;
+      if(massa) result[dia].massa=massa;
+      if(lanche) result[dia].lanche=lanche;
+    }
+    return result;
+  }
+
+  window.handlePDFUpload = async function(file){
+    toastSafe('Processando PDF da Vascon. Pode levar alguns segundos...','info');
+    try{
+      const texto=await extrairTextoPdf(file);
+      const parsed=parseVascon(texto);
+      window.CARDAPIO_EDIT = parsed;
+      if(window.renderCardapioForm) window.renderCardapioForm();
+      const total=Object.values(parsed).reduce((s,d)=>s+Object.keys(d).length,0);
+      if(total) toastSafe('Cardápio extraído. Revise os campos e clique em Salvar no SharePoint.','success');
+      else toastSafe('Não consegui ler o PDF automaticamente. Ele parece estar como imagem de baixa leitura; preencha manualmente e salve.','error');
+    }catch(e){ console.error(e); toastSafe('Erro ao processar PDF: '+(e.message||e),'error'); }
+  };
+
+  // Salvar cardápio com sincronização de timestamp.
+  function bindSalvarCardapioFinal(){
+    const btn=$("btnSalvarCardapio");
+    if(!btn || btn.dataset.homyFinal) return; btn.dataset.homyFinal='1';
+    btn.addEventListener('click', async function(){
+      try{ await SP.setConfig('cardapio_ultima_atualizacao', new Date().toISOString()); }catch(e){}
+    });
+  }
+
+  async function initHomyFinal(){
+    melhorarExtrasUI(); limparConfiguracoesFixos(); bindDashboardFinal(); bindSalvarCardapioFinal();
+    setTimeout(()=>{melhorarExtrasUI(); limparConfiguracoesFixos(); bindDashboardFinal(); bindSalvarCardapioFinal();},700);
+    setTimeout(aplicarExtraAutomatico, 1800);
+  }
+  document.addEventListener('DOMContentLoaded', initHomyFinal);
+  setTimeout(initHomyFinal, 500); setTimeout(initHomyFinal, 1500);
+})();
+</script>
+
 </body>
 
 </html>
