@@ -5,16 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=ramais-v1">
-<link rel="icon" type="image/png" sizes="256x256" href="homy-icon-256.png?v=ramais-v1">
-<link rel="icon" type="image/png" sizes="512x512" href="homy-icon-512.png?v=ramais-v1">
-<link rel="shortcut icon" href="favicon.ico?v=ramais-v1">
-<link rel="apple-touch-icon" href="apple-touch-icon.png?v=ramais-v1">
+<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
+<link rel="icon" type="image/png" sizes="256x256" href="favicon.png?v=fix-msal">
+<link rel="icon" type="image/png" sizes="512x512" href="favicon.png?v=fix-msal">
+<link rel="shortcut icon" href="favicon.png?v=fix-msal">
 <title>Marcar Refeição · Homy</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-<script src="sharepoint.js?v=ramais-v1"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;color:#e8f0ff;background:#050f22;overflow-x:hidden}
@@ -157,6 +154,8 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   .func-grid{grid-template-columns:repeat(4,1fr)}
 }
 </style>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="sharepoint.js?v=fix-msal"></script>
 </head>
 <body>
 
@@ -165,7 +164,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   <div class="header">
     <div class="header-inner">
       <a class="back-btn" href="index.html">&#8249;</a>
-      <img class="header-logo" src="homy-icon-512.png?v=ramais-v1" alt="Homy">
+      <img class="header-logo" src="favicon.png?v=fix-msal" alt="">
       <div class="header-titles">
         <div class="header-title">Marcar Refeição</div>
         <div class="header-sub">Selecione seu nome</div>
@@ -189,7 +188,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   <div class="header">
     <div class="header-inner">
       <div class="back-btn-view" id="btnVoltarView1">&#8249;</div>
-      <img class="header-logo" src="homy-icon-512.png?v=ramais-v1" alt="Homy">
+      <img class="header-logo" src="favicon.png?v=fix-msal" alt="">
       <div class="header-titles">
         <div class="header-title" id="v2Title">Marcar Refeição</div>
         <div class="header-sub" id="v2Sub">Escolha por dia</div>
@@ -213,7 +212,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   <div class="header">
     <div class="header-inner">
       <div class="back-btn-view" id="btnVoltarView2">&#8249;</div>
-      <img class="header-logo" src="homy-icon-512.png?v=ramais-v1" alt="Homy">
+      <img class="header-logo" src="favicon.png?v=fix-msal" alt="">
       <div class="header-titles">
         <div class="header-title">Confirmar Pedido</div>
         <div class="header-sub" id="v3Sub"></div>
