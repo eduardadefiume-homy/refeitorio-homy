@@ -133,9 +133,27 @@ body:after{
 
 .cozinha-cardapio-grid{
   display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-  gap:.75rem;
+  grid-template-columns:repeat(5, minmax(220px,1fr));
+  gap:12px;
   width:100%;
+  align-items:start;
+}
+@media (max-width:1200px){
+  .cozinha-cardapio-grid{
+    grid-template-columns:repeat(3,1fr);
+  }
+}
+
+@media (max-width:768px){
+  .cozinha-cardapio-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+}
+
+@media (max-width:520px){
+  .cozinha-cardapio-grid{
+    grid-template-columns:1fr;
+  }
 }
 
 .cozinha-cardapio-card{
