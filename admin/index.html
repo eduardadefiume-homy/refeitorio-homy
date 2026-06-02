@@ -4615,6 +4615,88 @@ document.addEventListener("keydown", function(event){
   };
   window.handlePDFUpload = window.processarPdfCardapioV20;
 })();
+
+
+// HOTFIX V7 — Parser Vascon tolerante: detecta dias mesmo com OCR/texto quebrado
+// e usa fallback por faixas da tabela quando o PDF.js não encontra SEGUNDA/TERÇA/etc.
+(function(){
+  const DIAS = [
+    {key:'segunda', label:'SEGUNDA', re:/SEGUNDA|SEG\.?/i},
+    {key:'terca', label:'TERCA', re:/TER[CÇ]A|TER\.?/i},
+    {key:'quarta', label:'QUARTA', re:/QUARTA|QUA\.?/i},
+    {key:'quinta', label:'QUINTA', re:/QUINTA|QUI\.?/i},
+    {key:'sexta', label:'SEXTA', re:/SEXTA|SEX\.?/i}
+  ];
+  const OPCS=['principal','light','carne','massa','lanche'];
+  const TITULOS={principal:'Prato Principal',light:'Light',carne:'Carne',massa:'Massa',lanche:'Lanche'};
+  const OBS={
+    principal:'Observação: as opções Carne e Massa substituem a carne do prato principal. As opções Light e Lanche substituem o prato principal completo.',
+    light:'Observação: a opção Light substitui o prato principal completo.',
+    carne:'Observação: a opção Carne substitui apenas a carne do prato principal. Os acompanhamentos do prato principal permanecem.',
+    massa:'Observação: a opção Massa substitui apenas a carne do prato principal. Os acompanhamentos do prato principal permanecem.',
+    lanche:'Observação: a opção Lanche substitui o prato principal completo.'
+  };
+  function toastV7(msg,tipo){ if(typeof toastSafe==='function') return toastSafe(msg,tipo||'info'); if(typeof toast==='function') return toast(msg,tipo||'info'); console.log(msg); }
+  function lim(v){return String(v||'').replace(/^[\s:;,.-–—]+|[\s:;,.-–—]+$/g,'').replace(/\s+/g,' ').trim();}
+  function norm(v){return lim(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();}
+  function compact(v){return norm(v).replace(/[^A-Z0-9]/g,'');}
+  function title(v){return lim(v).toLocaleLowerCase('pt-BR').replace(/(^|\s|[-/])([a-záéíóúâêôãõç])/g,(m,p,c)=>p+c.toLocaleUpperCase('pt-BR')).replace(/\b(ao|a|à|de|da|do|das|dos|com|e|na|no|em)\b/gi,m=>m.toLocaleLowerCase('pt-BR')).replace(/\bPDF\b/gi,'PDF');}
+  function ign(t){const n=norm(t), c=compact(t); if(!n) return true; if(/^\(?\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\)?$/.test(n)) return true; if(/^(VASCON|SERVICOSDEALIMENTACAO|SERVICOSDEALIMENTACAO|DATA|M06|S02|PRATOPRINCIPAL|OPCAO|OPÇAO|LIGHT|CARNE|MASSA|LANCHE)$/.test(c)) return true; if(['SEGUNDA','TERCA','TERÇA','QUARTA','QUINTA','SEXTA'].includes(n)) return true; if(/CARDAPIOACIMA|SUJEITO|ALTERACOES|SUBSTITUEM|SUBSTITUI|OBS/.test(c)) return true; return false;}
+  function rows(items,tol=4){const out=[]; items.slice().sort((a,b)=>b.y-a.y||a.x-b.x).forEach(it=>{let r=out.find(x=>Math.abs(x.y-it.y)<=tol); if(!r){r={y:it.y,items:[]};out.push(r)} r.items.push(it); r.y=(r.y*(r.items.length-1)+it.y)/r.items.length;}); out.forEach(r=>r.items.sort((a,b)=>a.x-b.x)); out.sort((a,b)=>b.y-a.y); return out;}
+  async function readItems(file){
+    if(!window.pdfjsLib){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';s.onload=res;s.onerror=()=>rej(new Error('Não foi possível carregar PDF.js'));document.head.appendChild(s);});}
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise; const all=[];
+    for(let pg=1;pg<=pdf.numPages;pg++){const page=await pdf.getPage(pg); const vp=page.getViewport({scale:1}); const content=await page.getTextContent(); content.items.forEach(i=>{const text=lim(i.str||''); if(text) all.push({text,x:i.transform[4],y:i.transform[5],width:i.width||0,page:pg,pageWidth:vp.width,pageHeight:vp.height});});}
+    if(!all.length) throw new Error('O PDF não trouxe texto selecionável. Exporte o PDF original da Vascon, não imagem/print.');
+    return all;
+  }
+  function col(x,w){const p=x/w; if(p<0.115)return null; if(p<0.405)return 'principal'; if(p<0.59)return 'light'; if(p<0.71)return 'carne'; if(p<0.835)return 'massa'; return 'lanche';}
+  function detectarBandas(items){
+    const rs=rows(items,5), found=[];
+    rs.forEach((r,idx)=>{const linha=compact(r.items.map(i=>i.text).join(' ')); for(const d of DIAS){if(linha.includes(d.label)||d.re.test(linha)){if(!found.some(f=>f.key===d.key))found.push({key:d.key,y:r.y,idx}); break;}}});
+    found.sort((a,b)=>b.y-a.y);
+    if(found.length>=5) return found.slice(0,5);
+    // Fallback por datas no bloco do dia (08/06/26 etc.)
+    const datas=[]; rs.forEach((r,idx)=>{const linha=norm(r.items.map(i=>i.text).join(' ')); if(/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(linha)) datas.push({y:r.y,idx});});
+    datas.sort((a,b)=>b.y-a.y);
+    if(datas.length>=5) return DIAS.map((d,i)=>({key:d.key,y:datas[i].y,idx:datas[i].idx}));
+    // Último fallback: divide a área útil da tabela em 5 faixas verticais iguais.
+    const useful=items.filter(i=>{const c=compact(i.text); return !/VASCON|SERVICOS|DATA|M06|S02|PRATOPRINCIPAL|OPCAO|OBS|CARDAPIOACIMA|SUBSTITU/.test(c);});
+    const ys=useful.map(i=>i.y).sort((a,b)=>a-b); const min=ys[Math.floor(ys.length*0.04)]||Math.min(...items.map(i=>i.y)); const max=ys[Math.floor(ys.length*0.96)]||Math.max(...items.map(i=>i.y));
+    const step=(max-min)/5; return DIAS.map((d,i)=>({key:d.key,y:max-step*i,idx:i,__fallback:true,min,max,step}));
+  }
+  function joinItems(arr,op){
+    const linhas=rows(arr,4.5).map(r=>r.items.sort((a,b)=>a.x-b.x).map(i=>lim(i.text)).filter(Boolean).join(' ')).map(lim).filter(x=>x&&!ign(x));
+    const clean=linhas.map(x=>x.replace(/^SOBREMESA\s*[:.-]?\s*/i,'Sobremesa: '));
+    if(['carne','massa','lanche'].includes(op)){const j=clean.join(' ').replace(/\s+/g,' ').trim(); return j?[title(j)]:[];}
+    return clean.map(title);
+  }
+  function parse(items){
+    const w=items.find(i=>i.pageWidth)?.pageWidth || Math.max(...items.map(i=>i.x),850);
+    const bands=detectarBandas(items); const result={segunda:{},terca:{},quarta:{},quinta:{},sexta:{}};
+    for(let i=0;i<5;i++){
+      const b=bands[i]; const next=bands[i+1];
+      let top, bottom;
+      if(b.__fallback){ top=b.y + b.step/2; bottom=b.y - b.step/2; }
+      else { top=b.y+8; bottom= next ? next.y+8 : Math.min(...items.map(x=>x.y))-8; }
+      const bucket={principal:[],light:[],carne:[],massa:[],lanche:[]};
+      items.forEach(it=>{if(it.y>top||it.y<=bottom)return; const tx=lim(it.text); if(!tx||ign(tx))return; if(DIAS.some(d=>d.re.test(tx)||compact(tx).includes(d.label)))return; const c=col(it.x,w); if(c) bucket[c].push(it);});
+      // Salvaguarda específica: se principal vier vazio, pega textos úteis imediatamente à direita da coluna de dia.
+      if(!bucket.principal.length){items.forEach(it=>{const p=it.x/w; if(it.y<=top&&it.y>bottom&&p>=0.10&&p<0.405&&!ign(it.text)) bucket.principal.push(it);});}
+      OPCS.forEach(op=>{const detalhes=joinItems(bucket[op],op); if(detalhes.length) result[b.key][op]={nome:TITULOS[op],detalhes:detalhes.concat([OBS[op]])};});
+    }
+    return result;
+  }
+  async function save(parsed){
+    await SP.init(); const semana=(window.getSemanaAtualAdminV20?getSemanaAtualAdminV20():(SP.getCurrentWeekId?SP.getCurrentWeekId():'')); if(!semana) throw new Error('Semana atual não identificada.');
+    if(SP.clearCardapio) await SP.clearCardapio(semana); let total=0;
+    for(const dia of ['segunda','terca','quarta','quinta','sexta']) for(const op of OPCS){const it=(parsed[dia]||{})[op]; if(!it||!it.detalhes?.length)continue; await SP.saveCardapio(semana,dia,op,it.nome,it.detalhes.join('\n')); total++;}
+    if(SP.setConfig) await SP.setConfig('cardapio_ultima_atualizacao',new Date().toISOString()); return total;
+  }
+  window.processarPdfCardapioV20=async function(file){try{toastV7('Lendo PDF da Vascon com parser tolerante por colunas...','info'); const items=await readItems(file); const parsed=parse(items); const total=await save(parsed); if(!total){toastV7('Nenhuma opção foi encontrada no PDF.','error');return;} toastV7('Cardápio salvo: '+total+' opções estruturadas no SharePoint.','success'); const semana=(window.getSemanaAtualAdminV20?getSemanaAtualAdminV20():(SP.getCurrentWeekId?SP.getCurrentWeekId():'')); if(window.loadCardapioAtual) await window.loadCardapioAtual(semana); if(window.loadCardapio) await window.loadCardapio(semana);}catch(e){console.error('Erro Vascon V7:',e);toastV7('Erro ao ler PDF da Vascon: '+(e.message||e),'error');}};
+  window.handlePDFUpload=window.processarPdfCardapioV20;
+})();
 </script>
 
 </body>
