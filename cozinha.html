@@ -130,6 +130,86 @@ body:after{
 .cancel{background:rgba(255,255,255,.06);color:var(--muted)}
 .confirm{background:linear-gradient(135deg,#22c879,#15834d);color:white}
 @media(max-width:600px){.brand-title{font-size:.95rem}.weekday{font-size:1.35rem}.content{padding:.85rem}.btn-voltar span{display:none}}
+
+.cozinha-cardapio-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:.75rem;
+  width:100%;
+}
+
+.cozinha-cardapio-card{
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.045);
+  border-radius:14px;
+  padding:.9rem;
+  min-height:150px;
+}
+
+.cozinha-cardapio-head{
+  display:flex;
+  align-items:flex-start;
+  gap:.55rem;
+  margin-bottom:.65rem;
+}
+
+.cozinha-cardapio-head strong{
+  color:#fff;
+  font-size:.95rem;
+  line-height:1.25;
+}
+
+.cozinha-cardapio-body{
+  display:flex;
+  flex-direction:column;
+  gap:.28rem;
+}
+
+.cozinha-cardapio-item{
+  font-size:.78rem;
+  color:rgba(143,170,210,.78);
+  line-height:1.35;
+}
+
+.tag-principal,
+.tag-light,
+.tag-carne,
+.tag-massa,
+.tag-lanche{
+  font-size:.58rem;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  padding:4px 7px;
+  border-radius:5px;
+  flex-shrink:0;
+}
+
+.tag-principal{
+  background:rgba(26,58,110,.7);
+  color:#9bd2ff;
+}
+
+.tag-light{
+  background:rgba(16,110,90,.6);
+  color:#50dca0;
+}
+
+.tag-carne{
+  background:rgba(192,40,28,.45);
+  color:#ffa08c;
+}
+
+.tag-massa{
+  background:rgba(100,60,10,.6);
+  color:#ffc864;
+}
+
+.tag-lanche{
+  background:rgba(80,20,140,.65);
+  color:#c8a0ff;
+}
+
 </style>
 </head>
 
@@ -320,24 +400,57 @@ async function carregarCardapio(semanaId, dia){
   try {
     const cardapio = await window.SP.getCardapio(semanaId);
     const itens = cardapio.filter(c => normalizar(itemValor(c,"Dia","dia")) === normalizar(dia));
+
+    const box = document.getElementById("cardapioHoje");
+
     if (!itens.length) {
-      document.getElementById("cardapioHoje").textContent = "Nenhum cardápio cadastrado para hoje.";
+      box.innerHTML = "Nenhum cardápio cadastrado para hoje.";
       return;
     }
 
-    const texto = itens.map(i => {
-      const opcao = itemValor(i,"Opcao","opcao") || "";
-      const prato = itemValor(i,"Nome_Prato","nomePrato","Prato","Descricao") || "";
-      return [opcao, prato].filter(Boolean).join(": ");
-    }).join(" · ");
+    box.innerHTML = `
+      <div class="cozinha-cardapio-grid">
+        ${itens.map(i => {
+          const opcao = String(itemValor(i, "Opcao", "opcao") || "").toLowerCase();
+          const nome = itemValor(i, "Nome_Prato", "nomePrato") || tituloOpcao(opcao);
+          const detalhes = itemValor(i, "Detalhes", "detalhes", "Descricao", "descricao") || "";
 
-    document.getElementById("cardapioHoje").textContent = texto || "Cardápio cadastrado sem descrição.";
+          const linhas = String(detalhes)
+            .split(/\r?\n|;/)
+            .map(x => x.trim())
+            .filter(Boolean);
+
+          return `
+            <article class="cozinha-cardapio-card">
+              <div class="cozinha-cardapio-head">
+                <span class="tag-${opcao}">${tituloOpcao(opcao)}</span>
+                <strong>${nome}</strong>
+              </div>
+              <div class="cozinha-cardapio-body">
+                ${linhas.map(l => `<div class="cozinha-cardapio-item">• ${l}</div>`).join("")}
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    `;
   } catch(e) {
     console.warn("Cardápio:", e);
     document.getElementById("cardapioHoje").textContent = "Não foi possível carregar o cardápio.";
   }
 }
 
+function tituloOpcao(opcao){
+  const mapa = {
+    principal: "Principal",
+    light: "Light",
+    carne: "Carne",
+    massa: "Massa",
+    lanche: "Lanche"
+  };
+  return mapa[String(opcao || "").toLowerCase()] || "Opção";
+}
+  
 async function sincronizar(){
   atualizarData();
 
