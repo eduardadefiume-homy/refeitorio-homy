@@ -1379,3 +1379,114 @@ window.SP = SP;
     }
   };
 })();
+
+// ============================================================
+// HOTFIX 4 — Valores e Extras robustos
+// ============================================================
+(function(){
+  if(!window.SP) return;
+  const SP=window.SP;
+  const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+  const pick=(obj,...keys)=>{for(const k of keys){if(obj&&obj[k]!==undefined&&obj[k]!==null)return obj[k];}return '';};
+  function money(v){
+    let s=String(v ?? '').trim();
+    if(!s) return 0;
+    s=s.replace(/R\$/gi,'').replace(/\s/g,'');
+    if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+    const n=Number(s);
+    return Number.isFinite(n)?n:0;
+  }
+  SP._columnsCache=SP._columnsCache||{};
+  SP.getListColumns=async function(listName){
+    if(this._columnsCache[listName]) return this._columnsCache[listName];
+    const siteId=await this.getSiteId(); const listId=await this.getListId(listName);
+    const data=await this.graph('GET',`/sites/${siteId}/lists/${listId}/columns?$select=name,displayName,hidden,readOnly`);
+    this._columnsCache[listName]=data.value||[]; return this._columnsCache[listName];
+  };
+  SP.findColumnName=async function(listName,candidates){
+    const cols=await this.getListColumns(listName); const wanted=candidates.map(norm);
+    let c=cols.find(x=>wanted.includes(norm(x.name))||wanted.includes(norm(x.displayName)));
+    if(c) return c.name;
+    c=cols.find(x=>wanted.some(w=>norm(x.name).includes(w)||norm(x.displayName).includes(w)));
+    return c?c.name:null;
+  };
+  SP.createItemMapped=async function(listName,mapping){
+    const fields={};
+    for(const entry of mapping){
+      const value=entry.value;
+      if(value===undefined||value===null||value==='') continue;
+      const col=await this.findColumnName(listName,entry.names||[entry.name]);
+      if(col) fields[col]=value;
+      else if(entry.required) throw new Error(`Coluna não encontrada em ${listName}: ${(entry.names||[entry.name]).join(' / ')}`);
+    }
+    return this.createItem(listName,fields);
+  };
+  SP.updateItemMapped=async function(listName,id,mapping){
+    const fields={};
+    for(const entry of mapping){
+      const value=entry.value;
+      if(value===undefined||value===null) continue;
+      const col=await this.findColumnName(listName,entry.names||[entry.name]);
+      if(col) fields[col]=value;
+    }
+    return this.updateItem(listName,id,fields);
+  };
+  SP.createValorRefeicao=async function(dados){
+    return this.createItemMapped('Valores de Refeição',[
+      {names:['Title','Título','Titulo'],value:dados.title||dados.Title||'Valor refeição',required:true},
+      {names:['Data_Inicio','Data Início','Data Inicio','DataInicio','Inicio'],value:dados.dataInicio||dados.Data_Inicio,required:true},
+      {names:['Data_Fim','Data Fim','DataFim','Fim'],value:dados.dataFim||dados.Data_Fim,required:true},
+      {names:['Valor_Vascon','Valor Vascon','ValorVascon','Vascon'],value:money(dados.valorVascon??dados.Valor_Vascon),required:true},
+      {names:['Valor_Desconto','Valor Desconto','ValorDesconto','Valor descontado funcionário','Valor descontado funcionario','Desconto funcionário','Desconto funcionario','Valor_Desconto_Funcionario','Valor Desconto Funcionario','Valor Desconto Funcionário'],value:money(dados.valorDesconto??dados.valorDescontoFuncionario??dados.Valor_Desconto??dados.Valor_Desconto_Funcionario)},
+      {names:['Observacao','Observação','Obs'],value:dados.observacao||dados.Observacao||''},
+      {names:['Ativo','Status'],value:dados.ativo??dados.Ativo??true}
+    ]);
+  };
+  SP.updateValorRefeicao=async function(id,dados){
+    return this.updateItemMapped('Valores de Refeição',id,[
+      {names:['Title','Título','Titulo'],value:dados.title??dados.Title},
+      {names:['Data_Inicio','Data Início','Data Inicio','DataInicio','Inicio'],value:dados.dataInicio??dados.Data_Inicio},
+      {names:['Data_Fim','Data Fim','DataFim','Fim'],value:dados.dataFim??dados.Data_Fim},
+      {names:['Valor_Vascon','Valor Vascon','ValorVascon','Vascon'],value:dados.valorVascon!==undefined?money(dados.valorVascon):(dados.Valor_Vascon!==undefined?money(dados.Valor_Vascon):undefined)},
+      {names:['Valor_Desconto','Valor Desconto','ValorDesconto','Valor descontado funcionário','Valor descontado funcionario','Desconto funcionário','Desconto funcionario','Valor_Desconto_Funcionario','Valor Desconto Funcionario','Valor Desconto Funcionário'],value:dados.valorDesconto!==undefined?money(dados.valorDesconto):(dados.Valor_Desconto!==undefined?money(dados.Valor_Desconto):undefined)},
+      {names:['Observacao','Observação','Obs'],value:dados.observacao??dados.Observacao},
+      {names:['Ativo','Status'],value:dados.ativo??dados.Ativo}
+    ]);
+  };
+  SP.deleteValorRefeicao=async function(id){ return this.deleteItem('Valores de Refeição',id); };
+  SP.addExtra=async function(semanaId,dia,nome,tipo,opcao='principal',observacao='',adicionadoPor=null){
+    return this.createItemMapped('Extras',[
+      {names:['Title','Título','Titulo'],value:`${semanaId}-${dia}-${nome}-${Date.now()}`},
+      {names:['Semana_id','SemanaId','Semana','Semana ID'],value:semanaId},
+      {names:['Dia'],value:dia},
+      {names:['Nome','Title'],value:nome},
+      {names:['tipo','Tipo'],value:tipo},
+      {names:['Opcao','Opção','Opcao'],value:opcao},
+      {names:['Observacao','Observação','Obs'],value:observacao||''},
+      {names:['Adicionado_Por','Adicionado Por','Criado Por'],value:adicionadoPor||this.getUserName()}
+    ]);
+  };
+  SP.addExtraPedido=async function(semanaId,dia,nome,tipo,opcao='principal',observacao='',adicionadoPor=null){
+    let extraItem=null;
+    try{extraItem=await this.addExtra(semanaId,dia,nome,tipo,opcao,observacao,adicionadoPor||this.getUserName());}catch(e){console.warn('[SP] não salvou em Extras:',e);}
+    return this.savePedido(semanaId,`EXTRA-${extraItem?.id||Date.now()}-${Math.random().toString(16).slice(2,5)}`,nome,dia,opcao,nome,{
+      confirmado:true,status:'Confirmado',origem:tipo||'extra',observacao:observacao||'',
+      dataRef:this.getDataRefBySemanaDia?this.getDataRefBySemanaDia(semanaId,dia):undefined,
+      alteradoPor:adicionadoPor||this.getUserName()
+    });
+  };
+  SP.deletePedido=async function(id){ return this.deleteItem('Pedidos',id); };
+  SP.deleteExtra=async function(id){ return this.deleteItem('Extras',id); };
+  SP.deleteExtraComPedido=async function(extra){
+    if(extra && extra.id){ try{await this.deleteExtra(extra.id);}catch(e){console.warn(e);} }
+    const semana=pick(extra,'Semana_id','Semana','semana'), dia=pick(extra,'Dia','dia'), nome=pick(extra,'Nome','Title','Colaborador_nome'), tipo=pick(extra,'tipo','Tipo','Origem');
+    if(semana&&dia&&nome){
+      const pedidos=await this.getPedidos(semana);
+      for(const p of pedidos){
+        if(norm(pick(p,'Dia'))===norm(dia)&&norm(pick(p,'Colaborador_nome','Title','Nome'))===norm(nome)&&(!tipo||norm(pick(p,'Origem','Tipo','tipo')).includes(norm(tipo)))){
+          try{await this.deletePedido(p.id);}catch(e){console.warn(e);}
+        }
+      }
+    }
+  };
+})();
