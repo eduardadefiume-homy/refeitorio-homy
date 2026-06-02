@@ -334,15 +334,41 @@ function renderTabs(){
 }
 function setDay(key){
   const idx=DIAS_KEY.indexOf(key), d=DATAS[idx], hoje=new Date();
-  document.querySelectorAll(".day-tab").forEach(t=>t.classList.toggle("active",t.dataset.day===key));
-  const area=document.getElementById("cardsArea"); area.innerHTML="";
-  const panel=document.createElement("div"); panel.className="day-panel active";
+
+  document.querySelectorAll(".day-tab")
+    .forEach(t=>t.classList.toggle("active",t.dataset.day===key));
+
+  const area=document.getElementById("cardsArea");
+  area.innerHTML="";
+
+  const panel=document.createElement("div");
+  panel.className="day-panel active";
+
   const isToday=d.toDateString()===hoje.toDateString();
-  panel.innerHTML='<div class="day-header"><span class="day-header-date">'+DIAS_LABEL[key]+', '+d.getDate()+' de '+MESES[d.getMonth()]+'</span>'+(isToday?'<span class="day-header-badge">Hoje</span>':'')+'</div>';
+
+  panel.innerHTML=
+    '<div class="day-header"><span class="day-header-date">'+
+    DIAS_LABEL[key]+', '+d.getDate()+' de '+MESES[d.getMonth()]+'</span>'+
+    (isToday?'<span class="day-header-badge">Hoje</span>':'')+
+    '</div>';
+
   const itens=CARDAPIO[key]||[];
-  if(!itens.length){ panel.innerHTML += '<div class="nota-card"><span class="nota-icon">ℹ️</span><span class="nota-text">Nenhum cardápio real cadastrado para este dia no Admin.</span></div>'; area.appendChild(panel); return; }
-  const nota=document.createElement("div"); nota.className="nota-card"; nota.innerHTML='<span class="nota-icon">ℹ️</span><span class="nota-text"><strong>Dados reais do Admin.</strong> Qualquer alteração salva no SharePoint aparecerá aqui ao atualizar a página.</span>'; panel.appendChild(nota);
-  const grid=document.createElement("div"); grid.className="options-grid"; itens.forEach(op=>grid.appendChild(makeCard(op))); panel.appendChild(grid); area.appendChild(panel);
+
+  if(!itens.length){
+    panel.innerHTML +=
+      '<div class="nota-card"><span class="nota-icon">ℹ️</span><span class="nota-text">Nenhum cardápio cadastrado para este dia.</span></div>';
+
+    area.appendChild(panel);
+    return;
+  }
+
+  const grid=document.createElement("div");
+  grid.className="options-grid";
+
+  itens.forEach(op=>grid.appendChild(makeCard(op)));
+
+  panel.appendChild(grid);
+  area.appendChild(panel);
 }
 async function carregarSemana(){
   try{
