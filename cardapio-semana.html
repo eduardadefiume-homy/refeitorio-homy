@@ -513,5 +513,53 @@ carregarSemana();
 })();
 </script>
 
+
+
+<script>
+// HOTFIX VISUAL CARDÁPIO ESTRUTURADO — quebra Nome_Prato embolado em título + itens abaixo
+(function(){
+  function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
+  function tc(v){return String(v||'').toLocaleLowerCase('pt-BR').replace(/(^|\s|[-/])([a-záéíóúâêôãõç])/g,(m,p,c)=>p+c.toLocaleUpperCase('pt-BR')).replace(/\b(ao|a|à|de|da|do|das|dos|com|e|na|no)\b/gi,m=>m.toLocaleLowerCase('pt-BR'));}
+  function splitParts(v){return String(v||'').split(/\n|;|\s+·\s+/).map(x=>x.replace(/^[-•·\s]+/,'').trim()).filter(Boolean);}
+  function escolher(parts, opcao){
+    if(!parts.length) return {nome:'Prato não informado', detalhes:[]};
+    const op=norm(opcao);
+    if(['carne','massa','lanche'].includes(op)) return {nome:tc(parts.join(' ')), detalhes:[]};
+    let idx=0;
+    if(op==='principal'){
+      const i=parts.findIndex(p=>!/(arroz|feij|salada|sobremesa|folha|couve|vinagrete|macarronese|tabule|beterraba|chuchu)/i.test(norm(p)));
+      if(i>=0) idx=i;
+    }
+    return {nome:tc(parts[idx]), detalhes:parts.filter((_,i)=>i!==idx).map(tc)};
+  }
+  function estruturarItemCardapio(item){
+    const opcao=String((item && (item.Opcao||item.opcao)) || 'principal').toLowerCase();
+    let nome=String((item && (item.Nome_Prato||item.nomePrato||item.Prato||item.Title)) || '').trim();
+    let det=String((item && (item.Detalhes||item.detalhes)) || '').trim();
+    const detRuim=/extra[ií]do automaticamente|pdf vascon/i.test(det);
+    if(nome.includes(';') || nome.includes(' · ') || (detRuim && nome.split(';').length>1)){
+      const e=escolher(splitParts(nome),opcao);
+      nome=e.nome; det=e.detalhes.join('\n');
+    }
+    return Object.assign({}, item, {Nome_Prato:nome, nomePrato:nome, Detalhes:detRuim?'':det, detalhes:detRuim?'':det});
+  }
+  async function instalar(){
+    try{
+      if(window.HOMY_SP_READY) await window.HOMY_SP_READY;
+      if(!window.SP || SP.__cardapioEstruturado) return;
+      const old=SP.getCardapio.bind(SP);
+      SP.getCardapio=async function(){
+        const r=await old.apply(SP,arguments);
+        return (r||[]).map(estruturarItemCardapio);
+      };
+      SP.__cardapioEstruturado=true;
+      if(typeof carregarDadosReais==='function') carregarDadosReais();
+      if(typeof carregarSemana==='function') carregarSemana();
+    }catch(e){console.warn('Hotfix cardápio estruturado:', e);}
+  }
+  instalar();
+})();
+</script>
+
 </body>
 </html>
