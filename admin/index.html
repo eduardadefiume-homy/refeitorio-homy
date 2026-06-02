@@ -3773,6 +3773,392 @@ document.addEventListener("keydown", function(event){
 })();
 </script>
 
+
+
+<script>
+// ============================================================
+// HOTFIX CARDÁPIO VASCON ESTRUTURADO — 2026-06-01
+// Objetivo: salvar cada opção com Nome_Prato limpo e Detalhes em linhas.
+// ============================================================
+(function(){
+  const DIAS_VASCON = [
+    {key:'segunda', re:/SEGUNDA/i},
+    {key:'terca', re:/TER[ÇC]A/i},
+    {key:'quarta', re:/QUARTA/i},
+    {key:'quinta', re:/QUINTA/i},
+    {key:'sexta', re:/SEXTA/i}
+  ];
+  const OPCOES_VASCON = ['principal','light','carne','massa','lanche'];
+
+  function toastV(msg,type){
+    if(window.toastSafe) return window.toastSafe(msg,type||'info');
+    if(window.toast) return window.toast(msg,type||'info');
+    alert(msg);
+  }
+  function normTxt(v){
+    return String(v||'')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/\s+/g,' ').trim().toUpperCase();
+  }
+  function titleCasePt(v){
+    const lower = String(v||'').toLocaleLowerCase('pt-BR');
+    return lower.replace(/(^|\s|[-/])([a-záéíóúâêôãõç])/g,(m,p,c)=>p+c.toLocaleUpperCase('pt-BR'))
+      .replace(/\b(ao|a|à|de|da|do|das|dos|com|e|na|no)\b/gi,m=>m.toLocaleLowerCase('pt-BR'));
+  }
+  function limparLinhaCardapio(v){
+    return String(v||'')
+      .replace(/\([^)]*\)/g,'')
+      .replace(/^[\s:\-–—]+|[\s:\-–—]+$/g,'')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function deveIgnorarLinha(v){
+    const n=normTxt(v);
+    return !n || /^\d+[\/.-]\d+/.test(n) ||
+      /VASCON|SERVICOS|SERVIÇOS|ALIMENTA[CÇ][AÃ]O|DATA|M06|S02|PRATO PRINCIPAL|OP[CÇ][AÃ]O|LIGHT|CARNE$|MASSA$|LANCHE$|CARDAPIO ACIMA|CARDÁPIO ACIMA|SUJEITO|ALTERA[CÇ][OÕ]ES|SUBSTITUEM|SUBSTITUI|OBS/.test(n);
+  }
+  function escolherPrincipal(linhas, opcao){
+    const limpas = linhas.map(limparLinhaCardapio).filter(x=>x && !deveIgnorarLinha(x));
+    if(!limpas.length) return null;
+    let nomeIdx = 0;
+    if(opcao==='principal'){
+      const idx = limpas.findIndex(x=>{
+        const n=normTxt(x);
+        return !(/ARROZ|FEIJAO|FEIJÃO|SALADA|SOBREMESA|FOLHA|COUVE|VINAGRETE|MACARRONESE|TABULE|BETERRABA|CHUCHU/.test(n));
+      });
+      if(idx>=0) nomeIdx=idx;
+    }
+    if(['carne','massa','lanche'].includes(opcao)){
+      return { nome:titleCasePt(limpas.join(' ')), detalhes:'' };
+    }
+    const nome = titleCasePt(limpas[nomeIdx]);
+    const detalhes = limpas.filter((_,i)=>i!==nomeIdx).map(titleCasePt).join('\n');
+    return {nome, detalhes};
+  }
+  function opcaoPorX(x, cols){
+    if(x < cols.light - 12) return 'principal';
+    if(x < cols.carne - 12) return 'light';
+    if(x < cols.massa - 12) return 'carne';
+    if(x < cols.lanche - 12) return 'massa';
+    return 'lanche';
+  }
+  function detectarColunas(items){
+    const findX = (re, fallback)=>{
+      const found = items.filter(i=>re.test(normTxt(i.text))).sort((a,b)=>a.x-b.x)[0];
+      return found ? found.x : fallback;
+    };
+    let principal = findX(/PRATO PRINCIPAL/, 150);
+    let light = findX(/^LIGHT$/, 375);
+    let carne = findX(/^CARNE$/, 555);
+    let massa = findX(/^MASSA$/, 670);
+    let lanche = findX(/^LANCHE$/, 770);
+    if(!(light>principal)) light=principal+220;
+    if(!(carne>light)) carne=light+155;
+    if(!(massa>carne)) massa=carne+115;
+    if(!(lanche>massa)) lanche=massa+115;
+    return {principal, light, carne, massa, lanche};
+  }
+  async function lerTextoPdfVascon(file){
+    if(!window.pdfjsLib){
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');
+        s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+        s.onload=resolve; s.onerror=()=>reject(new Error('Não foi possível carregar PDF.js'));
+        document.head.appendChild(s);
+      });
+    }
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const all=[];
+    for(let pg=1; pg<=pdf.numPages; pg++){
+      const page=await pdf.getPage(pg);
+      const content=await page.getTextContent();
+      content.items.forEach(i=>{
+        const text=String(i.str||'').trim();
+        if(text) all.push({text, x:i.transform[4], y:i.transform[5], page:pg});
+      });
+    }
+    return all;
+  }
+  function agruparPorLinha(items){
+    const rows=[];
+    const sorted=items.slice().sort((a,b)=> b.y-a.y || a.x-b.x);
+    for(const it of sorted){
+      let row=rows.find(r=>Math.abs(r.y-it.y)<=3);
+      if(!row){ row={y:it.y, items:[]}; rows.push(row); }
+      row.items.push(it);
+      row.y=(row.y*(row.items.length-1)+it.y)/row.items.length;
+    }
+    rows.forEach(r=>r.items.sort((a,b)=>a.x-b.x));
+    rows.sort((a,b)=>b.y-a.y);
+    return rows;
+  }
+  function parseVasconEstruturado(items){
+    const cols=detectarColunas(items);
+    const rows=agruparPorLinha(items);
+    const result={segunda:{},terca:{},quarta:{},quinta:{},sexta:{}};
+    const dayRows=[];
+    rows.forEach((r,idx)=>{
+      const line=normTxt(r.items.map(i=>i.text).join(' '));
+      for(const d of DIAS_VASCON){ if(d.re.test(line)){ dayRows.push({dia:d.key, idx, y:r.y}); break; } }
+    });
+    if(dayRows.length<3) throw new Error('Não consegui localizar os dias no PDF da Vascon.');
+    dayRows.sort((a,b)=>a.idx-b.idx);
+    for(let d=0; d<dayRows.length; d++){
+      const dia=dayRows[d].dia;
+      const ini=dayRows[d].idx;
+      const fim=(d+1<dayRows.length?dayRows[d+1].idx:rows.length);
+      const bucket={principal:[], light:[], carne:[], massa:[], lanche:[]};
+      for(let ri=ini; ri<fim; ri++){
+        for(const it of rows[ri].items){
+          const clean=limparLinhaCardapio(it.text);
+          if(deveIgnorarLinha(clean)) continue;
+          if(it.x < 90) continue;
+          const opc=opcaoPorX(it.x, cols);
+          bucket[opc].push(clean);
+        }
+      }
+      for(const opc of OPCOES_VASCON){
+        const parsed=escolherPrincipal(bucket[opc], opc);
+        if(parsed && parsed.nome) result[dia][opc]=parsed;
+      }
+    }
+    return result;
+  }
+  async function salvarVasconEstruturado(parsed){
+    await SP.init();
+    const semana = (window.getSemanaAtualAdminV20 ? getSemanaAtualAdminV20() : (SP.getSemanaId ? SP.getSemanaId(new Date()) : ''));
+    if(SP.clearCardapio) await SP.clearCardapio(semana);
+    let total=0;
+    for(const dia of ['segunda','terca','quarta','quinta','sexta']){
+      const data=parsed[dia]||{};
+      for(const opc of OPCOES_VASCON){
+        const item=data[opc];
+        if(!item || !item.nome) continue;
+        await SP.saveCardapio(semana,dia,opc,item.nome,item.detalhes || '');
+        total++;
+      }
+    }
+    if(SP.setConfig) await SP.setConfig('cardapio_ultima_atualizacao', new Date().toISOString());
+    return total;
+  }
+  window.processarPdfCardapioV20 = async function(file){
+    if(!file) return;
+    try{
+      toastV('Processando PDF da Vascon e estruturando itens...','info');
+      const items=await lerTextoPdfVascon(file);
+      const parsed=parseVasconEstruturado(items);
+      const total=await salvarVasconEstruturado(parsed);
+      if(!total){ toastV('Não encontrei itens válidos no PDF.','error'); return; }
+      toastV('Cardápio salvo estruturado no SharePoint com '+total+' itens.','success');
+      if(window.loadCardapioAtual) await window.loadCardapioAtual(getSemanaAtualAdminV20());
+      if(window.loadCardapio) await window.loadCardapio(getSemanaAtualAdminV20());
+    }catch(e){
+      console.error('Erro PDF Vascon estruturado:', e);
+      toastV('Erro ao ler PDF: '+(e.message||e),'error');
+    }
+  };
+  window.handlePDFUpload = window.processarPdfCardapioV20;
+})();
+</script>
+
+<script>
+// ============================================================
+// HOTFIX 4 ADMIN — extras, pedidos e operação sem duplicidade
+// ============================================================
+(function(){
+  const DIAS=['segunda','terca','quarta','quinta','sexta'];
+  const DIA_LABEL={segunda:'Segunda',terca:'Terça',quarta:'Quarta',quinta:'Quinta',sexta:'Sexta'};
+  const DIA_ORDER={segunda:1,terca:2,quarta:3,quinta:4,sexta:5};
+  const $=id=>document.getElementById(id);
+  const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  const pick=(obj,...keys)=>{for(const k of keys){if(obj&&obj[k]!==undefined&&obj[k]!==null)return obj[k];}return '';};
+  function toastSafe(msg,type){ if(window.toast) window.toast(msg,type||'info'); else alert(msg); }
+  function semanaAtual(){ return (window.currentWeekId || (window.SP&&SP.getCurrentWeekId&&SP.getCurrentWeekId()) || document.querySelector('.semana-badge')?.textContent?.match(/\d{4}\s*\/\s*\d+/) ? (SP.getCurrentWeekId?SP.getCurrentWeekId():'2026-W23') : '2026-W23'); }
+  function isAuto(x){ return norm(pick(x,'Nome','Colaborador_nome','Title')).includes('refeição extra') && norm(pick(x,'tipo','Tipo','Origem')).includes('extra automatica'); }
+  function badgeClass(tipo){ tipo=norm(tipo); if(tipo.includes('investigador')) return 'badge-blue'; if(tipo.includes('guarda')) return 'badge-yellow'; if(tipo.includes('prestador')) return 'badge-yellow'; return 'badge-blue'; }
+
+  function ensurePrestador(){
+    const sel=$('extraTipo'); if(!sel) return;
+    const opts=[...sel.options].map(o=>norm(o.value));
+    if(!opts.includes('prestador')) sel.insertAdjacentHTML('beforeend','<option value="prestador">Prestador</option>');
+    if(!opts.includes('investigador')) sel.insertAdjacentHTML('beforeend','<option value="investigador">Investigador</option>');
+    if(!opts.includes('guarda')) sel.insertAdjacentHTML('beforeend','<option value="guarda">Guarda</option>');
+  }
+
+  function abrirModalExtraBase(preset){
+    ensurePrestador();
+    const modal=$('modalExtra'); if(!modal){alert('Modal de extra não encontrado.');return;}
+    window.__homyExtraPreset=preset||null;
+    const title=modal.querySelector('.modal-title');
+    const nome=$('extraNome'), tipo=$('extraTipo'), dia=$('extraDia'), opcao=$('extraOpcao'), obs=$('extraObs');
+    if(nome) nome.disabled=false; if(tipo) tipo.disabled=false; if(opcao) opcao.disabled=false;
+    if(opcao) opcao.value='principal';
+    if(obs) obs.value='';
+    if(!dia.value) dia.value='segunda';
+    if(preset==='investigador'){
+      if(title) title.textContent='Adicionar Extra Investigador';
+      if(nome){nome.value='Investigador'; nome.disabled=true;}
+      if(tipo){tipo.value='investigador'; tipo.disabled=true;}
+      if(obs) obs.placeholder='Escolha apenas o dia. O sistema numerará Investigador 1, 2 ou 3.';
+    }else if(preset==='guarda'){
+      if(title) title.textContent='Adicionar Extra Guarda';
+      if(nome){nome.value='Guarda'; nome.disabled=true;}
+      if(tipo){tipo.value='guarda'; tipo.disabled=true;}
+      if(obs) obs.placeholder='Escolha apenas o dia.';
+    }else{
+      if(title) title.textContent='Adicionar Extra';
+      if(nome) nome.value=''; if(tipo) tipo.value='prestador'; if(obs) obs.placeholder='Informações adicionais...';
+    }
+    modal.classList.add('open');
+    modal.style.opacity='1'; modal.style.pointerEvents='all'; modal.style.display='flex';
+  }
+  window.abrirModalExtra=function(){ abrirModalExtraBase(null); };
+  window.abrirModalExtraPredefinido=function(tipo){ abrirModalExtraBase(norm(tipo).includes('guarda')?'guarda':'investigador'); };
+  window.fecharModalExtra=function(){ const modal=$('modalExtra'); if(modal){ modal.classList.remove('open'); modal.style.opacity=''; modal.style.pointerEvents=''; modal.style.display=''; } };
+
+  async function proximoInvestigador(semana,dia){
+    try{
+      const extras=(await SP.getExtras(semana)).filter(x=>norm(pick(x,'Dia'))===norm(dia)&&norm(pick(x,'tipo','Tipo')).includes('investigador'));
+      const nums=extras.map(x=>Number((pick(x,'Nome','Title').match(/(\d+)/)||[])[1]||0)).filter(Boolean);
+      for(let i=1;i<=3;i++) if(!nums.includes(i)) return 'Investigador '+i;
+      return 'Investigador '+(Math.max(0,...nums)+1);
+    }catch(e){return 'Investigador 1';}
+  }
+
+  window.salvarExtraManual=async function(e){
+    if(e){e.preventDefault();e.stopPropagation();}
+    try{
+      await SP.init();
+      const semana=semanaAtual();
+      const dia=$('extraDia')?.value||'segunda';
+      const preset=window.__homyExtraPreset;
+      let tipo=preset || $('extraTipo')?.value || 'prestador';
+      let nome=$('extraNome')?.value || '';
+      let obs=$('extraObs')?.value || '';
+      if(preset==='investigador') nome=await proximoInvestigador(semana,dia);
+      if(preset==='guarda') nome='Guarda';
+      if(!nome.trim()){ toastSafe('Informe o nome do extra.','error'); return; }
+      await SP.addExtraPedido(semana,dia,nome,tipo,$('extraOpcao')?.value||'principal',obs,SP.getUserName?SP.getUserName():'Admin');
+      window.fecharModalExtra(); toastSafe('Extra salvo.','success');
+      await window.loadExtras(); if(window.loadPedidos) await window.loadPedidos(semana); if(window.loadOperacaoDia) await window.loadOperacaoDia(semana);
+    }catch(err){console.error(err);toastSafe('Erro ao salvar extra: '+(err.message||err),'error');}
+  };
+
+  function montarFiltrosExtras(){
+    const mod=$('mod-extras'); if(!mod || mod.dataset.homyFiltrosOk) return;
+    mod.dataset.homyFiltrosOk='1';
+    const header=mod.querySelector('.section-header');
+    if(header){
+      let actions=header.querySelector('div:last-child');
+      if(!actions || !actions.querySelector('#btnAdicionarExtra')){
+        const div=document.createElement('div'); div.style.cssText='display:flex;gap:.6rem;flex-wrap:wrap';
+        div.innerHTML='<button class="btn-primary" id="btnAdicionarExtra" type="button">+ Adicionar extra</button><button class="btn-secondary" id="btnExtraInvestigador" type="button">+ Extra Investigador</button><button class="btn-secondary" id="btnExtraGuarda" type="button">+ Extra Guarda</button>';
+        const old=header.querySelector('#btnAdicionarExtra'); if(old) old.replaceWith(div); else header.appendChild(div);
+      }
+    }
+    if(!mod.querySelector('#extraFiltroBox')){
+      const ref=mod.querySelector('.alert');
+      const box=document.createElement('div'); box.id='extraFiltroBox'; box.className='alert alert-info'; box.style.cssText='align-items:end;flex-wrap:wrap';
+      box.innerHTML=`<div class="form-group"><label class="form-label">Pesquisar</label><input class="form-input" id="extraBuscaFiltro" placeholder="Nome/observação"></div>
+        <div class="form-group"><label class="form-label">Dia</label><select class="form-select" id="extraDiaFiltro"><option value="">Todos</option><option value="segunda">Segunda</option><option value="terca">Terça</option><option value="quarta">Quarta</option><option value="quinta">Quinta</option><option value="sexta">Sexta</option></select></div>
+        <div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="extraTipoFiltro"><option value="">Todos</option><option value="prestador">Prestador</option><option value="visitante">Visitante</option><option value="motorista">Motorista</option><option value="marmita">Marmita</option><option value="investigador">Investigador</option><option value="guarda">Guarda</option><option value="outro">Outro</option></select></div>
+        <button class="btn-primary" id="extraBuscarBtn">🔎 Buscar</button><button class="btn-secondary" id="extraLimparBtn">Limpar</button>`;
+      ref?.parentNode?.insertBefore(box,ref);
+    }
+  }
+
+  window.loadExtras=async function(){
+    montarFiltrosExtras(); ensurePrestador();
+    const tbody=$('extrasTable'); if(!tbody) return;
+    try{
+      await SP.init();
+      const semana=semanaAtual();
+      let rows=await SP.getExtras(semana);
+      rows=rows.filter(x=>!isAuto(x));
+      const q=norm($('extraBuscaFiltro')?.value||''), dia=norm($('extraDiaFiltro')?.value||''), tipo=norm($('extraTipoFiltro')?.value||'');
+      if(q) rows=rows.filter(x=>norm([pick(x,'Nome','Title'),pick(x,'Observacao','Obs')].join(' ')).includes(q));
+      if(dia) rows=rows.filter(x=>norm(pick(x,'Dia'))===dia);
+      if(tipo) rows=rows.filter(x=>norm(pick(x,'tipo','Tipo')).includes(tipo));
+      rows.sort((a,b)=>(DIA_ORDER[norm(pick(a,'Dia'))]||9)-(DIA_ORDER[norm(pick(b,'Dia'))]||9)||norm(pick(a,'tipo','Tipo')).localeCompare(norm(pick(b,'tipo','Tipo')))||norm(pick(a,'Nome','Title')).localeCompare(norm(pick(b,'Nome','Title'))));
+      if(!rows.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:rgba(143,170,210,.4);padding:2rem">Nenhum extra cadastrado.</td></tr>';return;}
+      tbody.innerHTML=rows.map(x=>{
+        const id=x.id||''; const nome=pick(x,'Nome','Title')||'—'; const t=pick(x,'tipo','Tipo')||'—'; const d=norm(pick(x,'Dia'));
+        const data=encodeURIComponent(JSON.stringify(x));
+        return `<tr><td>${nome}</td><td><span class="badge ${badgeClass(t)}">${t}</span></td><td>${DIA_LABEL[d]||pick(x,'Dia')}</td><td><span class="badge badge-blue">${pick(x,'Opcao','Opção')||'principal'}</span></td><td>${pick(x,'Observacao','Observação','Obs')||''}</td><td><div class="table-actions"><button class="btn-icon" onclick="window.editarExtraHomy('${data}')">✏️</button><button class="btn-icon danger" onclick="window.removerExtra('${id}')">🗑️</button></div></td></tr>`;
+      }).join('');
+    }catch(err){console.error(err); tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:#ff8080;padding:2rem">Erro: '+(err.message||err)+'</td></tr>';}
+  };
+
+  window.editarExtraHomy=function(data){
+    try{
+      const x=JSON.parse(decodeURIComponent(data));
+      abrirModalExtraBase(null);
+      $('extraNome').value=pick(x,'Nome','Title')||''; $('extraTipo').value=pick(x,'tipo','Tipo')||'prestador'; $('extraDia').value=norm(pick(x,'Dia'))||'segunda'; $('extraOpcao').value=norm(pick(x,'Opcao','Opção'))||'principal'; $('extraObs').value=pick(x,'Observacao','Observação','Obs')||'';
+      window.__homyEditExtra=x;
+      const btn=$('salvarExtra'); if(btn) btn.textContent='💾 Salvar alteração';
+    }catch(e){console.error(e);}
+  };
+
+  window.removerExtra=async function(id){
+    try{
+      if(!confirm('Excluir este extra?')) return;
+      await SP.init();
+      let extra=null; try{ extra=(await SP.getExtras(semanaAtual())).find(x=>String(x.id)===String(id)); }catch(e){}
+      if(extra && SP.deleteExtraComPedido) await SP.deleteExtraComPedido(extra); else await SP.deleteExtra(id);
+      toastSafe('Extra excluído.','success'); await window.loadExtras(); if(window.loadPedidos) await window.loadPedidos(semanaAtual()); if(window.loadOperacaoDia) await window.loadOperacaoDia(semanaAtual());
+    }catch(err){console.error(err);toastSafe('Erro ao excluir extra: '+(err.message||err),'error');}
+  };
+
+  window.removerPedido=window.excluirPedido=async function(id){
+    try{ if(!confirm('Excluir este pedido?')) return; await SP.init(); await SP.deletePedido(id); toastSafe('Pedido excluído.','success'); if(window.loadPedidos) await window.loadPedidos(semanaAtual()); if(window.loadOperacaoDia) await window.loadOperacaoDia(semanaAtual()); }
+    catch(err){console.error(err);toastSafe('Erro ao excluir pedido: '+(err.message||err),'error');}
+  };
+
+  window.loadOperacaoDia=async function(semanaId){
+    const tbody=$('operacaoTable'); if(!tbody) return;
+    try{
+      await SP.init();
+      const diaSel=$('operacaoDia')?.value||'segunda'; const statusFiltro=norm($('operacaoFiltroStatus')?.value||''); const busca=norm($('operacaoBusca')?.value||'');
+      let pedidos=await SP.getPedidos(semanaId||semanaAtual());
+      const vistosAuto=new Set();
+      pedidos=pedidos.filter(p=>{
+        if(norm(pick(p,'Dia'))!==norm(diaSel)) return false;
+        if(isAuto({Nome:pick(p,'Colaborador_nome','Nome','Title'),tipo:pick(p,'Origem','Tipo','tipo')})){
+          if(vistosAuto.has(norm(diaSel))) return false; vistosAuto.add(norm(diaSel));
+        }
+        return true;
+      });
+      if(statusFiltro) pedidos=pedidos.filter(p=>norm(pick(p,'Status'))===statusFiltro || (statusFiltro==='confirmado'&&SP.isTrue(pick(p,'Confirmado'))));
+      if(busca) pedidos=pedidos.filter(p=>norm([pick(p,'Colaborador_nome','Title','Nome'),pick(p,'Centro_Custo'),pick(p,'Origem','Tipo')].join(' ')).includes(busca));
+      const principal=pedidos.filter(p=>norm(pick(p,'Opcao'))==='principal').length, light=pedidos.filter(p=>norm(pick(p,'Opcao'))==='light').length;
+      if($('opTotalConfirmado')) $('opTotalConfirmado').textContent=pedidos.length; if($('opTotalPrincipal')) $('opTotalPrincipal').textContent=principal; if($('opTotalLight')) $('opTotalLight').textContent=light;
+      if(!pedidos.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:rgba(143,170,210,.45);padding:2rem">Nenhum pedido encontrado para este dia.</td></tr>'; return;}
+      tbody.innerHTML=pedidos.map(p=>{
+        const id=p.id||'', nome=pick(p,'Colaborador_nome','Title','Nome')||'—', origem=pick(p,'Origem','Tipo','tipo')||'Colaborador';
+        const status=pick(p,'Status')||(SP.isTrue(pick(p,'Confirmado'))?'Confirmado':'Pendente');
+        return `<tr><td>${nome}</td><td>${pick(p,'Centro_Custo')||'—'}</td><td><span class="badge badge-blue">${pick(p,'Opcao')||'—'}</span></td><td>${pick(p,'Nome_Prato')||'—'}</td><td><span class="badge ${norm(status)==='confirmado'?'badge-green':'badge-yellow'}">${status}</span></td><td>${origem}</td><td><div class="table-actions"><button class="btn-icon" onclick="alterarStatusOperacao('${id}','Confirmado')">✅</button><button class="btn-icon danger" onclick="alterarStatusOperacao('${id}','Cancelado')">❌</button><button class="btn-icon" onclick="alterarStatusOperacao('${id}','Não vai almoçar')">🚫</button><button class="btn-icon danger" onclick="excluirPedido('${id}')">🗑️</button></div></td></tr>`;
+      }).join('');
+    }catch(err){console.error(err); tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:#ff8080;padding:2rem">Erro: '+(err.message||err)+'</td></tr>';}
+  };
+
+  function bindHotfix4(){
+    montarFiltrosExtras(); ensurePrestador();
+    const b1=$('btnAdicionarExtra'); if(b1) b1.onclick=e=>{e.preventDefault();abrirModalExtraBase(null);};
+    const b2=$('btnExtraInvestigador'); if(b2) b2.onclick=e=>{e.preventDefault();abrirModalExtraBase('investigador');};
+    const b3=$('btnExtraGuarda'); if(b3) b3.onclick=e=>{e.preventDefault();abrirModalExtraBase('guarda');};
+    const s=$('salvarExtra'); if(s) s.onclick=window.salvarExtraManual;
+    const c=$('closeModalExtra'); if(c) c.onclick=window.fecharModalExtra; const cc=$('cancelModalExtra'); if(cc) cc.onclick=window.fecharModalExtra;
+    const buscar=$('extraBuscarBtn'); if(buscar) buscar.onclick=e=>{e.preventDefault();window.loadExtras();};
+    const limpar=$('extraLimparBtn'); if(limpar) limpar.onclick=e=>{e.preventDefault(); if($('extraBuscaFiltro')) $('extraBuscaFiltro').value=''; if($('extraDiaFiltro')) $('extraDiaFiltro').value=''; if($('extraTipoFiltro')) $('extraTipoFiltro').value=''; window.loadExtras();};
+    ['extraBuscaFiltro','extraDiaFiltro','extraTipoFiltro'].forEach(id=>{ const el=$(id); if(el&&!el.dataset.homyAuto){el.dataset.homyAuto='1'; el.addEventListener(id==='extraBuscaFiltro'?'input':'change',()=>window.loadExtras());} });
+  }
+  document.addEventListener('DOMContentLoaded',bindHotfix4);
+  setTimeout(bindHotfix4,500); setTimeout(bindHotfix4,1600); setInterval(bindHotfix4,1500);
+})();
+</script>
+
 </body>
 
 </html>
