@@ -4159,6 +4159,216 @@ document.addEventListener("keydown", function(event){
 })();
 </script>
 
+
+
+<script>
+// V5 — LEITOR VASCON POR COLUNA REAL: salva cada coluna como lista estruturada.
+// Resultado esperado:
+// Principal = Arroz e feijão / Peito... / Quiabo... / Salada... / Folha / Sobremesa...
+// Light = Hambúrguer caseiro / Chicória refogada / Salada da pista...
+// Carne/Massa/Lanche = coluna própria, sem misturar com outras opções.
+(function(){
+  const DIAS_V5 = [
+    {key:'segunda', re:/SEGUNDA/i},
+    {key:'terca', re:/TER[CÇ]A/i},
+    {key:'quarta', re:/QUARTA/i},
+    {key:'quinta', re:/QUINTA/i},
+    {key:'sexta', re:/SEXTA/i}
+  ];
+  const OPCS_V5 = ['principal','light','carne','massa','lanche'];
+  const TITULOS_V5 = {principal:'Prato Principal', light:'Light', carne:'Carne', massa:'Massa', lanche:'Lanche'};
+
+  function toast5(msg,tipo){
+    if(typeof toastSafe==='function') return toastSafe(msg,tipo||'info');
+    if(typeof toast==='function') return toast(msg,tipo||'info');
+    alert(msg);
+  }
+  function norm5(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();}
+  function title5(v){
+    return String(v||'').toLocaleLowerCase('pt-BR')
+      .replace(/(^|\s|[-/])([a-záéíóúâêôãõç])/g,(m,p,c)=>p+c.toLocaleUpperCase('pt-BR'))
+      .replace(/\b(ao|a|à|de|da|do|das|dos|com|e|na|no)\b/gi,m=>m.toLocaleLowerCase('pt-BR'));
+  }
+  function limpar5(v){
+    return String(v||'')
+      .replace(/^[\s:;,.\-–—]+|[\s:;,.\-–—]+$/g,'')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function ignorar5(v){
+    const n=norm5(v);
+    return !n ||
+      /^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(n) ||
+      /^(VASCON|SERVICOS DE ALIMENTACAO|SERVIÇOS DE ALIMENTAÇÃO|DATA|M06|S02|PRATO PRINCIPAL|OPCAO|OPÇÃO|LIGHT|CARNE|MASSA|LANCHE)$/.test(n) ||
+      /CARDAPIO ACIMA|CARDÁPIO ACIMA|SUJEITO|ALTERACOES|ALTERAÇÕES|SUBSTITUEM|SUBSTITUI|OBS/.test(n);
+  }
+  function agruparLinhas5(items){
+    const rows=[];
+    items.slice().sort((a,b)=>b.y-a.y || a.x-b.x).forEach(it=>{
+      let row=rows.find(r=>Math.abs(r.y-it.y)<=3.5);
+      if(!row){row={y:it.y,items:[]}; rows.push(row);}
+      row.items.push(it);
+      row.y=(row.y*(row.items.length-1)+it.y)/row.items.length;
+    });
+    rows.forEach(r=>r.items.sort((a,b)=>a.x-b.x));
+    rows.sort((a,b)=>b.y-a.y);
+    return rows;
+  }
+  async function lerPdfItemsVascon5(file){
+    if(!window.pdfjsLib){
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');
+        s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+        s.onload=resolve; s.onerror=()=>reject(new Error('Não foi possível carregar PDF.js'));
+        document.head.appendChild(s);
+      });
+    }
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const all=[];
+    for(let pg=1; pg<=pdf.numPages; pg++){
+      const page=await pdf.getPage(pg);
+      const vp=page.getViewport({scale:1});
+      const content=await page.getTextContent();
+      content.items.forEach(i=>{
+        const text=String(i.str||'').trim();
+        if(!text) return;
+        const x=i.transform[4], y=i.transform[5];
+        all.push({text,x,y,page:pg,width:i.width||0,pageWidth:vp.width,pageHeight:vp.height});
+      });
+    }
+    return all;
+  }
+  function detectarDias5(rows){
+    const achados=[];
+    rows.forEach((r,idx)=>{
+      const linha=norm5(r.items.map(i=>i.text).join(' '));
+      for(const d of DIAS_V5){
+        if(d.re.test(linha)){
+          if(!achados.some(a=>a.key===d.key)) achados.push({key:d.key,idx,y:r.y});
+          break;
+        }
+      }
+    });
+    achados.sort((a,b)=>a.idx-b.idx);
+    return achados;
+  }
+  function detectarColunas5(items, rows, dias){
+    const firstDayY = dias.length ? dias[0].y : null;
+    const headerItems = firstDayY==null ? items : items.filter(i=>i.y > firstDayY + 8);
+    const findHeaderX=(pred)=>{
+      const cand=headerItems.filter(i=>pred(norm5(i.text))).sort((a,b)=>a.y===b.y?a.x-b.x:b.y-a.y);
+      return cand.length ? (cand[0].x + (cand[0].width||0)/2) : null;
+    };
+    let cP=findHeaderX(n=>/PRATO PRINCIPAL/.test(n));
+    let cL=findHeaderX(n=>n==='LIGHT');
+    let cC=findHeaderX(n=>n==='CARNE');
+    let cM=findHeaderX(n=>n==='MASSA');
+    let cN=findHeaderX(n=>n==='LANCHE');
+    const pageW = items.find(i=>i.pageWidth)?.pageWidth || Math.max(...items.map(i=>i.x),850);
+    // Fallbacks proporcionais do modelo Vascon.
+    if(cP==null) cP=pageW*0.29;
+    if(cL==null) cL=pageW*0.50;
+    if(cC==null) cC=pageW*0.66;
+    if(cM==null) cM=pageW*0.78;
+    if(cN==null) cN=pageW*0.89;
+    const centers={principal:cP,light:cL,carne:cC,massa:cM,lanche:cN};
+    return {
+      centers,
+      bPL:(cP+cL)/2,
+      bLC:(cL+cC)/2,
+      bCM:(cC+cM)/2,
+      bMN:(cM+cN)/2,
+      minFoodX:Math.min(cP,cL,cC,cM,cN)-pageW*0.17
+    };
+  }
+  function opcaoX5(x, cols){
+    if(x < cols.bPL) return 'principal';
+    if(x < cols.bLC) return 'light';
+    if(x < cols.bCM) return 'carne';
+    if(x < cols.bMN) return 'massa';
+    return 'lanche';
+  }
+  function compactarLinhas5(linhas, opcao){
+    let arr=linhas.map(limpar5).filter(x=>x && !ignorar5(x));
+    arr=arr.map(x=>x.replace(/^SOBREMESA\s*[:.-]?\s*/i,'Sobremesa: '));
+    // Carne, massa e lanche são células únicas, muitas vezes quebradas em 2 linhas no PDF.
+    if(['carne','massa','lanche'].includes(opcao)){
+      const joined=arr.join(' ').replace(/\s+/g,' ').trim();
+      return joined ? [title5(joined)] : [];
+    }
+    return arr.map(title5);
+  }
+  function parseVasconPorTabela5(items){
+    const rows=agruparLinhas5(items);
+    const dias=detectarDias5(rows);
+    if(dias.length<5) throw new Error('Não localizei os 5 dias no PDF. Confirme se é o PDF semanal da Vascon.');
+    const cols=detectarColunas5(items, rows, dias);
+    const result={segunda:{},terca:{},quarta:{},quinta:{},sexta:{}};
+
+    for(let di=0; di<dias.length; di++){
+      const atual=dias[di];
+      const proximo=dias[di+1];
+      const yTop=atual.y+5;
+      const yBottom=proximo ? proximo.y+5 : Math.min(...items.map(i=>i.y))-5;
+      const bucket={principal:[], light:[], carne:[], massa:[], lanche:[]};
+      items.forEach(it=>{
+        if(it.y > yTop || it.y <= yBottom) return;
+        if(it.x < cols.minFoodX) return;
+        const txt=limpar5(it.text);
+        if(ignorar5(txt)) return;
+        if(DIAS_V5.some(d=>d.re.test(txt))) return;
+        const opc=opcaoX5(it.x, cols);
+        bucket[opc].push({txt, y:it.y, x:it.x});
+      });
+      for(const opc of OPCS_V5){
+        const linhas=bucket[opc]
+          .sort((a,b)=>b.y-a.y || a.x-b.x)
+          .map(x=>x.txt);
+        const detalhes=compactarLinhas5(linhas, opc);
+        if(detalhes.length){
+          result[atual.key][opc]={nome:TITULOS_V5[opc], detalhes};
+        }
+      }
+    }
+    return result;
+  }
+  async function salvarCardapioVascon5(parsed){
+    await SP.init();
+    const semana=(window.getSemanaAtualAdminV20?getSemanaAtualAdminV20():(SP.getCurrentWeekId?SP.getCurrentWeekId():''));
+    if(SP.clearCardapio) await SP.clearCardapio(semana);
+    let total=0;
+    for(const dia of ['segunda','terca','quarta','quinta','sexta']){
+      for(const opc of OPCS_V5){
+        const item=(parsed[dia]||{})[opc];
+        if(!item || !item.detalhes || !item.detalhes.length) continue;
+        await SP.saveCardapio(semana,dia,opc,item.nome,item.detalhes.join('\n'));
+        total++;
+      }
+    }
+    if(SP.setConfig) await SP.setConfig('cardapio_ultima_atualizacao', new Date().toISOString());
+    return total;
+  }
+  window.processarPdfCardapioV20 = async function(file){
+    try{
+      toast5('Lendo PDF da Vascon por colunas...','info');
+      const items=await lerPdfItemsVascon5(file);
+      const parsed=parseVasconPorTabela5(items);
+      const total=await salvarCardapioVascon5(parsed);
+      if(!total){ toast5('Nenhum item encontrado no PDF.','error'); return; }
+      toast5('Cardápio salvo corretamente: '+total+' opções estruturadas.','success');
+      if(window.loadCardapioAtual) await window.loadCardapioAtual(window.getSemanaAtualAdminV20?getSemanaAtualAdminV20():undefined);
+      if(window.loadCardapio) await window.loadCardapio(window.getSemanaAtualAdminV20?getSemanaAtualAdminV20():undefined);
+    }catch(e){
+      console.error('Erro Vascon V5:', e);
+      toast5('Erro ao ler PDF da Vascon: '+(e.message||e),'error');
+    }
+  };
+  window.handlePDFUpload = window.processarPdfCardapioV20;
+})();
+</script>
+
 </body>
 
 </html>
