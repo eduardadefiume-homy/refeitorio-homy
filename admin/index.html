@@ -223,6 +223,28 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 .toast-info{background:rgba(26,58,110,0.95);border:1px solid rgba(60,140,255,0.3)}
 @keyframes toast-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
 
+
+
+/* DASHBOARD COMPLETO HOMY */
+.dashboard-section{margin-top:1rem;margin-bottom:1.2rem}
+.dashboard-grid-2{display:grid;grid-template-columns:1.15fr .85fr;gap:1rem;margin-bottom:1rem}
+.dashboard-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0.8rem;margin-bottom:1rem}
+.dashboard-panel{border-radius:16px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.035);padding:1rem 1.1rem;overflow:hidden}
+.dashboard-panel-title{font-family:"Barlow Condensed",sans-serif;font-size:1.05rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#fff;margin-bottom:.75rem;display:flex;align-items:center;gap:.45rem}
+.dashboard-mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.65rem}
+.dashboard-mini-card{border-radius:12px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035);padding:.85rem}
+.dashboard-mini-value{font-family:"Barlow Condensed",sans-serif;font-size:1.65rem;font-weight:700;line-height:1;color:#fff}
+.dashboard-mini-label{font-size:.65rem;color:rgba(143,170,210,.62);text-transform:uppercase;letter-spacing:.08em;margin-top:.35rem}
+.dashboard-table-scroll{max-height:300px;overflow:auto;border-radius:12px;border:1px solid rgba(255,255,255,.07)}
+.dashboard-list{display:flex;flex-direction:column;gap:.55rem}
+.dashboard-list-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border-radius:10px;padding:.7rem .75rem;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06)}
+.dashboard-list-main{font-size:.84rem;color:rgba(220,232,255,.9);font-weight:600}
+.dashboard-list-sub{font-size:.72rem;color:rgba(143,170,210,.58);margin-top:2px}
+.dashboard-alert-list{display:flex;flex-direction:column;gap:.5rem}
+.dashboard-alert-item{padding:.7rem .8rem;border-radius:10px;background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:rgba(255,215,130,.92);font-size:.82rem;line-height:1.35}
+.dashboard-alert-item.ok{background:rgba(64,208,144,.08);border-color:rgba(64,208,144,.22);color:rgba(130,240,185,.92)}
+@media(max-width:1000px){.dashboard-grid-2,.dashboard-grid-3{grid-template-columns:1fr}}
+
 /* RESPONSIVE */
 @media(max-width:768px){
   .sidebar{width:100%;min-height:auto;position:relative;flex-direction:row;flex-wrap:wrap}
@@ -349,47 +371,94 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" id="stat-confirmados">—</div><div class="stat-label">Pedidos confirmados</div></div>
           <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-value" id="stat-pendentes">—</div><div class="stat-label">Pendentes</div></div>
           <div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="stat-checkin">—</div><div class="stat-label">Check-ins hoje</div></div>
+          <div class="stat-card" id="statsExtrasHomy"><div class="stat-icon">➕</div><div class="stat-value" id="dashExtrasAtivos">—</div><div class="stat-label">Extras ativos</div></div>
+          <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value" id="dashTotalHoje">—</div><div class="stat-label">Total pedidos hoje</div></div>
+          <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-value" id="dashAusenciasHoje">—</div><div class="stat-label">Ausências hoje</div></div>
+          <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-value" id="dashTotalSemana">—</div><div class="stat-label">Total da semana</div></div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
           <div class="toggle-wrap">
-            <div class="toggle-info">
-              <div class="toggle-label">Marcação de refeição</div>
-              <div class="toggle-desc">Liberar ou bloquear pedidos dos colaboradores</div>
-            </div>
-            <label class="toggle">
-              <input type="checkbox" id="toggleMarcacao">
-              <span class="toggle-slider"></span>
-            </label>
+            <div class="toggle-info"><div class="toggle-label">Marcação de refeição</div><div class="toggle-desc">Liberar ou bloquear pedidos dos colaboradores</div></div>
+            <label class="toggle"><input type="checkbox" id="toggleMarcacao"><span class="toggle-slider"></span></label>
           </div>
           <div class="toggle-wrap">
-            <div class="toggle-info">
-              <div class="toggle-label">Cardápio da semana</div>
-              <div class="toggle-desc">Liberar visualização do cardápio</div>
-            </div>
-            <label class="toggle">
-              <input type="checkbox" id="toggleCardapio" checked>
-              <span class="toggle-slider"></span>
-            </label>
+            <div class="toggle-info"><div class="toggle-label">Cardápio da semana</div><div class="toggle-desc">Liberar visualização do cardápio</div></div>
+            <label class="toggle"><input type="checkbox" id="toggleCardapio" checked><span class="toggle-slider"></span></label>
           </div>
         </div>
 
         <div class="prazo-box">
           <div class="prazo-box-title">⏱️ Prazo limite para marcação</div>
           <div class="prazo-row">
-            <div class="form-group">
-              <label class="form-label">Data limite</label>
-              <input type="date" class="form-input" id="prazoData">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Horário</label>
-              <input type="time" class="form-input" id="prazoHora" value="18:00">
-            </div>
+            <div class="form-group"><label class="form-label">Data limite</label><input type="date" class="form-input" id="prazoData"></div>
+            <div class="form-group"><label class="form-label">Horário</label><input type="time" class="form-input" id="prazoHora" value="18:00"></div>
             <button class="btn-primary" id="btnSalvarPrazo">💾 Salvar prazo</button>
+            <button class="btn-danger" id="btnTravarPendentesDash">🔒 Travar pendentes</button>
           </div>
         </div>
 
         <div class="alert alert-info">ℹ️ Semana atual: <strong id="semanaLabel">—</strong>. Os dados exibidos são referentes à semana em curso.</div>
+
+        <div class="dashboard-grid-2 dashboard-section">
+          <div class="dashboard-panel">
+            <div class="dashboard-panel-title">➕ Extras do dia</div>
+            <div class="dashboard-mini-grid">
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashExtrasSolicitados">—</div><div class="dashboard-mini-label">Solicitados</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashExtrasConfirmados">—</div><div class="dashboard-mini-label">Aprovados/confirmados</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashExtrasPendentes">—</div><div class="dashboard-mini-label">Pendentes</div></div>
+            </div>
+            <div class="dashboard-table-scroll" style="margin-top:.8rem"><table class="table"><thead><tr><th>Nome</th><th>Tipo</th><th>Opção</th><th>Status</th></tr></thead><tbody id="dashExtrasTable"><tr><td colspan="4">Carregando...</td></tr></tbody></table></div>
+          </div>
+          <div class="dashboard-panel">
+            <div class="dashboard-panel-title">⚠️ Alertas e cards adicionais</div>
+            <div class="dashboard-alert-list" id="dashAlertas"></div>
+            <div class="dashboard-mini-grid" style="margin-top:.8rem">
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashMarcacaoStatus">—</div><div class="dashboard-mini-label">Marcação</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashCardapioStatus">—</div><div class="dashboard-mini-label">Cardápio</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashAlteracoesManuais">—</div><div class="dashboard-mini-label">Alterações manuais</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid-2 dashboard-section">
+          <div class="dashboard-panel">
+            <div class="dashboard-panel-title">📊 Totais de refeições</div>
+            <div class="dashboard-mini-grid">
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashPrincipalHoje">—</div><div class="dashboard-mini-label">Principal hoje</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashLightHoje">—</div><div class="dashboard-mini-label">Light hoje</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashOutrasHoje">—</div><div class="dashboard-mini-label">Outras opções</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashSetoresHoje">—</div><div class="dashboard-mini-label">Setores hoje</div></div>
+            </div>
+            <div class="dashboard-table-scroll" style="margin-top:.8rem"><table class="table"><thead><tr><th>Dia</th><th>Total</th><th>Principal</th><th>Light</th><th>Pendentes</th></tr></thead><tbody id="dashSemanaTable"><tr><td colspan="5">Carregando...</td></tr></tbody></table></div>
+          </div>
+          <div class="dashboard-panel">
+            <div class="dashboard-panel-title">🚫 Ausências</div>
+            <div class="dashboard-mini-grid">
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashNaoMarcaram">—</div><div class="dashboard-mini-label">Não marcaram</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashCancelados">—</div><div class="dashboard-mini-label">Cancelados</div></div>
+              <div class="dashboard-mini-card"><div class="dashboard-mini-value" id="dashTravados">—</div><div class="dashboard-mini-label">Travados/bloqueados</div></div>
+            </div>
+            <div class="dashboard-table-scroll" style="margin-top:.8rem"><table class="table"><thead><tr><th>Colaborador</th><th>Setor</th><th>Status</th></tr></thead><tbody id="dashAusenciasTable"><tr><td colspan="3">Carregando...</td></tr></tbody></table></div>
+          </div>
+        </div>
+
+        <div class="dashboard-panel dashboard-section">
+          <div class="section-header" style="margin-bottom:.7rem">
+            <div class="dashboard-panel-title" style="margin-bottom:0">👨‍🍳 Operação do dia</div>
+            <div class="action-group">
+              <select class="form-select" id="dashOperacaoDia" style="min-width:150px"><option value="segunda">Segunda</option><option value="terca">Terça</option><option value="quarta">Quarta</option><option value="quinta">Quinta</option><option value="sexta">Sexta</option></select>
+              <button class="btn-secondary" id="btnAtualizarDashboard">🔄 Atualizar</button>
+            </div>
+          </div>
+          <div class="dashboard-table-scroll" style="max-height:360px"><table class="table"><thead><tr><th>Colaborador</th><th>Setor</th><th>Refeição</th><th>Prato</th><th>Status</th><th>Ações</th></tr></thead><tbody id="dashOperacaoTable"><tr><td colspan="6">Carregando...</td></tr></tbody></table></div>
+        </div>
+
+        <div class="dashboard-grid-3 dashboard-section">
+          <div class="dashboard-panel"><div class="dashboard-panel-title">📈 Resumos gerenciais</div><div class="dashboard-list" id="dashGerencialList"></div></div>
+          <div class="dashboard-panel"><div class="dashboard-panel-title">🏢 Ranking por setor</div><div class="dashboard-list" id="dashSetoresList"></div></div>
+          <div class="dashboard-panel"><div class="dashboard-panel-title">📅 Próximos dias</div><div class="dashboard-list" id="dashProximosDias"></div></div>
+        </div>
       </div>
 
       <!-- ===== CARDÁPIO ===== -->
@@ -1517,41 +1586,63 @@ function loadModule(mod){
 // --- DASHBOARD ---
 async function loadDashboard(semanaId){
   try{
-    const [colabs,pedidos]=await Promise.all([SP.getColaboradores(),SP.getPedidos(semanaId)]);
-    const confirmados=pedidos.filter(p=>p.confirmado||p.Confirmado);
-    const pendentes=colabs.length-new Set(confirmados.map(p=>p.colaborador_id||p.Colaborador_id)).size;
+    const normDash=(v)=>String(v||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    const pickDash=(o,...ks)=>{ for(const k of ks){ if(o && o[k]!==undefined && o[k]!==null && o[k]!=="") return o[k]; } return ""; };
+    const diasDash=["segunda","terca","quarta","quinta","sexta"];
+    const diaHojeDash=(()=>{ const d=["domingo","segunda","terca","quarta","quinta","sexta","sabado"][new Date().getDay()]; return diasDash.includes(d)?d:"segunda"; })();
+    const diaSelect=document.getElementById("dashOperacaoDia");
+    if(diaSelect && !diaSelect.dataset.iniciado){ diaSelect.value=diaHojeDash; diaSelect.dataset.iniciado="1"; }
+    const diaSelecionado=diaSelect?.value || diaHojeDash;
 
-    document.getElementById("stat-colab").textContent=colabs.length;
-    document.getElementById("stat-confirmados").textContent=new Set(confirmados.map(p=>p.colaborador_id||p.Colaborador_id)).size;
-    document.getElementById("stat-pendentes").textContent=Math.max(0,pendentes);
+    const [colabs,pedidos,extras]=await Promise.all([SP.getColaboradores(),SP.getPedidos(semanaId),SP.getExtras ? SP.getExtras(semanaId).catch(()=>[]) : Promise.resolve([])]);
+    const statusPedido=(p)=>String(p.Status || p.status || (p.Confirmado || p.confirmado ? "Confirmado" : "Pendente"));
+    const isConfirmado=(p)=>["confirmado","extra","aprovado"].includes(normDash(statusPedido(p))) || p.confirmado || p.Confirmado;
+    const isCancelado=(p)=>["cancelado","afastado","ferias","férias","nao vai almocar","não vai almoçar"].includes(normDash(statusPedido(p)));
+    const isTravado=(p)=>["travado","bloqueado"].includes(normDash(statusPedido(p)));
+    const isPendente=(p)=>!isConfirmado(p) && !isCancelado(p) && !isTravado(p);
+    const isExtra=(p)=>normDash(p.Origem||p.origem||p.Tipo||p.tipo).includes("extra") || normDash(p.colaborador_id||p.Colaborador_id).includes("extra") || normDash(p.Colaborador_nome||p.colaborador_nome).includes("investigador") || normDash(p.Colaborador_nome||p.colaborador_nome)==="guarda";
+    const idColab=(p)=>String(p.colaborador_id||p.Colaborador_id||p.ColaboradorId||"");
+    const nomeColab=(p)=>String(p.Colaborador_nome||p.colaborador_nome||p.Nome||p.nome||p.Title||"—");
+    const setorColab=(p)=>String(p.Centro_Custo||p.centro_custo||p.Departamento||p.departamento||"—");
+    const opcaoPedido=(p)=>String(p.Opcao||p.opcao||"—");
+    const diaPedido=(p)=>normDash(p.Dia||p.dia);
+    const setTxt=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
+    const countOpcao=(lista,op)=>lista.filter(p=>normDash(opcaoPedido(p)).includes(op)).length;
+    const badgeClass=(status)=>{ const ss=normDash(status); if(["confirmado","extra","aprovado"].includes(ss)) return "badge-green"; if(["cancelado","afastado","ferias","férias","bloqueado","travado","nao vai almocar","não vai almoçar"].includes(ss)) return "badge-red"; return "badge-yellow"; };
 
-    const hoje=["domingo","segunda","terca","quarta","quinta","sexta","sabado"][new Date().getDay()];
-    const checkins=await SP.getCheckIn(semanaId,hoje);
-    document.getElementById("stat-checkin").textContent=checkins.filter(c=>c.retirou||c.Retirou).length;
+    const pedidosColab=pedidos.filter(p=>!isExtra(p));
+    const confirmadosColab=pedidosColab.filter(isConfirmado);
+    const idsConfirmados=new Set(confirmadosColab.map(idColab).filter(Boolean));
+    const pendentesColab=Math.max(0,colabs.length-idsConfirmados.size);
+    const pedidosHoje=pedidos.filter(p=>diaPedido(p)===normDash(diaHojeDash));
+    const pedidosDiaSelecionado=pedidos.filter(p=>diaPedido(p)===normDash(diaSelecionado));
+    const confirmadosHoje=pedidosHoje.filter(isConfirmado);
+    const extrasHoje=[...pedidosHoje.filter(isExtra), ...extras.filter(e=>diaPedido(e)===normDash(diaHojeDash))];
 
-    let liberado=false;
-    try{
-      const valoresLiberacao = await Promise.all([
-        SP.getConfig ? SP.getConfig("cardapio_liberado") : null,
-        SP.getConfig ? SP.getConfig("marcacao_liberada") : null,
-        SP.getConfig ? SP.getConfig("pedidos_liberados") : null
-      ]);
-      liberado = valoresLiberacao.some(v => String(v||"").toLowerCase()==="sim" || String(v||"").toLowerCase()==="true");
-    }catch(_){
-      liberado=await SP.isCardapioLiberado();
-    }
-    document.getElementById("toggleMarcacao").checked=liberado;
-    const prazo=await SP.getPrazoMarcacao();
-    if(prazo){
-      const dt=new Date(prazo);
-      document.getElementById("prazoData").value=dt.toISOString().split("T")[0];
-      document.getElementById("prazoHora").value=dt.toTimeString().slice(0,5);
-    }
-  }catch(e){
-    toast("Erro ao carregar dashboard: "+(e.message||e)+" — verifique permissões/API do SharePoint.","error");
-  }
+    setTxt("stat-colab",colabs.length); setTxt("stat-confirmados",idsConfirmados.size); setTxt("stat-pendentes",pendentesColab);
+    let checkins=[]; try{ checkins=await SP.getCheckIn(semanaId,diaHojeDash); }catch(_){ checkins=[]; }
+    setTxt("stat-checkin",checkins.filter(c=>c.retirou||c.Retirou).length);
+    setTxt("dashExtrasAtivos",extrasHoje.length); setTxt("dashTotalHoje",confirmadosHoje.length); setTxt("dashAusenciasHoje",pedidosHoje.filter(p=>isCancelado(p)||isTravado(p)).length); setTxt("dashTotalSemana",pedidos.filter(isConfirmado).length);
+    setTxt("dashPrincipalHoje",countOpcao(confirmadosHoje,"principal")); setTxt("dashLightHoje",countOpcao(confirmadosHoje,"light")); setTxt("dashOutrasHoje",Math.max(0,confirmadosHoje.length-countOpcao(confirmadosHoje,"principal")-countOpcao(confirmadosHoje,"light"))); setTxt("dashSetoresHoje",new Set(confirmadosHoje.map(setorColab).filter(x=>x&&x!=="—")).size);
+    const extrasPendentes=extrasHoje.filter(e=>isPendente(e)); setTxt("dashExtrasSolicitados",extrasHoje.length); setTxt("dashExtrasConfirmados",extrasHoje.filter(isConfirmado).length); setTxt("dashExtrasPendentes",extrasPendentes.length);
+
+    let liberado=false, cardapioLiberado=false;
+    try{ const valores=await Promise.all([SP.getConfig?SP.getConfig("cardapio_liberado"):null,SP.getConfig?SP.getConfig("marcacao_liberada"):null,SP.getConfig?SP.getConfig("pedidos_liberados"):null]); cardapioLiberado=["sim","true"].includes(String(valores[0]||"").toLowerCase()); liberado=valores.some(v=>["sim","true"].includes(String(v||"").toLowerCase())); }catch(_){ liberado=await SP.isCardapioLiberado(); cardapioLiberado=liberado; }
+    if(document.getElementById("toggleMarcacao")) document.getElementById("toggleMarcacao").checked=liberado; if(document.getElementById("toggleCardapio")) document.getElementById("toggleCardapio").checked=cardapioLiberado;
+    setTxt("dashMarcacaoStatus",liberado?"Aberta":"Fechada"); setTxt("dashCardapioStatus",cardapioLiberado?"Liberado":"Bloqueado"); setTxt("dashAlteracoesManuais",pedidos.filter(p=>normDash(p.Origem||p.origem).includes("admin") || p.Alterado_Por || p.alterado_por).length);
+    const prazo=await SP.getPrazoMarcacao(); if(prazo){ const dt=new Date(prazo); if(document.getElementById("prazoData")) document.getElementById("prazoData").value=dt.toISOString().split("T")[0]; if(document.getElementById("prazoHora")) document.getElementById("prazoHora").value=dt.toTimeString().slice(0,5); }
+
+    const extrasTbody=document.getElementById("dashExtrasTable"); if(extrasTbody){ extrasTbody.innerHTML=extrasHoje.length?extrasHoje.slice(0,12).map(e=>`<tr><td>${nomeColab(e)}</td><td>${pickDash(e,"Tipo","tipo","Origem","origem")||"Extra"}</td><td>${opcaoPedido(e)}</td><td><span class="badge ${badgeClass(statusPedido(e))}">${statusPedido(e)}</span></td></tr>`).join(""):`<tr><td colspan="4" style="text-align:center;color:rgba(143,170,210,.45);padding:1.4rem">Nenhum extra para hoje.</td></tr>`; }
+    const semanaTbody=document.getElementById("dashSemanaTable"); if(semanaTbody){ semanaTbody.innerHTML=diasDash.map(d=>{ const lista=pedidos.filter(p=>diaPedido(p)===d); const conf=lista.filter(isConfirmado); return `<tr><td>${d.charAt(0).toUpperCase()+d.slice(1)}</td><td>${conf.length}</td><td>${countOpcao(conf,"principal")}</td><td>${countOpcao(conf,"light")}</td><td>${lista.filter(isPendente).length}</td></tr>`; }).join(""); }
+    const ausencias=pedidosHoje.filter(p=>isCancelado(p)||isTravado(p)||isPendente(p)); setTxt("dashNaoMarcaram",pendentesColab); setTxt("dashCancelados",pedidosHoje.filter(isCancelado).length); setTxt("dashTravados",pedidosHoje.filter(isTravado).length);
+    const ausTbody=document.getElementById("dashAusenciasTable"); if(ausTbody){ ausTbody.innerHTML=ausencias.length?ausencias.slice(0,14).map(p=>`<tr><td>${nomeColab(p)}</td><td>${setorColab(p)}</td><td><span class="badge ${badgeClass(statusPedido(p))}">${statusPedido(p)}</span></td></tr>`).join(""):`<tr><td colspan="3" style="text-align:center;color:rgba(143,170,210,.45);padding:1.4rem">Nenhuma ausência registrada hoje.</td></tr>`; }
+    const opTbody=document.getElementById("dashOperacaoTable"); if(opTbody){ opTbody.innerHTML=pedidosDiaSelecionado.length?pedidosDiaSelecionado.slice(0,60).map(p=>{ const id=p.id||""; const nome=nomeColab(p).replace(/'/g,"\\'"); const dia=pickDash(p,"Dia","dia")||diaSelecionado; const opc=opcaoPedido(p); return `<tr><td>${nomeColab(p)}</td><td>${setorColab(p)}</td><td><span class="badge badge-blue">${opc}</span></td><td>${pickDash(p,"Nome_Prato","nome_prato")||"—"}</td><td><span class="badge ${badgeClass(statusPedido(p))}">${statusPedido(p)}</span></td><td><div class="table-actions"><button class="btn-icon" title="Confirmar" onclick="alterarStatusOperacao('${id}','Confirmado')">✅</button><button class="btn-icon danger" title="Cancelar" onclick="alterarStatusOperacao('${id}','Cancelado')">❌</button><button class="btn-icon" title="Não vai almoçar" onclick="alterarStatusOperacao('${id}','Não vai almoçar')">🚫</button><button class="btn-icon" title="Editar" onclick="abrirModalEditarPedido('${id}','${nome}','${dia}','${opc}')">✏️</button></div></td></tr>`; }).join(""):`<tr><td colspan="6" style="text-align:center;color:rgba(143,170,210,.45);padding:1.4rem">Nenhum pedido para este dia.</td></tr>`; }
+    const ger=document.getElementById("dashGerencialList"); if(ger){ ger.innerHTML=[["Consumo da semana",pedidos.filter(isConfirmado).length+" refeições"],["Pendências da semana",pedidos.filter(isPendente).length+" registros"],["Extras aprovados",pedidos.filter(p=>isExtra(p)&&isConfirmado(p)).length+" extras"],["Cancelados/travados",pedidos.filter(p=>isCancelado(p)||isTravado(p)).length+" registros"]].map(([a,b])=>`<div class="dashboard-list-item"><div><div class="dashboard-list-main">${a}</div><div class="dashboard-list-sub">${b}</div></div></div>`).join(""); }
+    const setores={}; confirmadosHoje.forEach(p=>{ const k=setorColab(p); setores[k]=(setores[k]||0)+1; }); const setList=document.getElementById("dashSetoresList"); if(setList){ const arr=Object.entries(setores).sort((a,b)=>b[1]-a[1]).slice(0,6); setList.innerHTML=arr.length?arr.map(([setor,total])=>`<div class="dashboard-list-item"><div><div class="dashboard-list-main">${setor}</div><div class="dashboard-list-sub">${total} refeições hoje</div></div><span class="badge badge-blue">${total}</span></div>`).join(""):`<div class="dashboard-list-item"><div class="dashboard-list-main">Sem dados de setor hoje</div></div>`; }
+    const prox=document.getElementById("dashProximosDias"); if(prox){ prox.innerHTML=diasDash.map(d=>{ const lista=pedidos.filter(p=>diaPedido(p)===d); return `<div class="dashboard-list-item"><div><div class="dashboard-list-main">${d.charAt(0).toUpperCase()+d.slice(1)}</div><div class="dashboard-list-sub">${lista.filter(isConfirmado).length} confirmados · ${lista.filter(isPendente).length} pendentes</div></div></div>`; }).join(""); }
+    const alertas=document.getElementById("dashAlertas"); if(alertas){ const itens=[]; if(pendentesColab>0) itens.push(`⚠️ ${pendentesColab} colaboradores ainda não marcaram refeição.`); if(extrasPendentes.length>0) itens.push(`⚠️ ${extrasPendentes.length} extras aguardando aprovação/confirmação.`); if(!liberado) itens.push(`🔒 Marcação de refeição está bloqueada.`); if(prazo) itens.push(`⏱️ Prazo limite configurado: ${new Date(prazo).toLocaleString("pt-BR")}.`); if(!itens.length) itens.push(`✅ Operação sem alertas críticos no momento.`); alertas.innerHTML=itens.map(x=>`<div class="dashboard-alert-item ${x.startsWith("✅")?"ok":""}">${x}</div>`).join(""); }
+  }catch(e){ toast("Erro ao carregar dashboard: "+(e.message||e)+" — verifique permissões/API do SharePoint.","error"); }
 }
-
 document.getElementById("toggleMarcacao").addEventListener("change",async function(){
   const valor = this.checked ? "sim" : "nao";
 
@@ -3773,6 +3864,21 @@ document.addEventListener("keydown", function(event){
 })();
 </script>
 
+
+<script>
+// DASHBOARD COMPLETO HOMY - bindings finais
+document.addEventListener("DOMContentLoaded",function(){
+  const bindDash=()=>{
+    const dia=document.getElementById("dashOperacaoDia");
+    if(dia && !dia.dataset.boundDash){ dia.dataset.boundDash="1"; dia.addEventListener("change",()=>window.loadDashboard && loadDashboard(getSemanaIdAtualSelecionada())); }
+    const btn=document.getElementById("btnAtualizarDashboard");
+    if(btn && !btn.dataset.boundDash){ btn.dataset.boundDash="1"; btn.addEventListener("click",()=>window.loadDashboard && loadDashboard(getSemanaIdAtualSelecionada())); }
+    const travar=document.getElementById("btnTravarPendentesDash");
+    if(travar && !travar.dataset.boundDash){ travar.dataset.boundDash="1"; travar.addEventListener("click",()=>{ const btnOriginal=document.getElementById("btnTravarPendentes"); if(btnOriginal) btnOriginal.click(); else if(window.travarPendentes) window.travarPendentes(); else toast("A função de travamento não foi encontrada neste arquivo.","info"); }); }
+  };
+  bindDash(); setTimeout(bindDash,800);
+});
+</script>
 </body>
 
 </html>
