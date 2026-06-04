@@ -3879,6 +3879,643 @@ document.addEventListener("DOMContentLoaded",function(){
   bindDash(); setTimeout(bindDash,800);
 });
 </script>
+
+<script id="homy-cardapio-editor-fix-v21">
+// ============================================================
+// HOMY V21 — Correção do Cardápio
+// - Remove edição por prompt nativo do navegador
+// - Abre modal/tela de edição
+// - Cancelar apenas fecha, sem limpar e sem salvar
+// - Salvar atualiza o item existente da mesma semana/dia/opção
+// ============================================================
+(function(){
+  const $ = id => document.getElementById(id);
+  const toastSafe = (m,t)=> window.toast ? toast(m,t||"info") : alert(m);
+  const diasCardapio = ["segunda","terca","quarta","quinta","sexta"];
+  const opcoesCardapio = ["principal","light","carne","massa","lanche"];
+  const nomeDia = {segunda:"Segunda",terca:"Terça",quarta:"Quarta",quinta:"Quinta",sexta:"Sexta"};
+  const nomeOpcao = {principal:"Principal",light:"Light",carne:"Carne",massa:"Massa",lanche:"Lanche"};
+
+  window.cardapioEditandoV21 = null;
+
+  function semanaAtualV21(){
+    if(window.getSemanaIdAtualSelecionada) return getSemanaIdAtualSelecionada();
+    if(window.getSemanaAtualAdminV20) return getSemanaAtualAdminV20();
+    if(window.getSemanaId) return getSemanaId();
+    if(window.SP && SP.getCurrentWeekId) return SP.getCurrentWeekId();
+    return "";
+  }
+
+  function pick(obj,...keys){
+    for(const k of keys){
+      if(obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
+    }
+    return "";
+  }
+
+  function getItemId(item){
+    return pick(item,"id","ID","Id","itemId","ItemId") || pick(item,"fields.id","fields.ID");
+  }
+
+  function normalize(v){
+    return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
+  }
+
+  function escapeHtml(v){
+    return String(v ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
+  }
+
+  async function initSP(){
+    if(typeof SP === "undefined") throw new Error("Objeto SP não carregado.");
+    if(SP.init) await SP.init();
+  }
+
+  async function updateCardapioItemV21(itemId, fields){
+    await initSP();
+    if(!itemId) throw new Error("ID do item do cardápio não encontrado.");
+
+    if(SP.updateItem){
+      return await SP.updateItem("Cardapio", itemId, fields);
+    }
+
+    const token = await SP.getToken();
+    const siteId = await SP.getSiteId();
+    const listId = await SP.getListId("Cardapio");
+    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,{
+      method:"PATCH",
+      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
+      body:JSON.stringify(fields)
+    });
+    if(!resp.ok) throw new Error(await resp.text());
+    return true;
+  }
+
+  async function createCardapioItemV21(fields){
+    await initSP();
+    if(SP.createItem) return await SP.createItem("Cardapio", fields);
+    if(SP.saveCardapio) return await SP.saveCardapio(fields.Semana_id, fields.Dia, fields.Opcao, fields.Nome_Prato, fields.Detalhes || "");
+    throw new Error("Nenhuma função para criar cardápio disponível.");
+  }
+
+  async function findCardapioExistenteV21(semanaId,dia,opcao){
+    await initSP();
+    const items = SP.getCardapio ? await SP.getCardapio(semanaId) : [];
+    return (items||[]).find(i =>
+      normalize(pick(i,"Semana_id","semana_id","Semana")) === normalize(semanaId) &&
+      normalize(pick(i,"Dia","dia")) === normalize(dia) &&
+      normalize(pick(i,"Opcao","opcao","Opção")) === normalize(opcao)
+    ) || null;
+  }
+
+  function abrirModalBaseV21(){
+    const modal = $("modalCardapioManualV20");
+    if(!modal){ toastSafe("Modal de cardápio não encontrado no HTML.","error"); return null; }
+    modal.style.display = "flex";
+    modal.style.opacity = "";
+    modal.style.pointerEvents = "";
+    modal.removeAttribute("aria-hidden");
+    modal.classList.add("open");
+    return modal;
+  }
+
+  function preencherModalV21({modo="novo", itemId="", dia="segunda", opcao="principal", nome="", detalhes=""}){
+    const title = document.querySelector("#modalCardapioManualV20 .modal-title");
+    if(title) title.textContent = modo === "editar" ? "Editar item do cardápio" : "Cadastrar item do cardápio";
+
+    const aviso = document.querySelector("#modalCardapioManualV20 .alert");
+    if(aviso){
+      aviso.className = "alert alert-info";
+      aviso.innerHTML = modo === "editar"
+        ? "Edite o prato abaixo. Nada será alterado no SharePoint até clicar em <b>Salvar alteração</b>."
+        : "Cadastre uma opção de cardápio por vez. Nada será salvo até clicar em <b>Salvar no SharePoint</b>.";
+    }
+
+    const diaEl = $("manualCardapioDiaV20");
+    const opcaoEl = $("manualCardapioOpcaoV20");
+    const nomeEl = $("manualCardapioNomeV20");
+    const detalhesEl = $("manualCardapioDetalhesV20");
+    if(diaEl) diaEl.value = dia || "segunda";
+    if(opcaoEl) opcaoEl.value = opcao || "principal";
+    if(nomeEl) nomeEl.value = nome || "";
+    if(detalhesEl) detalhesEl.value = detalhes || "";
+
+    window.cardapioEditandoV21 = {modo,itemId,dia,opcao,nome,detalhes};
+
+    const salvar = document.querySelector("#modalCardapioManualV20 .btn-success");
+    if(salvar){
+      salvar.textContent = modo === "editar" ? "💾 Salvar alteração" : "💾 Salvar no SharePoint";
+      salvar.onclick = function(ev){ ev.preventDefault(); salvarCardapioManualV21(); };
+    }
+
+    const cancelar = document.querySelector("#modalCardapioManualV20 .btn-secondary");
+    if(cancelar){
+      cancelar.textContent = "Cancelar";
+      cancelar.onclick = function(ev){ ev.preventDefault(); fecharModalCardapioManualV21(ev); };
+    }
+
+    setTimeout(()=>nomeEl && nomeEl.focus(),100);
+  }
+
+  window.abrirModalCardapioManualV20 = function(event){
+    if(event){ event.preventDefault(); event.stopPropagation(); }
+    const modal = abrirModalBaseV21();
+    if(!modal) return;
+    preencherModalV21({modo:"novo",dia:"segunda",opcao:"principal",nome:"",detalhes:""});
+  };
+
+  window.abrirModalEditarCardapioV21 = async function(itemId,dia,opcao){
+    try{
+      const semanaId = semanaAtualV21();
+      const items = SP.getCardapio ? await SP.getCardapio(semanaId) : [];
+      const item = (items||[]).find(i => String(getItemId(i)) === String(itemId)) || await findCardapioExistenteV21(semanaId,dia,opcao);
+      if(!item){ toastSafe("Não encontrei este item do cardápio para editar.","error"); return; }
+
+      const modal = abrirModalBaseV21();
+      if(!modal) return;
+      preencherModalV21({
+        modo:"editar",
+        itemId:getItemId(item),
+        dia:pick(item,"Dia","dia") || dia,
+        opcao:pick(item,"Opcao","opcao","Opção") || opcao,
+        nome:pick(item,"Nome_Prato","nome_prato","Nome","Title"),
+        detalhes:pick(item,"Detalhes","detalhes","Observacao","Observação")
+      });
+    }catch(e){
+      console.error(e);
+      toastSafe("Erro ao abrir edição do cardápio: "+(e.message||e),"error");
+    }
+  };
+
+  window.fecharModalCardapioManualV21 = function(event){
+    if(event){ event.preventDefault(); event.stopPropagation(); }
+    const modal = $("modalCardapioManualV20");
+    if(!modal) return;
+    modal.classList.remove("open","show","active");
+    modal.style.display = "none";
+    modal.style.opacity = "0";
+    modal.style.pointerEvents = "none";
+    modal.setAttribute("aria-hidden","true");
+    // Importante: não limpa campos e não salva. Mantém os dados intactos se abrir de novo.
+  };
+  window.fecharModalCardapioManualV20 = window.fecharModalCardapioManualV21;
+
+  window.salvarCardapioManualV21 = async function(){
+    const semanaId = semanaAtualV21();
+    const dia = $("manualCardapioDiaV20")?.value || "";
+    const opcao = $("manualCardapioOpcaoV20")?.value || "";
+    const nome = ($("manualCardapioNomeV20")?.value || "").trim();
+    const detalhes = ($("manualCardapioDetalhesV20")?.value || "").trim();
+
+    if(!nome){ toastSafe("Informe o nome do prato.","error"); return; }
+
+    try{
+      await initSP();
+      const existente = await findCardapioExistenteV21(semanaId,dia,opcao);
+      const editando = window.cardapioEditandoV21 || {};
+      const itemId = editando.itemId || getItemId(existente);
+      const fields = {
+        Title: `${semanaId}-${dia}-${opcao}`,
+        Semana_id: semanaId,
+        Dia: dia,
+        Opcao: opcao,
+        Nome_Prato: nome,
+        Detalhes: detalhes
+      };
+
+      if(itemId){
+        await updateCardapioItemV21(itemId, fields);
+        toastSafe("Cardápio atualizado sem criar duplicado.","success");
+      }else{
+        await createCardapioItemV21(fields);
+        toastSafe("Novo item do cardápio salvo no SharePoint.","success");
+      }
+
+      window.cardapioEditandoV21 = null;
+      fecharModalCardapioManualV21();
+      if(window.loadCardapioAtual) await window.loadCardapioAtual(semanaId);
+      else if(window.loadCardapio) await window.loadCardapio(semanaId);
+    }catch(e){
+      console.error(e);
+      toastSafe("Erro ao salvar cardápio: "+(e.message||e),"error");
+    }
+  };
+  window.salvarCardapioManualV20 = window.salvarCardapioManualV21;
+
+  window.loadCardapioAtual = async function(semanaId){
+    const wrap = $("cardapioAtual");
+    if(!wrap) return;
+    try{
+      await initSP();
+      const items = SP.getCardapio ? await SP.getCardapio(semanaId || semanaAtualV21()) : [];
+      if(!items || !items.length){
+        wrap.innerHTML = "<div class='alert alert-warning'>Nenhum cardápio cadastrado para esta semana.</div>";
+        return;
+      }
+
+      let out = "<div style='display:flex;flex-direction:column;gap:0.65rem'>";
+      diasCardapio.forEach(dia=>{
+        const diaItems = (items||[]).filter(i => normalize(pick(i,"Dia","dia")) === normalize(dia));
+        if(!diaItems.length) return;
+        out += "<div style='border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);padding:0.8rem 1rem'>";
+        out += `<div style='font-family:Barlow Condensed,sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;color:#fff;margin-bottom:0.55rem'>${nomeDia[dia] || dia}</div>`;
+        out += "<div style='display:flex;gap:0.5rem;flex-wrap:wrap'>";
+        diaItems.forEach(op=>{
+          const itemId = escapeHtml(getItemId(op));
+          const opcao = pick(op,"Opcao","opcao","Opção") || "";
+          const prato = pick(op,"Nome_Prato","nome_prato","Nome","Title") || "";
+          out += `<span class='badge badge-blue' style='display:inline-flex;align-items:center;gap:6px;padding:6px 8px'>`;
+          out += `<span>${escapeHtml(nomeOpcao[normalize(opcao)] || opcao)} - ${escapeHtml(prato)}</span>`;
+          out += `<button type='button' class='btn-icon' style='width:24px;height:24px;font-size:.72rem' title='Editar' onclick="abrirModalEditarCardapioV21('${itemId}','${escapeHtml(dia)}','${escapeHtml(opcao)}')">✏️</button>`;
+          out += `</span>`;
+        });
+        out += "</div></div>";
+      });
+      out += "</div>";
+      wrap.innerHTML = out;
+    }catch(e){
+      console.error(e);
+      wrap.innerHTML = "<div class='alert alert-warning'>Erro ao carregar cardápio: "+escapeHtml(e.message||e)+"</div>";
+    }
+  };
+
+  function bindCardapioV21(){
+    const btnManual = $("btnCardapioManual");
+    if(btnManual){
+      btnManual.onclick = function(ev){ abrirModalCardapioManualV20(ev); };
+    }
+
+    const modal = $("modalCardapioManualV20");
+    if(modal && !modal.dataset.boundV21){
+      modal.dataset.boundV21 = "1";
+      modal.addEventListener("click", function(ev){
+        if(ev.target === modal) fecharModalCardapioManualV21(ev);
+      }, true);
+    }
+  }
+
+  document.addEventListener("click", function(ev){
+    const btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+    if(!btn) return;
+    const text = normalize(btn.textContent || "");
+    if(text.includes("editar manual")){
+      ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+      abrirModalCardapioManualV20(ev);
+    }
+  }, true);
+
+  document.addEventListener("keydown", function(ev){
+    if(ev.key === "Escape" && $("modalCardapioManualV20")?.classList.contains("open")){
+      fecharModalCardapioManualV21(ev);
+    }
+  }, true);
+
+  document.addEventListener("DOMContentLoaded", function(){
+    bindCardapioV21();
+    setTimeout(bindCardapioV21,500);
+    setTimeout(()=>{ if($("mod-cardapio")?.classList.contains("active")) loadCardapioAtual(semanaAtualV21()); },900);
+  });
+  setInterval(bindCardapioV21,1200);
+})();
+</script>
+
+<script id="homy-valores-desconto-fix-v22">
+// ============================================================
+// HOMY V22 — Correção definitiva do desconto do funcionário
+// Problema corrigido: valor da Vascon salvava, mas desconto ficava R$ 0,00.
+// Estratégia: mantém o fluxo existente e aplica um PATCH seguro no item criado,
+// testando apenas uma coluna por vez para descobrir o nome interno correto.
+// ============================================================
+(function(){
+  const $ = id => document.getElementById(id);
+  const toastSafe = (m,t)=> window.toast ? toast(m,t||"info") : alert(m);
+
+  function parseMoeda(v){
+    if(v === null || v === undefined) return null;
+    let s = String(v).trim();
+    if(!s) return null;
+    s = s.replace(/R\$/gi,"").replace(/\s/g,"");
+    if(s.includes(",")) s = s.replace(/\./g,"").replace(",",".");
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function obterItemId(resp){
+    return resp?.id || resp?.ID || resp?.itemId || resp?.fields?.id || resp?.fields?.ID || resp?.value?.id || null;
+  }
+
+  async function patchCampoValor(lista,itemId,campo,valor){
+    if(!itemId || valor === null || valor === undefined) return false;
+    if(SP.updateItem){
+      await SP.updateItem(lista,itemId,{[campo]:valor});
+      return true;
+    }
+    const token = await SP.getToken();
+    const siteId = await SP.getSiteId();
+    const listId = await SP.getListId(lista);
+    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,{
+      method:"PATCH",
+      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
+      body:JSON.stringify({[campo]:valor})
+    });
+    if(!resp.ok) throw new Error(await resp.text());
+    return true;
+  }
+
+  async function corrigirDescontoNoItem(itemId, desconto){
+    const valorNumerico = parseMoeda(desconto);
+    const valorTexto = desconto == null ? "" : String(desconto).trim();
+    if(!itemId || (valorNumerico === null && !valorTexto)) return false;
+
+    const tentativas = [
+      ["Valor_Desconto", valorNumerico],
+      ["Desconto_Funcionario", valorNumerico],
+      ["DescontoFuncionario", valorNumerico],
+      ["ValorDesconto", valorNumerico],
+      ["valor_desconto", valorNumerico],
+      ["desconto_funcionario", valorNumerico],
+      ["Desconto", valorNumerico],
+      ["Valor_Desconto", valorTexto],
+      ["Desconto_Funcionario", valorTexto],
+      ["DescontoFuncionario", valorTexto],
+      ["ValorDesconto", valorTexto],
+      ["Desconto", valorTexto]
+    ].filter(x => x[1] !== null && x[1] !== "");
+
+    for(const [campo,valor] of tentativas){
+      try{
+        await patchCampoValor("Valores", itemId, campo, valor);
+        console.log("[HOMY] Desconto salvo na coluna:", campo, valor);
+        return true;
+      }catch(e){
+        console.warn("[HOMY] Tentativa de coluna de desconto falhou:", campo, e?.message || e);
+      }
+    }
+    return false;
+  }
+
+  async function salvarValorCorrigido(){
+    try{
+      if(!window.SP) throw new Error("Objeto SP não carregado.");
+      if(SP.init) await SP.init();
+
+      const descontoDigitado = $("valorDesconto")?.value ?? "";
+      const dados = {
+        title: $("valorTitulo")?.value || "Valor refeição",
+        dataInicio: $("valorDataInicio")?.value || "",
+        dataFim: $("valorDataFim")?.value || "",
+        valorVascon: $("valorVascon")?.value || "",
+        valorDesconto: descontoDigitado,
+        descontoFuncionario: descontoDigitado,
+        desconto_funcionario: descontoDigitado,
+        Valor_Desconto: descontoDigitado,
+        Desconto_Funcionario: descontoDigitado,
+        observacao: $("valorObs")?.value || "",
+        ativo: ($("valorAtivo")?.value || "sim") !== "nao"
+      };
+
+      if(!dados.dataInicio || !dados.dataFim){
+        toastSafe("Informe data início e fim.","error");
+        return;
+      }
+
+      let resp;
+      if(SP.createValorRefeicao){
+        resp = await SP.createValorRefeicao(dados);
+      }else if(SP.addItem){
+        resp = await SP.addItem("Valores",{
+          Title: dados.title,
+          Data_Inicio: dados.dataInicio,
+          Data_Fim: dados.dataFim,
+          Valor_Vascon: parseMoeda(dados.valorVascon),
+          Ativo: dados.ativo
+        });
+      }else{
+        throw new Error("Função para salvar valores não encontrada.");
+      }
+
+      const itemId = obterItemId(resp);
+      const descontoOk = await corrigirDescontoNoItem(itemId, descontoDigitado);
+
+      $("modalValorRefeicao")?.classList.remove("open");
+      toastSafe(descontoOk ? "Valor e desconto salvos no SharePoint." : "Valor salvo. Não consegui confirmar a coluna interna do desconto.", descontoOk ? "success" : "info");
+      if(window.loadValores) await window.loadValores();
+    }catch(e){
+      console.error("Erro ao salvar valor corrigido:",e);
+      toastSafe("Erro ao salvar valor: "+(e.message||e),"error");
+    }
+  }
+
+  function bindValoresFix(){
+    window.salvarValorRefeicaoHomy = salvarValorCorrigido;
+    const btn = $("salvarValorRefeicao");
+    if(btn && btn.dataset.homyValorFix !== "v22"){
+      btn.dataset.homyValorFix = "v22";
+      btn.onclick = function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        salvarValorCorrigido();
+        return false;
+      };
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded",bindValoresFix);
+  setTimeout(bindValoresFix,500);
+  setTimeout(bindValoresFix,1500);
+  setInterval(bindValoresFix,1200);
+})();
+</script>
+
+
+
+<script id="homy-valores-desconto-funcionario-fix-v23">
+// ============================================================
+// HOMY V23 — Correção definitiva de VALORES
+// Motivo: a coluna "Valor descontado funcionário" no SharePoint
+// tem nome interno diferente do nome visual. Este patch descobre
+// a coluna real na lista Valores e só salva quando clicar em Salvar.
+// ============================================================
+(function(){
+  const $ = id => document.getElementById(id);
+  const toastSafe = (m,t)=> window.toast ? toast(m,t||"info") : alert(m);
+
+  function normalizarTexto(v){
+    return String(v||"")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g,"")
+      .toLowerCase()
+      .trim();
+  }
+
+  function parseMoedaBR(v){
+    if(v === null || v === undefined || String(v).trim()==="") return null;
+    const n = Number(String(v).replace(/\./g,"").replace(",",".").replace(/[^0-9.-]/g,""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function obterIdItem(resp){
+    return resp?.id || resp?.ID || resp?.Id || resp?.itemId || resp?.fields?.id || resp?.fields?.ID || null;
+  }
+
+  async function garantirSP(){
+    if(!window.SP) throw new Error("Objeto SP não carregado.");
+    if(SP.init) await SP.init();
+  }
+
+  async function getGraphBaseValores(){
+    await garantirSP();
+    const token = await SP.getToken();
+    const siteId = await SP.getSiteId();
+    const listId = await SP.getListId("Valores");
+    return {token, siteId, listId};
+  }
+
+  async function buscarColunaDescontoFuncionario(){
+    const {token, siteId, listId} = await getGraphBaseValores();
+    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`,{
+      headers:{"Authorization":"Bearer "+token}
+    });
+    if(!resp.ok) throw new Error(await resp.text());
+    const json = await resp.json();
+    const colunas = json.value || [];
+
+    const candidata = colunas.find(c=>{
+      const nome = normalizarTexto((c.displayName||"")+" "+(c.name||""));
+      return nome.includes("desconto") && (nome.includes("funcionario") || nome.includes("funcionarios") || nome.includes("colaborador"));
+    }) || colunas.find(c=>{
+      const nome = normalizarTexto((c.displayName||"")+" "+(c.name||""));
+      return nome.includes("valor") && nome.includes("descont");
+    });
+
+    if(!candidata){
+      console.warn("[HOMY] Colunas encontradas na lista Valores:", colunas.map(c=>({name:c.name, displayName:c.displayName})));
+      throw new Error("Não encontrei a coluna de desconto do funcionário na lista Valores.");
+    }
+
+    console.log("[HOMY] Coluna real do desconto funcionário:", candidata.name, "| Nome visual:", candidata.displayName);
+    return candidata.name;
+  }
+
+  async function patchCampoValores(itemId, fields){
+    const {token, siteId, listId} = await getGraphBaseValores();
+    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,{
+      method:"PATCH",
+      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
+      body:JSON.stringify(fields)
+    });
+    if(!resp.ok) throw new Error(await resp.text());
+    return true;
+  }
+
+  async function encontrarValorRecemCriado(dados){
+    const {token, siteId, listId} = await getGraphBaseValores();
+    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=fields&$top=50`,{
+      headers:{"Authorization":"Bearer "+token}
+    });
+    if(!resp.ok) throw new Error(await resp.text());
+    const json = await resp.json();
+    const titulo = normalizarTexto(dados.title);
+    const inicio = String(dados.dataInicio||"");
+    const fim = String(dados.dataFim||"");
+
+    const achado = (json.value||[]).find(it=>{
+      const f = it.fields || {};
+      const t = normalizarTexto(f.Title || f.Titulo || f.Título || "");
+      const di = String(f.Data_Inicio || f.DataInicio || f.Inicio || f.Início || "").slice(0,10);
+      const df = String(f.Data_Fim || f.DataFim || f.Fim || "").slice(0,10);
+      return (!titulo || t===titulo) && (!inicio || di===inicio) && (!fim || df===fim);
+    });
+    return achado?.id || null;
+  }
+
+  async function criarValorBasico(dados){
+    // Usa a função original, mas sem enviar campos de desconto com nomes inventados.
+    if(SP.createValorRefeicao){
+      return await SP.createValorRefeicao({
+        title: dados.title,
+        dataInicio: dados.dataInicio,
+        dataFim: dados.dataFim,
+        valorVascon: dados.valorVascon,
+        observacao: dados.observacao,
+        ativo: dados.ativo
+      });
+    }
+
+    // Fallback Graph caso a função original não exista.
+    if(SP.addItem){
+      return await SP.addItem("Valores",{
+        Title: dados.title,
+        Data_Inicio: dados.dataInicio,
+        Data_Fim: dados.dataFim,
+        Valor_Vascon: parseMoedaBR(dados.valorVascon),
+        Ativo: dados.ativo,
+        Observacao: dados.observacao
+      });
+    }
+
+    throw new Error("Função para criar valor não encontrada.");
+  }
+
+  async function salvarValorRefeicaoV23(){
+    try{
+      await garantirSP();
+
+      const dados = {
+        title: $("valorTitulo")?.value || "Valor refeição",
+        dataInicio: $("valorDataInicio")?.value || "",
+        dataFim: $("valorDataFim")?.value || "",
+        valorVascon: $("valorVascon")?.value || "",
+        valorDesconto: $("valorDesconto")?.value || "",
+        observacao: $("valorObs")?.value || "",
+        ativo: ($("valorAtivo")?.value || "sim") !== "nao"
+      };
+
+      if(!dados.dataInicio || !dados.dataFim){
+        toastSafe("Informe data início e fim.","error");
+        return;
+      }
+
+      const respCriacao = await criarValorBasico(dados);
+      let itemId = obterIdItem(respCriacao);
+      if(!itemId) itemId = await encontrarValorRecemCriado(dados);
+      if(!itemId) throw new Error("Valor criado, mas não consegui localizar o ID para atualizar o desconto.");
+
+      const descontoNumero = parseMoedaBR(dados.valorDesconto);
+      if(descontoNumero !== null){
+        const colunaDesconto = await buscarColunaDescontoFuncionario();
+        await patchCampoValores(itemId,{[colunaDesconto]: descontoNumero});
+      }
+
+      $("modalValorRefeicao")?.classList.remove("open");
+      toastSafe("Valor salvo com desconto do funcionário.","success");
+      if(window.loadValores) await window.loadValores();
+    }catch(e){
+      console.error("Erro ao salvar valor V23:", e);
+      toastSafe("Erro ao salvar valor: "+(e.message||e),"error");
+    }
+  }
+
+  function bindValorV23(){
+    window.salvarValorRefeicaoHomy = salvarValorRefeicaoV23;
+    const btn = $("salvarValorRefeicao");
+    if(btn && btn.dataset.homyValorFix !== "v23"){
+      btn.dataset.homyValorFix = "v23";
+      btn.onclick = function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        salvarValorRefeicaoV23();
+        return false;
+      };
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded",()=>setTimeout(bindValorV23,300));
+  setTimeout(bindValorV23,800);
+  setTimeout(bindValorV23,1800);
+  setInterval(bindValorV23,1200);
+})();
+</script>
+
 </body>
 
 </html>
