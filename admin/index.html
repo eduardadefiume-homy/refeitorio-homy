@@ -3851,7 +3851,7 @@ document.addEventListener("keydown", function(event){
       $('modalValorRefeicao')?.classList.remove('open'); toastSafe('Valor salvo no SharePoint.','success'); if(window.loadValores) await window.loadValores();
     }catch(e){ console.error(e); toastSafe('Erro ao salvar valor: '+(e.message||e),'error'); }
   };
-  function bindValor(){ const b=$('salvarValorRefeicao'); if(b){ b.onclick=(e)=>{e.preventDefault(); window.salvarValorRefeicaoHomy();}; } }
+  function bindValor(){ /* HOMY FIX: binding antigo desativado. O salvamento de Valores é controlado pelo bloco HOMY V25. */ }
 
   async function startup(){
     try{ await SP.init(); if(SP.cleanupExtraAutomaticoSemana) await SP.cleanupExtraAutomaticoSemana(semanaAtual()); }catch(e){}
@@ -4178,341 +4178,336 @@ document.addEventListener("DOMContentLoaded",function(){
 })();
 </script>
 
-<script id="homy-valores-desconto-fix-v22">
+
+<!-- HOMY: bloco v22 removido porque usava nomes internos inválidos no SharePoint. -->
+
+
+
+
+
+
+
+<script id="homy-valores-final-v25">
 // ============================================================
-// HOMY V22 — Correção definitiva do desconto do funcionário
-// Problema corrigido: valor da Vascon salvava, mas desconto ficava R$ 0,00.
-// Estratégia: mantém o fluxo existente e aplica um PATCH seguro no item criado,
-// testando apenas uma coluna por vez para descobrir o nome interno correto.
+// HOMY V25 — Valores da refeição com nome interno real
+// Corrige erro: Field 'Valor_Desconto_Funcionario' is not recognized.
+// Salva apenas em colunas existentes da lista Valores e atualiza o
+// registro do mesmo título/período em vez de criar duplicado.
 // ============================================================
 (function(){
   const $ = id => document.getElementById(id);
   const toastSafe = (m,t)=> window.toast ? toast(m,t||"info") : alert(m);
 
-  function parseMoeda(v){
-    if(v === null || v === undefined) return null;
-    let s = String(v).trim();
-    if(!s) return null;
-    s = s.replace(/R\$/gi,"").replace(/\s/g,"");
-    if(s.includes(",")) s = s.replace(/\./g,"").replace(",",".");
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
+  function norm(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();}
+  function moeda(v){
+    if(v===null||v===undefined||String(v).trim()==="") return null;
+    let s=String(v).replace(/R\$/gi,"").replace(/\s/g,"").trim();
+    if(s.includes(",")) s=s.replace(/\./g,"").replace(",",".");
+    s=s.replace(/[^0-9.-]/g,"");
+    const n=Number(s);
+    return Number.isFinite(n)?n:null;
+  }
+  function data10(v){return String(v||"").slice(0,10);}
+
+  async function spBase(){
+    if(!window.SP) throw new Error("Objeto SP não carregado.");
+    if(SP.init) await SP.init();
+    const token=await SP.getToken();
+    const siteId=await SP.getSiteId();
+    const listId=await SP.getListId("Valores");
+    return {token,siteId,listId};
   }
 
-  function obterItemId(resp){
-    return resp?.id || resp?.ID || resp?.itemId || resp?.fields?.id || resp?.fields?.ID || resp?.value?.id || null;
+  async function colunasValores(){
+    const {token,siteId,listId}=await spBase();
+    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`,{headers:{Authorization:"Bearer "+token}});
+    if(!r.ok) throw new Error(await r.text());
+    const j=await r.json();
+    return j.value||[];
   }
 
-  async function patchCampoValor(lista,itemId,campo,valor){
-    if(!itemId || valor === null || valor === undefined) return false;
-    if(SP.updateItem){
-      await SP.updateItem(lista,itemId,{[campo]:valor});
-      return true;
+  function acharColuna(cols, grupos){
+    return (cols.find(c=>{
+      const combinado = String((c.displayName||"")+" "+(c.name||"")).replace(/_/g," ");
+      const n=norm(combinado);
+      return grupos.every(g=>g.some(p=>n.includes(p)));
+    })||{}).name || null;
+  }
+
+  function acharPorDisplay(cols, display){
+    const alvo = norm(String(display||"").replace(/_/g," "));
+    return (cols.find(c=>norm(String(c.displayName||"").replace(/_/g," "))===alvo)||{}).name || null;
+  }
+
+  async function mapaColunas(){
+    const cols=await colunasValores();
+    const mapa={
+      titulo: acharColuna(cols, [["titulo","title"]]) || "Title",
+      inicio: acharColuna(cols, [["data","inicio"]]) || acharColuna(cols, [["inicio"]]),
+      fim: acharColuna(cols, [["data","fim"]]) || acharColuna(cols, [["fim"]]),
+      vascon: acharColuna(cols, [["vascon"]]) || acharColuna(cols, [["valor"],["vascon"]]),
+      desconto: acharPorDisplay(cols,"Valor_Desconto_Funcionário") || acharPorDisplay(cols,"Valor_Desconto_Funcionario") || acharColuna(cols, [["desconto"],["funcionario","funcionarios","colaborador"]]) || acharColuna(cols, [["descont"]]),
+      ativo: acharColuna(cols, [["ativo","status"]]),
+      obs: acharColuna(cols, [["observacao","observacoes","obs"]])
+    };
+    if(!mapa.inicio || !mapa.fim || !mapa.vascon || !mapa.desconto){
+      console.table(cols.map(c=>({name:c.name, displayName:c.displayName})));
+      throw new Error("Não encontrei todas as colunas necessárias na lista Valores. Veja o console para os nomes internos.");
     }
-    const token = await SP.getToken();
-    const siteId = await SP.getSiteId();
-    const listId = await SP.getListId(lista);
-    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,{
-      method:"PATCH",
-      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
-      body:JSON.stringify({[campo]:valor})
-    });
-    if(!resp.ok) throw new Error(await resp.text());
-    return true;
+    console.log("[HOMY V25] Colunas usadas em Valores:", mapa);
+    return mapa;
   }
 
-  async function corrigirDescontoNoItem(itemId, desconto){
-    const valorNumerico = parseMoeda(desconto);
-    const valorTexto = desconto == null ? "" : String(desconto).trim();
-    if(!itemId || (valorNumerico === null && !valorTexto)) return false;
-
-    const tentativas = [
-      ["Valor_Desconto", valorNumerico],
-      ["Desconto_Funcionario", valorNumerico],
-      ["DescontoFuncionario", valorNumerico],
-      ["ValorDesconto", valorNumerico],
-      ["valor_desconto", valorNumerico],
-      ["desconto_funcionario", valorNumerico],
-      ["Desconto", valorNumerico],
-      ["Valor_Desconto", valorTexto],
-      ["Desconto_Funcionario", valorTexto],
-      ["DescontoFuncionario", valorTexto],
-      ["ValorDesconto", valorTexto],
-      ["Desconto", valorTexto]
-    ].filter(x => x[1] !== null && x[1] !== "");
-
-    for(const [campo,valor] of tentativas){
-      try{
-        await patchCampoValor("Valores", itemId, campo, valor);
-        console.log("[HOMY] Desconto salvo na coluna:", campo, valor);
-        return true;
-      }catch(e){
-        console.warn("[HOMY] Tentativa de coluna de desconto falhou:", campo, e?.message || e);
-      }
-    }
-    return false;
+  async function buscarExistente(dados,mapa){
+    const {token,siteId,listId}=await spBase();
+    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=fields&$top=200`,{headers:{Authorization:"Bearer "+token}});
+    if(!r.ok) throw new Error(await r.text());
+    const j=await r.json();
+    const titulo=norm(dados.titulo);
+    return (j.value||[]).find(it=>{
+      const f=it.fields||{};
+      return norm(f[mapa.titulo]||f.Title)===titulo && data10(f[mapa.inicio])===dados.inicio && data10(f[mapa.fim])===dados.fim;
+    }) || null;
   }
 
-  async function salvarValorCorrigido(){
+  async function salvarValoresV25(){
     try{
-      if(!window.SP) throw new Error("Objeto SP não carregado.");
-      if(SP.init) await SP.init();
-
-      const descontoDigitado = $("valorDesconto")?.value ?? "";
-      const dados = {
-        title: $("valorTitulo")?.value || "Valor refeição",
-        dataInicio: $("valorDataInicio")?.value || "",
-        dataFim: $("valorDataFim")?.value || "",
-        valorVascon: $("valorVascon")?.value || "",
-        valorDesconto: descontoDigitado,
-        descontoFuncionario: descontoDigitado,
-        desconto_funcionario: descontoDigitado,
-        Valor_Desconto: descontoDigitado,
-        Desconto_Funcionario: descontoDigitado,
-        observacao: $("valorObs")?.value || "",
-        ativo: ($("valorAtivo")?.value || "sim") !== "nao"
+      const dados={
+        titulo: $("valorTitulo")?.value || "Valor refeição",
+        inicio: $("valorDataInicio")?.value || "",
+        fim: $("valorDataFim")?.value || "",
+        vascon: moeda($("valorVascon")?.value),
+        desconto: moeda($("valorDesconto")?.value),
+        ativo: ($("valorAtivo")?.value || "sim") !== "nao",
+        obs: $("valorObs")?.value || ""
       };
+      if(!dados.inicio || !dados.fim){toastSafe("Informe data início e data fim.","error");return;}
+      if(dados.vascon===null){toastSafe("Informe o valor Vascon.","error");return;}
+      if(dados.desconto===null){toastSafe("Informe o valor descontado do funcionário.","error");return;}
 
-      if(!dados.dataInicio || !dados.dataFim){
-        toastSafe("Informe data início e fim.","error");
-        return;
-      }
+      const mapa=await mapaColunas();
+      const fields={};
+      fields[mapa.titulo]=dados.titulo;
+      fields[mapa.inicio]=dados.inicio;
+      fields[mapa.fim]=dados.fim;
+      fields[mapa.vascon]=dados.vascon;
+      fields[mapa.desconto]=dados.desconto;
+      if(mapa.ativo) fields[mapa.ativo]=dados.ativo;
+      if(mapa.obs) fields[mapa.obs]=dados.obs;
 
-      let resp;
-      if(SP.createValorRefeicao){
-        resp = await SP.createValorRefeicao(dados);
-      }else if(SP.addItem){
-        resp = await SP.addItem("Valores",{
-          Title: dados.title,
-          Data_Inicio: dados.dataInicio,
-          Data_Fim: dados.dataFim,
-          Valor_Vascon: parseMoeda(dados.valorVascon),
-          Ativo: dados.ativo
-        });
-      }else{
-        throw new Error("Função para salvar valores não encontrada.");
-      }
-
-      const itemId = obterItemId(resp);
-      const descontoOk = await corrigirDescontoNoItem(itemId, descontoDigitado);
+      const {token,siteId,listId}=await spBase();
+      const existente=await buscarExistente(dados,mapa);
+      const url=existente
+        ? `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${existente.id}/fields`
+        : `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
+      const body=existente ? fields : {fields};
+      const r=await fetch(url,{method:existente?"PATCH":"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!r.ok) throw new Error(await r.text());
 
       $("modalValorRefeicao")?.classList.remove("open");
-      toastSafe(descontoOk ? "Valor e desconto salvos no SharePoint." : "Valor salvo. Não consegui confirmar a coluna interna do desconto.", descontoOk ? "success" : "info");
+      toastSafe(existente ? "Valor atualizado com desconto do funcionário." : "Valor criado com desconto do funcionário.","success");
       if(window.loadValores) await window.loadValores();
     }catch(e){
-      console.error("Erro ao salvar valor corrigido:",e);
+      console.error("[HOMY V25] Erro ao salvar valores:", e);
       toastSafe("Erro ao salvar valor: "+(e.message||e),"error");
     }
   }
 
-  function bindValoresFix(){
-    window.salvarValorRefeicaoHomy = salvarValorCorrigido;
-    const btn = $("salvarValorRefeicao");
-    if(btn && btn.dataset.homyValorFix !== "v22"){
-      btn.dataset.homyValorFix = "v22";
-      btn.onclick = function(e){
+  function bindV25(){
+    window.salvarValorRefeicaoHomy=salvarValoresV25;
+    const b=$("salvarValorRefeicao");
+    if(!b) return;
+    b.onclick=null;
+    if(!b.dataset.homyV25){
+      b.dataset.homyV25="1";
+      b.addEventListener("click",function(e){
         e.preventDefault();
         e.stopPropagation();
-        salvarValorCorrigido();
+        e.stopImmediatePropagation();
+        salvarValoresV25();
         return false;
-      };
+      },true);
     }
   }
-
-  document.addEventListener("DOMContentLoaded",bindValoresFix);
-  setTimeout(bindValoresFix,500);
-  setTimeout(bindValoresFix,1500);
-  setInterval(bindValoresFix,1200);
+  document.addEventListener("DOMContentLoaded",bindV25);
+  setTimeout(bindV25,300);
+  setTimeout(bindV25,1200);
+  setInterval(bindV25,500);
 })();
 </script>
 
 
-
-<script id="homy-valores-desconto-funcionario-fix-v23">
-// ============================================================
-// HOMY V23 — Correção definitiva de VALORES
-// Motivo: a coluna "Valor descontado funcionário" no SharePoint
-// tem nome interno diferente do nome visual. Este patch descobre
-// a coluna real na lista Valores e só salva quando clicar em Salvar.
-// ============================================================
+<script id="homy-valores-anti-cache-v25-guard">
+// HOMY V25 GUARD — impede que bindings antigos voltem a chamar SP.createValorRefeicao.
 (function(){
   const $ = id => document.getElementById(id);
-  const toastSafe = (m,t)=> window.toast ? toast(m,t||"info") : alert(m);
+  function reforcar(){
+    const b = $("salvarValorRefeicao");
+    if(!b || !window.salvarValorRefeicaoHomy) return;
+    b.onclick = function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+      window.salvarValorRefeicaoHomy();
+      return false;
+    };
+  }
+  document.addEventListener("DOMContentLoaded",reforcar);
+  setTimeout(reforcar,200);
+  setTimeout(reforcar,800);
+  setTimeout(reforcar,1600);
+  setInterval(reforcar,250);
+})();
+</script>
 
-  function normalizarTexto(v){
-    return String(v||"")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g,"")
-      .toLowerCase()
-      .trim();
+
+<script id="homy-valores-v26-override-sp-create">
+// ============================================================
+// HOMY V26 — correção definitiva do salvamento de Valores
+// Motivo: existia handler antigo chamando SP.createValorRefeicao(),
+// que ainda enviava o campo inválido Valor_Desconto_Funcionario.
+// Este bloco sobrescreve a função do SP para qualquer botão antigo
+// passar a salvar usando o nome interno real retornado pelo Graph.
+// ============================================================
+(function(){
+  function norm(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();}
+  function moeda(v){
+    if(v===null||v===undefined||String(v).trim()==="") return null;
+    let s=String(v).replace(/R\$/gi,"").replace(/\s/g,"").trim();
+    if(s.includes(",")) s=s.replace(/\./g,"").replace(",",".");
+    s=s.replace(/[^0-9.-]/g,"");
+    const n=Number(s);
+    return Number.isFinite(n)?n:null;
+  }
+  function data10(v){return String(v||"").slice(0,10);}
+  function toastSafe(m,t){ if(window.toast) window.toast(m,t||"info"); else alert(m); }
+
+  async function baseValores(){
+    await window.SP.init();
+    const token=await window.SP.getToken();
+    const siteId=await window.SP.getSiteId();
+    const listId=await window.SP.getListId("Valores");
+    return {token,siteId,listId};
   }
 
-  function parseMoedaBR(v){
-    if(v === null || v === undefined || String(v).trim()==="") return null;
-    const n = Number(String(v).replace(/\./g,"").replace(",",".").replace(/[^0-9.-]/g,""));
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function obterIdItem(resp){
-    return resp?.id || resp?.ID || resp?.Id || resp?.itemId || resp?.fields?.id || resp?.fields?.ID || null;
-  }
-
-  async function garantirSP(){
-    if(!window.SP) throw new Error("Objeto SP não carregado.");
-    if(SP.init) await SP.init();
-  }
-
-  async function getGraphBaseValores(){
-    await garantirSP();
-    const token = await SP.getToken();
-    const siteId = await SP.getSiteId();
-    const listId = await SP.getListId("Valores");
-    return {token, siteId, listId};
-  }
-
-  async function buscarColunaDescontoFuncionario(){
-    const {token, siteId, listId} = await getGraphBaseValores();
-    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`,{
-      headers:{"Authorization":"Bearer "+token}
+  async function colunasValores(){
+    const {token,siteId,listId}=await baseValores();
+    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`,{
+      headers:{Authorization:"Bearer "+token}
     });
-    if(!resp.ok) throw new Error(await resp.text());
-    const json = await resp.json();
-    const colunas = json.value || [];
+    if(!r.ok) throw new Error(await r.text());
+    const j=await r.json();
+    return j.value||[];
+  }
 
-    const candidata = colunas.find(c=>{
-      const nome = normalizarTexto((c.displayName||"")+" "+(c.name||""));
-      return nome.includes("desconto") && (nome.includes("funcionario") || nome.includes("funcionarios") || nome.includes("colaborador"));
-    }) || colunas.find(c=>{
-      const nome = normalizarTexto((c.displayName||"")+" "+(c.name||""));
-      return nome.includes("valor") && nome.includes("descont");
-    });
+  function acharColuna(cols, grupos){
+    return (cols.find(c=>{
+      const combinado=String((c.displayName||"")+" "+(c.name||"")).replace(/_/g," ");
+      const n=norm(combinado);
+      return grupos.every(g=>g.some(p=>n.includes(p)));
+    })||{}).name || null;
+  }
 
-    if(!candidata){
-      console.warn("[HOMY] Colunas encontradas na lista Valores:", colunas.map(c=>({name:c.name, displayName:c.displayName})));
-      throw new Error("Não encontrei a coluna de desconto do funcionário na lista Valores.");
+  async function mapaValores(){
+    const cols=await colunasValores();
+    const mapa={
+      titulo: acharColuna(cols, [["titulo","title"]]) || "Title",
+      inicio: acharColuna(cols, [["data"],["inicio"]]) || acharColuna(cols, [["inicio"]]),
+      fim: acharColuna(cols, [["data"],["fim"]]) || acharColuna(cols, [["fim"]]),
+      vascon: acharColuna(cols, [["vascon"]]) || acharColuna(cols, [["valor"],["vascon"]]),
+      desconto: acharColuna(cols, [["desconto"],["funcionario","funcionarios","funcion","colaborador"]]),
+      obs: acharColuna(cols, [["observacao","observacoes","obs"]]),
+      ativo: acharColuna(cols, [["ativo"]])
+    };
+    if(!mapa.inicio || !mapa.fim || !mapa.vascon || !mapa.desconto){
+      console.table(cols.map(c=>({name:c.name,displayName:c.displayName})));
+      throw new Error("Não consegui identificar as colunas internas da lista Valores. Veja a tabela no Console.");
     }
-
-    console.log("[HOMY] Coluna real do desconto funcionário:", candidata.name, "| Nome visual:", candidata.displayName);
-    return candidata.name;
+    console.log("[HOMY V26] mapa Valores:", mapa);
+    return mapa;
   }
 
-  async function patchCampoValores(itemId, fields){
-    const {token, siteId, listId} = await getGraphBaseValores();
-    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,{
-      method:"PATCH",
-      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
-      body:JSON.stringify(fields)
+  async function buscarExistente(dados,mapa){
+    const {token,siteId,listId}=await baseValores();
+    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500`,{
+      headers:{Authorization:"Bearer "+token}
     });
-    if(!resp.ok) throw new Error(await resp.text());
-    return true;
+    if(!r.ok) throw new Error(await r.text());
+    const j=await r.json();
+    const titulo=norm(dados.title||dados.titulo||"Valor refeição");
+    const ini=data10(dados.dataInicio||dados.inicio);
+    const fim=data10(dados.dataFim||dados.fim);
+    return (j.value||[]).find(it=>{
+      const f=it.fields||{};
+      return norm(f[mapa.titulo]||f.Title)===titulo && data10(f[mapa.inicio])===ini && data10(f[mapa.fim])===fim;
+    }) || null;
   }
 
-  async function encontrarValorRecemCriado(dados){
-    const {token, siteId, listId} = await getGraphBaseValores();
-    const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=fields&$top=50`,{
-      headers:{"Authorization":"Bearer "+token}
-    });
-    if(!resp.ok) throw new Error(await resp.text());
-    const json = await resp.json();
-    const titulo = normalizarTexto(dados.title);
-    const inicio = String(dados.dataInicio||"");
-    const fim = String(dados.dataFim||"");
+  async function salvarValorSeguro(dados){
+    const mapa=await mapaValores();
+    const fields={};
+    const titulo=dados.title||dados.titulo||"Valor refeição";
+    const inicio=data10(dados.dataInicio||dados.inicio);
+    const fim=data10(dados.dataFim||dados.fim);
+    const vascon=moeda(dados.valorVascon ?? dados.vascon);
+    const desconto=moeda(dados.valorDesconto ?? dados.desconto);
+    if(!inicio || !fim) throw new Error("Informe data início e data fim.");
+    if(vascon===null) throw new Error("Informe o valor Vascon.");
+    if(desconto===null) throw new Error("Informe o valor descontado do funcionário.");
 
-    const achado = (json.value||[]).find(it=>{
-      const f = it.fields || {};
-      const t = normalizarTexto(f.Title || f.Titulo || f.Título || "");
-      const di = String(f.Data_Inicio || f.DataInicio || f.Inicio || f.Início || "").slice(0,10);
-      const df = String(f.Data_Fim || f.DataFim || f.Fim || "").slice(0,10);
-      return (!titulo || t===titulo) && (!inicio || di===inicio) && (!fim || df===fim);
-    });
-    return achado?.id || null;
+    fields[mapa.titulo]=titulo;
+    fields[mapa.inicio]=inicio;
+    fields[mapa.fim]=fim;
+    fields[mapa.vascon]=vascon;
+    fields[mapa.desconto]=desconto;
+    if(mapa.obs) fields[mapa.obs]=dados.observacao||dados.obs||"";
+    if(mapa.ativo) fields[mapa.ativo]=(dados.ativo!==false && String(dados.ativo).toLowerCase()!=="nao");
+
+    const {token,siteId,listId}=await baseValores();
+    const existente=dados.id ? {id:dados.id} : await buscarExistente({title:titulo,dataInicio:inicio,dataFim:fim},mapa);
+    const url=existente
+      ? `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${existente.id}/fields`
+      : `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
+    const body=existente ? fields : {fields};
+    console.log("[HOMY V26] Salvando Valores com fields:", fields);
+    const r=await fetch(url,{method:existente?"PATCH":"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(await r.text());
+    return await r.json().catch(()=>({}));
   }
 
-  async function criarValorBasico(dados){
-    // Usa a função original, mas sem enviar campos de desconto com nomes inventados.
-    if(SP.createValorRefeicao){
-      return await SP.createValorRefeicao({
-        title: dados.title,
-        dataInicio: dados.dataInicio,
-        dataFim: dados.dataFim,
-        valorVascon: dados.valorVascon,
-        observacao: dados.observacao,
-        ativo: dados.ativo
-      });
-    }
-
-    // Fallback Graph caso a função original não exista.
-    if(SP.addItem){
-      return await SP.addItem("Valores",{
-        Title: dados.title,
-        Data_Inicio: dados.dataInicio,
-        Data_Fim: dados.dataFim,
-        Valor_Vascon: parseMoedaBR(dados.valorVascon),
-        Ativo: dados.ativo,
-        Observacao: dados.observacao
-      });
-    }
-
-    throw new Error("Função para criar valor não encontrada.");
-  }
-
-  async function salvarValorRefeicaoV23(){
-    try{
-      await garantirSP();
-
-      const dados = {
-        title: $("valorTitulo")?.value || "Valor refeição",
-        dataInicio: $("valorDataInicio")?.value || "",
-        dataFim: $("valorDataFim")?.value || "",
-        valorVascon: $("valorVascon")?.value || "",
-        valorDesconto: $("valorDesconto")?.value || "",
-        observacao: $("valorObs")?.value || "",
-        ativo: ($("valorAtivo")?.value || "sim") !== "nao"
-      };
-
-      if(!dados.dataInicio || !dados.dataFim){
-        toastSafe("Informe data início e fim.","error");
-        return;
+  function instalarOverride(){
+    if(!window.SP || window.SP.__homyValoresV26) return;
+    window.SP.__homyValoresV26=true;
+    window.SP.createValorRefeicao=salvarValorSeguro;
+    window.SP.updateValorRefeicao=async function(id,dados){ return salvarValorSeguro(Object.assign({},dados,{id})); };
+    window.salvarValorRefeicaoHomy=async function(){
+      try{
+        const $=id=>document.getElementById(id);
+        await salvarValorSeguro({
+          title:$("valorTitulo")?.value||"Valor refeição",
+          dataInicio:$("valorDataInicio")?.value,
+          dataFim:$("valorDataFim")?.value,
+          valorVascon:$("valorVascon")?.value,
+          valorDesconto:$("valorDesconto")?.value,
+          ativo:($("valorAtivo")?.value||"sim")!=="nao",
+          observacao:$("valorObs")?.value||""
+        });
+        $("modalValorRefeicao")?.classList.remove("open");
+        toastSafe("Valor salvo no SharePoint com desconto do funcionário.","success");
+        if(window.loadValores) await window.loadValores();
+      }catch(e){
+        console.error("[HOMY V26] Erro ao salvar valor:",e);
+        toastSafe("Erro ao salvar valor: "+(e.message||e),"error");
       }
-
-      const respCriacao = await criarValorBasico(dados);
-      let itemId = obterIdItem(respCriacao);
-      if(!itemId) itemId = await encontrarValorRecemCriado(dados);
-      if(!itemId) throw new Error("Valor criado, mas não consegui localizar o ID para atualizar o desconto.");
-
-      const descontoNumero = parseMoedaBR(dados.valorDesconto);
-      if(descontoNumero !== null){
-        const colunaDesconto = await buscarColunaDescontoFuncionario();
-        await patchCampoValores(itemId,{[colunaDesconto]: descontoNumero});
-      }
-
-      $("modalValorRefeicao")?.classList.remove("open");
-      toastSafe("Valor salvo com desconto do funcionário.","success");
-      if(window.loadValores) await window.loadValores();
-    }catch(e){
-      console.error("Erro ao salvar valor V23:", e);
-      toastSafe("Erro ao salvar valor: "+(e.message||e),"error");
-    }
+    };
+    console.log("[HOMY V26] Override de SP.createValorRefeicao instalado.");
   }
 
-  function bindValorV23(){
-    window.salvarValorRefeicaoHomy = salvarValorRefeicaoV23;
-    const btn = $("salvarValorRefeicao");
-    if(btn && btn.dataset.homyValorFix !== "v23"){
-      btn.dataset.homyValorFix = "v23";
-      btn.onclick = function(e){
-        e.preventDefault();
-        e.stopPropagation();
-        salvarValorRefeicaoV23();
-        return false;
-      };
-    }
-  }
-
-  document.addEventListener("DOMContentLoaded",()=>setTimeout(bindValorV23,300));
-  setTimeout(bindValorV23,800);
-  setTimeout(bindValorV23,1800);
-  setInterval(bindValorV23,1200);
+  document.addEventListener("DOMContentLoaded",instalarOverride);
+  setTimeout(instalarOverride,100);
+  setTimeout(instalarOverride,500);
+  setTimeout(instalarOverride,1500);
+  setInterval(instalarOverride,500);
 })();
 </script>
 
