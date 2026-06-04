@@ -4214,8 +4214,28 @@ document.addEventListener("DOMContentLoaded",function(){
     if(SP.init) await SP.init();
     const token=await SP.getToken();
     const siteId=await SP.getSiteId();
-    const listId=await SP.getListId("Valores");
+    const listId=await getValoresListIdV27(token,siteId);
     return {token,siteId,listId};
+  }
+
+  async function getValoresListIdV27(token,siteId){
+    const nomes=["Valores de Refeição","Valores de Refeicao","Valores","Valor Refeição","Valor Refeicao"];
+    for(const nome of nomes){
+      try{
+        const id=await SP.getListId(nome);
+        if(id) return id;
+      }catch(e){}
+    }
+    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=id,displayName,name,webUrl`,{headers:{Authorization:"Bearer "+token}});
+    if(!r.ok) throw new Error(await r.text());
+    const j=await r.json();
+    const listas=j.value||[];
+    const alvo=listas.find(l=>norm(l.displayName).includes("valores de refeicao") || (norm(l.displayName).includes("valores") && norm(l.displayName).includes("refeicao")));
+    if(!alvo){
+      console.table(listas.map(l=>({id:l.id,displayName:l.displayName,name:l.name,webUrl:l.webUrl})));
+      throw new Error("Lista de valores não encontrada no SharePoint. Confira o nome da lista.");
+    }
+    return alvo.id;
   }
 
   async function colunasValores(){
@@ -4386,8 +4406,28 @@ document.addEventListener("DOMContentLoaded",function(){
     await window.SP.init();
     const token=await window.SP.getToken();
     const siteId=await window.SP.getSiteId();
-    const listId=await window.SP.getListId("Valores");
+    const listId=await getValoresListIdV27(token,siteId);
     return {token,siteId,listId};
+  }
+
+  async function getValoresListIdV27(token,siteId){
+    const nomes=["Valores de Refeição","Valores de Refeicao","Valores","Valor Refeição","Valor Refeicao"];
+    for(const nome of nomes){
+      try{
+        const id=await window.SP.getListId(nome);
+        if(id) return id;
+      }catch(e){}
+    }
+    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=id,displayName,name,webUrl`,{headers:{Authorization:"Bearer "+token}});
+    if(!r.ok) throw new Error(await r.text());
+    const j=await r.json();
+    const listas=j.value||[];
+    const alvo=listas.find(l=>norm(l.displayName).includes("valores de refeicao") || (norm(l.displayName).includes("valores") && norm(l.displayName).includes("refeicao")));
+    if(!alvo){
+      console.table(listas.map(l=>({id:l.id,displayName:l.displayName,name:l.name,webUrl:l.webUrl})));
+      throw new Error("Lista de valores não encontrada no SharePoint. Confira o nome da lista.");
+    }
+    return alvo.id;
   }
 
   async function colunasValores(){
