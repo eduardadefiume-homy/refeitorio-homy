@@ -4354,120 +4354,107 @@ document.addEventListener("DOMContentLoaded",function(){
   setTimeout(bindV25,1200);
   setInterval(bindV25,500);
 })();
-</script>
-
-
-<script id="homy-valores-anti-cache-v25-guard">
-// HOMY V25 GUARD — impede que bindings antigos voltem a chamar SP.createValorRefeicao.
-(function(){
-  const $ = id => document.getElementById(id);
-  function reforcar(){
-    const b = $("salvarValorRefeicao");
-    if(!b || !window.salvarValorRefeicaoHomy) return;
-    b.onclick = function(e){
-      e.preventDefault();
-      e.stopPropagation();
-      if(e.stopImmediatePropagation) e.stopImmediatePropagation();
-      window.salvarValorRefeicaoHomy();
-      return false;
-    };
-  }
-  document.addEventListener("DOMContentLoaded",reforcar);
-  setTimeout(reforcar,200);
-  setTimeout(reforcar,800);
-  setTimeout(reforcar,1600);
-  setInterval(reforcar,250);
-})();
-</script>
-
-
-<script id="homy-valores-v26-override-sp-create">
+  
 // ============================================================
 // HOMY V26 — correção definitiva do salvamento de Valores
-// Motivo: existia handler antigo chamando SP.createValorRefeicao(),
-// que ainda enviava o campo inválido Valor_Desconto_Funcionario.
-// Este bloco sobrescreve a função do SP para qualquer botão antigo
-// passar a salvar usando o nome interno real retornado pelo Graph.
+// FIX: Filtro de campos read-only do SharePoint (ComplianceAssetId, etc.)
 // ============================================================
 (function(){
-  function norm(v){return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();}
-  function moeda(v){
+  const $ = id => document.getElementById(id);
+  const toastSafe = (m,t)=> window.toast ? toast(m,t||"info") : alert(m);
+  const norm = v => String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const moeda = v => {
     if(v===null||v===undefined||String(v).trim()==="") return null;
     let s=String(v).replace(/R\$/gi,"").replace(/\s/g,"").trim();
     if(s.includes(",")) s=s.replace(/\./g,"").replace(",",".");
     s=s.replace(/[^0-9.-]/g,"");
     const n=Number(s);
     return Number.isFinite(n)?n:null;
+  };
+  const data10 = v => String(v||"").slice(0,10);
+
+  // Campos que o SharePoint retorna mas NÃO aceita no PATCH/POST
+  const READ_ONLY_FIELDS = [
+    "ComplianceAssetId","@odata.etag","@odata.type","@odata.context",
+    "id","ID","Created","Modified","Author","Editor","AuthorId","EditorId",
+    "FileSystemObjectType","ContentTypeId","_UIVersionString","_UIVersion",
+    "Attachments","CheckoutUser","ServerRedirectedEmbedUri",
+    "ServerRedirectedEmbedUrl","GUID","UniqueId","owshiddenversion"
+  ];
+
+  function cleanFields(fields){
+    return Object.fromEntries(
+      Object.entries(fields).filter(([k]) => !READ_ONLY_FIELDS.includes(k) && !k.startsWith("@") && !k.startsWith("OData_"))
+    );
   }
-  function data10(v){return String(v||"").slice(0,10);}
-  function toastSafe(m,t){ if(window.toast) window.toast(m,t||"info"); else alert(m); }
 
   async function baseValores(){
-    await window.SP.init();
-    const token=await window.SP.getToken();
-    const siteId=await window.SP.getSiteId();
-    const listId=await getValoresListIdV27(token,siteId);
+    if(!window.SP) throw new Error("Objeto SP não carregado.");
+    if(SP.init) await SP.init();
+    const token=await SP.getToken();
+    const siteId=await SP.getSiteId();
+    const listId=await getValoresListId(token,siteId);
     return {token,siteId,listId};
   }
 
-  async function getValoresListIdV27(token,siteId){
+  async function getValoresListId(token,siteId){
     const nomes=["Valores de Refeição","Valores de Refeicao","Valores","Valor Refeição","Valor Refeicao"];
     for(const nome of nomes){
-      try{
-        const id=await window.SP.getListId(nome);
-        if(id) return id;
-      }catch(e){}
+      try{ const id=await SP.getListId(nome); if(id) return id; }catch(e){}
     }
-    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=id,displayName,name,webUrl`,{headers:{Authorization:"Bearer "+token}});
+    const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=id,displayName,name`,{
+      headers:{Authorization:"Bearer "+token}
+    });
     if(!r.ok) throw new Error(await r.text());
     const j=await r.json();
-    const listas=j.value||[];
-    const alvo=listas.find(l=>norm(l.displayName).includes("valores de refeicao") || (norm(l.displayName).includes("valores") && norm(l.displayName).includes("refeicao")));
+    const alvo=(j.value||[]).find(l=>
+      norm(l.displayName).includes("valores de refeicao") ||
+      (norm(l.displayName).includes("valores") && norm(l.displayName).includes("refeicao"))
+    );
     if(!alvo){
-      console.table(listas.map(l=>({id:l.id,displayName:l.displayName,name:l.name,webUrl:l.webUrl})));
-      throw new Error("Lista de valores não encontrada no SharePoint. Confira o nome da lista.");
+      console.table((j.value||[]).map(l=>({id:l.id,displayName:l.displayName})));
+      throw new Error("Lista de valores não encontrada. Veja o console para os nomes disponíveis.");
     }
     return alvo.id;
   }
 
-  async function colunasValores(){
+  async function getColunasValores(){
     const {token,siteId,listId}=await baseValores();
     const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`,{
       headers:{Authorization:"Bearer "+token}
     });
     if(!r.ok) throw new Error(await r.text());
-    const j=await r.json();
-    return j.value||[];
+    return (await r.json()).value||[];
   }
 
-  function acharColuna(cols, grupos){
+  function acharColuna(cols,grupos){
     return (cols.find(c=>{
       const combinado=String((c.displayName||"")+" "+(c.name||"")).replace(/_/g," ");
       const n=norm(combinado);
       return grupos.every(g=>g.some(p=>n.includes(p)));
-    })||{}).name || null;
+    })||{}).name||null;
   }
 
-  async function mapaValores(){
-    const cols=await colunasValores();
+  async function mapaColunasValores(){
+    const cols=await getColunasValores();
     const mapa={
-      titulo: acharColuna(cols, [["titulo","title"]]) || "Title",
-      inicio: acharColuna(cols, [["data"],["inicio"]]) || acharColuna(cols, [["inicio"]]),
-      fim: acharColuna(cols, [["data"],["fim"]]) || acharColuna(cols, [["fim"]]),
-      vascon: acharColuna(cols, [["vascon"]]) || acharColuna(cols, [["valor"],["vascon"]]),
-      desconto: acharColuna(cols, [["desconto"],["funcionario","funcionarios","funcion","colaborador"]]),
-      obs: acharColuna(cols, [["observacao","observacoes","obs"]]),
-      ativo: acharColuna(cols, [["ativo"]])
+      titulo: acharColuna(cols,[["titulo","title"]])||"Title",
+      inicio: acharColuna(cols,[["data"],["inicio"]])||acharColuna(cols,[["inicio"]]),
+      fim:    acharColuna(cols,[["data"],["fim"]])||acharColuna(cols,[["fim"]]),
+      vascon: acharColuna(cols,[["vascon"]])||acharColuna(cols,[["valor"],["vascon"]]),
+      desconto: acharColuna(cols,[["desconto"],["funcionario","funcionarios","funcion","colaborador"]]),
+      obs:    acharColuna(cols,[["observacao","observacoes","obs"]]),
+      ativo:  acharColuna(cols,[["ativo"]])
     };
-    if(!mapa.inicio || !mapa.fim || !mapa.vascon || !mapa.desconto){
+    if(!mapa.inicio||!mapa.fim||!mapa.vascon||!mapa.desconto){
       console.table(cols.map(c=>({name:c.name,displayName:c.displayName})));
-      throw new Error("Não consegui identificar as colunas internas da lista Valores. Veja a tabela no Console.");
+      throw new Error("Colunas internas da lista Valores não identificadas. Veja o console.");
     }
-    console.log("[HOMY V26] mapa Valores:", mapa);
+    console.log("[HOMY V26 FIX] Mapa de colunas Valores:",mapa);
     return mapa;
   }
 
-  async function buscarExistente(dados,mapa){
+  async function buscarValorExistente(dados,mapa){
     const {token,siteId,listId}=await baseValores();
     const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500`,{
       headers:{Authorization:"Bearer "+token}
@@ -4479,76 +4466,114 @@ document.addEventListener("DOMContentLoaded",function(){
     const fim=data10(dados.dataFim||dados.fim);
     return (j.value||[]).find(it=>{
       const f=it.fields||{};
-      return norm(f[mapa.titulo]||f.Title)===titulo && data10(f[mapa.inicio])===ini && data10(f[mapa.fim])===fim;
-    }) || null;
+      return norm(f[mapa.titulo]||f.Title)===titulo &&
+             data10(f[mapa.inicio])===ini &&
+             data10(f[mapa.fim])===fim;
+    })||null;
   }
 
   async function salvarValorSeguro(dados){
-    const mapa=await mapaValores();
-    const fields={};
+    const mapa=await mapaColunasValores();
+
     const titulo=dados.title||dados.titulo||"Valor refeição";
     const inicio=data10(dados.dataInicio||dados.inicio);
     const fim=data10(dados.dataFim||dados.fim);
-    const vascon=moeda(dados.valorVascon ?? dados.vascon);
-    const desconto=moeda(dados.valorDesconto ?? dados.desconto);
-    if(!inicio || !fim) throw new Error("Informe data início e data fim.");
-    if(vascon===null) throw new Error("Informe o valor Vascon.");
-    if(desconto===null) throw new Error("Informe o valor descontado do funcionário.");
+    const vascon=moeda(dados.valorVascon??dados.vascon);
+    const desconto=moeda(dados.valorDesconto??dados.desconto);
 
-    fields[mapa.titulo]=titulo;
-    fields[mapa.inicio]=inicio;
-    fields[mapa.fim]=fim;
-    fields[mapa.vascon]=vascon;
-    fields[mapa.desconto]=desconto;
-    if(mapa.obs) fields[mapa.obs]=dados.observacao||dados.obs||"";
-    if(mapa.ativo) fields[mapa.ativo]=(dados.ativo!==false && String(dados.ativo).toLowerCase()!=="nao");
+    if(!inicio||!fim)     throw new Error("Informe data início e data fim.");
+    if(vascon===null)     throw new Error("Informe o valor Vascon.");
+    if(desconto===null)   throw new Error("Informe o valor descontado do funcionário.");
+
+    // Monta apenas os campos necessários (sem campos read-only)
+    const rawFields={};
+    rawFields[mapa.titulo]=titulo;
+    rawFields[mapa.inicio]=inicio;
+    rawFields[mapa.fim]=fim;
+    rawFields[mapa.vascon]=vascon;
+    rawFields[mapa.desconto]=desconto;
+    if(mapa.obs)   rawFields[mapa.obs]=dados.observacao||dados.obs||"";
+    if(mapa.ativo) rawFields[mapa.ativo]=(dados.ativo!==false && String(dados.ativo).toLowerCase()!=="nao");
+
+    // Remove TODOS os campos read-only antes de enviar
+    const safeFields=cleanFields(rawFields);
+    console.log("[HOMY V26 FIX] Enviando para SharePoint:",safeFields);
 
     const {token,siteId,listId}=await baseValores();
-    const existente=dados.id ? {id:dados.id} : await buscarExistente({title:titulo,dataInicio:inicio,dataFim:fim},mapa);
+    const existente=dados.id
+      ? {id:dados.id}
+      : await buscarValorExistente({title:titulo,dataInicio:inicio,dataFim:fim},mapa);
+
     const url=existente
       ? `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${existente.id}/fields`
       : `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
-    const body=existente ? fields : {fields};
-    console.log("[HOMY V26] Salvando Valores com fields:", fields);
-    const r=await fetch(url,{method:existente?"PATCH":"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body)});
+
+    const body=existente ? safeFields : {fields:safeFields};
+    const method=existente?"PATCH":"POST";
+
+    const r=await fetch(url,{
+      method,
+      headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
+      body:JSON.stringify(body)
+    });
     if(!r.ok) throw new Error(await r.text());
     return await r.json().catch(()=>({}));
   }
 
   function instalarOverride(){
-    if(!window.SP || window.SP.__homyValoresV26) return;
-    window.SP.__homyValoresV26=true;
+    if(!window.SP||window.SP.__homyValoresV26fix) return;
+    window.SP.__homyValoresV26fix=true;
+
     window.SP.createValorRefeicao=salvarValorSeguro;
-    window.SP.updateValorRefeicao=async function(id,dados){ return salvarValorSeguro(Object.assign({},dados,{id})); };
+    window.SP.updateValorRefeicao=async function(id,dados){
+      return salvarValorSeguro(Object.assign({},dados,{id}));
+    };
+
     window.salvarValorRefeicaoHomy=async function(){
       try{
         const $=id=>document.getElementById(id);
         await salvarValorSeguro({
-          title:$("valorTitulo")?.value||"Valor refeição",
-          dataInicio:$("valorDataInicio")?.value,
-          dataFim:$("valorDataFim")?.value,
-          valorVascon:$("valorVascon")?.value,
+          title:      $("valorTitulo")?.value||"Valor refeição",
+          dataInicio: $("valorDataInicio")?.value,
+          dataFim:    $("valorDataFim")?.value,
+          valorVascon:  $("valorVascon")?.value,
           valorDesconto:$("valorDesconto")?.value,
-          ativo:($("valorAtivo")?.value||"sim")!=="nao",
-          observacao:$("valorObs")?.value||""
+          ativo:      ($("valorAtivo")?.value||"sim")!=="nao",
+          observacao: $("valorObs")?.value||""
         });
         $("modalValorRefeicao")?.classList.remove("open");
-        toastSafe("Valor salvo no SharePoint com desconto do funcionário.","success");
+        toastSafe("Valor salvo no SharePoint com sucesso!","success");
         if(window.loadValores) await window.loadValores();
       }catch(e){
-        console.error("[HOMY V26] Erro ao salvar valor:",e);
+        console.error("[HOMY V26 FIX] Erro ao salvar valor:",e);
         toastSafe("Erro ao salvar valor: "+(e.message||e),"error");
       }
     };
-    console.log("[HOMY V26] Override de SP.createValorRefeicao instalado.");
+
+    console.log("[HOMY V26 FIX] Override instalado — campos read-only filtrados.");
   }
 
-  document.addEventListener("DOMContentLoaded",instalarOverride);
-  setTimeout(instalarOverride,100);
-  setTimeout(instalarOverride,500);
-  setTimeout(instalarOverride,1500);
-  setInterval(instalarOverride,500);
+  // Guard no botão salvar
+  function bindBotaoSalvar(){
+    const b=document.getElementById("salvarValorRefeicao");
+    if(!b||!window.salvarValorRefeicaoHomy) return;
+    b.onclick=function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+      window.salvarValorRefeicaoHomy();
+      return false;
+    };
+  }
+
+  document.addEventListener("DOMContentLoaded",()=>{instalarOverride();bindBotaoSalvar();});
+  setTimeout(()=>{instalarOverride();bindBotaoSalvar();},200);
+  setTimeout(()=>{instalarOverride();bindBotaoSalvar();},800);
+  setTimeout(()=>{instalarOverride();bindBotaoSalvar();},2000);
+  setInterval(()=>{instalarOverride();bindBotaoSalvar();},500);
 })();
+
+
 </script>
 
 </body>
