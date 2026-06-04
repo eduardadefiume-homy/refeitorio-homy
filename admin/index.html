@@ -4575,7 +4575,59 @@ document.addEventListener("DOMContentLoaded",function(){
 
 
 </script>
+<script id="homy-valores-fix-complianceasset-v27">
+// FIX DEFINITIVO: Field 'ComplianceAssetId' is read-only
+// Intercepta QUALQUER chamada PATCH/POST à lista Valores e remove campos read-only
+(function(){
+  const READONLY = [
+    "ComplianceAssetId","@odata.etag","@odata.type","@odata.context",
+    "id","ID","Created","Modified","Author","Editor","AuthorId","EditorId",
+    "FileSystemObjectType","ContentTypeId","_UIVersionString","_UIVersion",
+    "Attachments","CheckoutUser","ServerRedirectedEmbedUri",
+    "ServerRedirectedEmbedUrl","GUID","UniqueId","owshiddenversion",
+    "AppAuthor","AppEditor","DocIcon","LinkTitle","LinkTitleNoMenu",
+    "Edit","SelectTitle","SelectFilename","ItemChildCount","FolderChildCount"
+  ];
 
+  function stripReadOnly(obj){
+    if(!obj || typeof obj !== "object") return obj;
+    return Object.fromEntries(
+      Object.entries(obj).filter(([k]) =>
+        !READONLY.includes(k) && !k.startsWith("@") && !k.startsWith("OData_")
+      )
+    );
+  }
+
+  // Monkey-patch do fetch global: intercepta só chamadas ao Graph para listas SharePoint
+  const _fetch = window.fetch;
+  window.fetch = async function(url, opts){
+    if(
+      opts &&
+      opts.body &&
+      typeof url === "string" &&
+      url.includes("graph.microsoft.com") &&
+      url.includes("/fields") &&
+      (opts.method === "PATCH" || opts.method === "POST")
+    ){
+      try{
+        let body = JSON.parse(opts.body);
+        // PATCH de fields: body é o objeto direto
+        // POST de items: body tem {fields: {...}}
+        if(body && body.fields){
+          body.fields = stripReadOnly(body.fields);
+        } else {
+          body = stripReadOnly(body);
+        }
+        opts = Object.assign({}, opts, { body: JSON.stringify(body) });
+      }catch(e){}
+    }
+    return _fetch.call(this, url, opts);
+  };
+
+  console.log("[HOMY V27] fetch interceptor instalado — ComplianceAssetId removido automaticamente.");
+})();
+  
+</script>
 </body>
 
 </html>
