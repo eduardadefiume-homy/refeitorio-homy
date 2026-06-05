@@ -1,201 +1,150 @@
-// ============================================================
-// admin-operacao-dia.js — Operação diária da Luana/cozinha
-// Regra: travar pendentes como Principal
-// ============================================================
+// admin-operacao-dia.js — Operação do Dia do Admin Homy
 
-window.AdminOperacaoDia = window.AdminOperacaoDia || {};
+const AdminOperacao = window.AdminOperacao = {
 
-Object.assign(window.AdminOperacaoDia, {
-  diasSemana: ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"],
+  _lista: [],
 
-  initTravaPendentes() {
-    this.inserirControleTravaPendentes();
-
-    document.addEventListener("click", e => {
-      const item = e.target.closest(".nav-item, [onclick], button, a");
-      if (!item) return;
-
-      const texto = `${item.innerText || ""} ${item.getAttribute("onclick") || ""}`.toLowerCase();
-
-      if (texto.includes("dashboard")) {
-        setTimeout(() => this.inserirControleTravaPendentes(), 300);
-      }
-    });
+  async load(semanaId) {
+    this._bindControles(semanaId);
+    await this._carregar(semanaId);
   },
 
-  estaNoDashboard() {
-    const ativo = document.querySelector(".module.active, .nav-item.active");
-    const textoAtivo = (ativo?.innerText || "").toLowerCase();
-
-    if (textoAtivo.includes("dashboard")) return true;
-
-    const titulo = document.querySelector(".topbar-title, h1, h2");
-    const textoTitulo = (titulo?.innerText || "").toLowerCase();
-
-    return textoTitulo.includes("dashboard");
-  },
-
-  inserirControleTravaPendentes() {
-    if (!this.estaNoDashboard()) return;
-    if (document.getElementById("controleTravaPendentes")) return;
-
-    const avisoSemana =
-      Array.from(document.querySelectorAll("div,span,p")).find(el =>
-        (el.innerText || "").includes("Semana atual")
-      );
-
-    const box = document.createElement("div");
-    box.id = "controleTravaPendentes";
-    box.style.cssText = `
-      margin: 1rem 0;
-      padding: 1rem;
-      border: 1px solid rgba(192,40,28,.35);
-      border-radius: 12px;
-      background: rgba(192,40,28,.08);
-      display: grid;
-      grid-template-columns: 220px 1fr auto;
-      gap: .8rem;
-      align-items: end;
-    `;
-
-    box.innerHTML = `
-      <div class="form-group">
-        <label class="form-label">DIA PARA TRAVAR</label>
-        <select id="diaTravaPendentes" class="form-select">
-          <option value="Segunda">Segunda</option>
-          <option value="Terça">Terça</option>
-          <option value="Quarta">Quarta</option>
-          <option value="Quinta">Quinta</option>
-          <option value="Sexta">Sexta</option>
-        </select>
-      </div>
-
-      <div style="font-size:.78rem;color:#ffcf8a;line-height:1.45;">
-        Quando o prazo de marcação acabar, a Luana pode travar os pendentes.
-        Quem não marcou será preenchido automaticamente como <b>Principal</b>.
-      </div>
-
-      <button type="button" class="btn-danger" onclick="AdminOperacaoDia.confirmarTravaPendentes()">
-        🔒 Travar pendentes como Principal
-      </button>
-    `;
-
-    if (avisoSemana) {
-      avisoSemana.insertAdjacentElement("afterend", box);
-    } else {
-      const content = document.querySelector(".content") || document.querySelector("main") || document.body;
-      content.appendChild(box);
-    }
-  },
-
-  obterSemanaAtual() {
-    if (typeof getSemanaId === "function") return getSemanaId();
-
-    const texto = document.body.innerText || "";
-    const match = texto.match(/(\d{4}-W\d{1,2})/i);
-
-    if (match) return match[1];
-
-    const hoje = new Date();
-    const semana = this.numeroSemanaISO(hoje);
-    return `${hoje.getFullYear()}-W${String(semana).padStart(2, "0")}`;
-  },
-
-  numeroSemanaISO(data) {
-    const d = new Date(Date.UTC(data.getFullYear(), data.getMonth(), data.getDate()));
-    const dia = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dia);
-    const anoInicio = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d - anoInicio) / 86400000) + 1) / 7);
-  },
-
-  async confirmarTravaPendentes() {
-    const dia = document.getElementById("diaTravaPendentes")?.value || "Segunda";
-    const semanaId = this.obterSemanaAtual();
-
-    const ok = confirm(
-      `Confirmar trava dos pendentes?\n\n` +
-      `Semana: ${semanaId}\n` +
-      `Dia: ${dia}\n\n` +
-      `Todos os colaboradores ativos sem marcação neste dia serão preenchidos como Principal.`
-    );
-
-    if (!ok) return;
+  async _carregar(semanaId) {
+    const tbody = document.getElementById("operacaoTable");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Carregando...</td></tr>`;
 
     try {
-      const total = await this.travarPendentesComoPrincipal(semanaId, dia);
-      alert(`${total} pendente(s) preenchido(s) como Principal para ${dia}.`);
-      location.reload();
-    } catch (erro) {
-      console.error("Erro ao travar pendentes:", erro);
-      alert(`Erro ao travar pendentes: ${erro.message || erro}`);
+      await SP.init();
+      const dia        = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
+      const pedidos    = await SP.getPedidos(semanaId);
+      const norm       = v => AdminUtils.norm(v);
+
+      // Remove duplicatas de extra automático (mantém só 1 por dia)
+      const seenAuto   = new Set();
+      this._lista = pedidos.filter(p => {
+        if (norm(SP.pick(p, "Dia")) !== norm(dia)) return false;
+        if (SP.isExtraPedido(p)) {
+          const k = `auto-${norm(SP.pick(p, "Dia"))}`;
+          if (seenAuto.has(k)) return false;
+          seenAuto.add(k);
+        }
+        return true;
+      });
+
+      this._renderTotais();
+      this._renderTabela();
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
     }
   },
 
-  async travarPendentesComoPrincipal(semanaId, dia) {
-    if (!window.SP) throw new Error("SP não encontrado.");
+  _renderTotais() {
+    const norm = v => AdminUtils.norm(v);
+    const STATUS_PROD = ["confirmado", "extra", "aprovado"];
+    const STATUS_CANC = ["cancelado", "afastado", "ferias", "nao vai almocar", "bloqueado", "travado"];
+    const isConf = p => STATUS_PROD.includes(norm(SP.pick(p, "Status") || "")) || SP.isTrue(SP.pick(p, "Confirmado"));
+    const isCanc = p => STATUS_CANC.includes(norm(SP.pick(p, "Status") || ""));
 
-    const colaboradores = await (SP.getTodosColaboradores ? SP.getTodosColaboradores() : SP.getColaboradores());
-    const pedidosSemana = await SP.getPedidos(semanaId);
-
-    const ativos = colaboradores.filter(c => {
-      const ativo = SP.isTrue ? SP.isTrue(c.Ativo) : String(c.Ativo).toLowerCase() !== "false";
-      return ativo;
-    });
-
-    let criados = 0;
-
-    for (const c of ativos) {
-      const colaboradorId = String(c.id);
-
-      const jaTemPedido = pedidosSemana.some(p =>
-        String(p.Colaborador_id) === colaboradorId &&
-        this.normalizar(p.Dia) === this.normalizar(dia)
-      );
-
-      if (jaTemPedido) continue;
-
-      await SP.savePedido(
-        semanaId,
-        colaboradorId,
-        c.Nome || c.Title || "",
-        dia,
-        "Principal",
-        "Principal"
-      );
-
-      const pedidosColaborador = await SP.getPedidoColaborador(semanaId, colaboradorId);
-
-      const pedidoCriado = pedidosColaborador.find(p =>
-        this.normalizar(p.Dia) === this.normalizar(dia)
-      );
-
-      if (pedidoCriado) {
-        await SP.updatePedido(pedidoCriado.id, {
-          Centro_Custo: c.Centro_Custo || "",
-          Status: "Confirmado",
-          Confirmado: true,
-          Origem: "Admin",
-          Observacao: "Preenchido automaticamente após prazo de marcação.",
-          Alterado_Por: SP.getUserEmail ? SP.getUserEmail() : ""
-        });
-      }
-
-      criados++;
-    }
-
-    return criados;
+    AdminUtils.setTxt("opTotalConfirmado", this._lista.filter(isConf).length);
+    AdminUtils.setTxt("opTotalPrincipal",  this._lista.filter(p => isConf(p) && norm(SP.pick(p, "Opcao")) === "principal").length);
+    AdminUtils.setTxt("opTotalLight",      this._lista.filter(p => isConf(p) && norm(SP.pick(p, "Opcao")) === "light").length);
+    AdminUtils.setTxt("opTotalCancelado",  this._lista.filter(isCanc).length);
   },
 
-  normalizar(valor) {
-    return String(valor || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
+  _renderTabela() {
+    const tbody      = document.getElementById("operacaoTable");
+    if (!tbody) return;
+
+    const statusFiltro = AdminUtils.norm(AdminUtils.getVal("operacaoFiltroStatus"));
+    const busca        = AdminUtils.norm(AdminUtils.getVal("operacaoBusca"));
+    const norm         = v => AdminUtils.norm(v);
+
+    let lista = this._lista;
+    if (statusFiltro) lista = lista.filter(p => norm(SP.pick(p, "Status") || "") === statusFiltro);
+    if (busca) lista = lista.filter(p =>
+      norm([SP.pick(p, "Colaborador_nome"), SP.pick(p, "Centro_Custo")].join(" ")).includes(busca)
+    );
+
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Nenhum pedido encontrado.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = lista.map(p => {
+      const id     = AdminUtils.esc(p.id || "");
+      const nome   = AdminUtils.esc(SP.pick(p, "Colaborador_nome") || "—");
+      const cc     = AdminUtils.esc(SP.pick(p, "Centro_Custo")     || "—");
+      const opcao  = AdminUtils.esc(SP.pick(p, "Opcao")            || "—");
+      const prato  = AdminUtils.esc(SP.pick(p, "Nome_Prato")       || "—");
+      const status = SP.pick(p, "Status") || "Pendente";
+      const origem = AdminUtils.esc(SP.pick(p, "Origem", "tipo")   || "Refeitório");
+      const isEx   = SP.isExtraPedido(p);
+      return `<tr>
+        <td${isEx ? ' style="color:#ffd36d;font-weight:700"' : ""}>${nome}</td>
+        <td>${cc}</td>
+        <td><span class="badge badge-blue">${opcao}</span></td>
+        <td>${prato}</td>
+        <td>${AdminUtils.badge(status)}</td>
+        <td>${origem}</td>
+        <td><div class="table-actions">
+          <button class="btn-icon" title="Confirmar"     onclick="AdminOperacao.alterarStatus('${id}','Confirmado')">✅</button>
+          <button class="btn-icon danger" title="Cancelar" onclick="AdminOperacao.alterarStatus('${id}','Cancelado')">❌</button>
+          <button class="btn-icon" title="Não vai almoçar" onclick="AdminOperacao.alterarStatus('${id}','Não vai almoçar')">🚫</button>
+          <button class="btn-icon danger" title="Excluir"  onclick="AdminOperacao.excluir('${id}')">🗑️</button>
+        </div></td>
+      </tr>`;
+    }).join("");
+  },
+
+  async alterarStatus(id, status) {
+    if (!id) return;
+    try {
+      await SP.init();
+      await SP.updatePedido(id, {
+        Status:       status,
+        Confirmado:   ["Confirmado", "Extra"].includes(status),
+        Alterado_Por: SP.getUserName(),
+        Origem:       "Admin"
+      });
+      AdminUtils.toast(`Status: ${status}`, "success");
+      // Atualiza localmente sem recarregar tudo
+      const p = this._lista.find(x => String(x.id) === String(id));
+      if (p) { p.Status = status; p.Confirmado = ["Confirmado", "Extra"].includes(status); }
+      this._renderTotais();
+      this._renderTabela();
+    } catch (e) {
+      AdminUtils.toast("Erro: " + e.message, "error");
+    }
+  },
+
+  async excluir(id) {
+    if (!confirm("Excluir este pedido da operação?")) return;
+    try {
+      await SP.init();
+      await SP.deletePedido(id);
+      this._lista = this._lista.filter(p => String(p.id) !== String(id));
+      this._renderTotais();
+      this._renderTabela();
+      AdminUtils.toast("Pedido excluído.", "success");
+    } catch (e) {
+      AdminUtils.toast("Erro: " + e.message, "error");
+    }
+  },
+
+  _bindControles(semanaId) {
+    const bind = (id, ev, fn) => {
+      const el = document.getElementById(id);
+      if (el && !el.dataset.boundOp) { el.dataset.boundOp = "1"; el.addEventListener(ev, fn); }
+    };
+
+    // Inicializa dia com o dia de hoje
+    const diaEl = document.getElementById("operacaoDia");
+    if (diaEl && !diaEl.dataset.boundOp) diaEl.value = AdminUtils.DIA_HOJE();
+
+    bind("operacaoDia",           "change", () => this._carregar(semanaId));
+    bind("operacaoFiltroStatus",  "change", () => this._renderTabela());
+    bind("operacaoBusca",         "input",  () => this._renderTabela());
+    bind("btnRecarregarOperacao", "click",  () => this._carregar(semanaId));
   }
-});
-
-document.addEventListener("DOMContentLoaded", () => {
-  setTimeout(() => AdminOperacaoDia.initTravaPendentes(), 800);
-});
+};
