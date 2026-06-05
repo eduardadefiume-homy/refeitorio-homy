@@ -1,304 +1,202 @@
-// ============================================================
-// admin-colaboradores.js — Correção definitiva Editar x Novo
-// ============================================================
+// admin-colaboradores.js — Colaboradores do Admin Homy
 
-window.AdminColaboradores = {
-  lista: [],
-  editandoId: null,
+const AdminColaboradores = window.AdminColaboradores = {
 
-  async carregar() {
+  _lista: [],
+  _editandoId: null,
+
+  async load() {
+    await this._carregar();
+    this._bindBotoes();
+  },
+
+  async _carregar() {
+    const tbody = document.getElementById("colabTable") || document.getElementById("colaboradoresTableBody");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-cell">Carregando...</td></tr>`;
+
     try {
-      if (!window.SP) throw new Error("SP não encontrado.");
-
-      const getFn = typeof SP.getTodosColaboradores === "function"
-        ? "getTodosColaboradores"
-        : "getColaboradores";
-
-      this.lista = await SP[getFn]();
-      this.renderizarTabela();
-    } catch (erro) {
-      console.error("Erro ao carregar colaboradores:", erro);
-      this.renderizarMensagem(`Erro ao carregar colaboradores: ${erro.message || erro}`, true);
+      await SP.init();
+      this._lista = await SP.getTodosColaboradores();
+      this._render();
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
     }
   },
 
-  encontrarTbody() {
-    return (
-      document.getElementById("colaboradoresTableBody") ||
-      document.getElementById("tbodyColaboradores") ||
-      document.querySelector("[data-colaboradores-tbody]") ||
-      document.querySelector("#colaboradores tbody") ||
-      document.querySelector("#module-colaboradores tbody") ||
-      Array.from(document.querySelectorAll("tbody")).find(tb =>
-        (tb.innerText || "").toLowerCase().includes("colaborador")
-      )
-    );
-  },
-
-  renderizarMensagem(msg, erro = false) {
-    const tbody = this.encontrarTbody();
+  _render() {
+    const tbody = document.getElementById("colabTable") || document.getElementById("colaboradoresTableBody");
     if (!tbody) return;
 
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="6" style="text-align:center;${erro ? "color:#ff6060;" : "opacity:.55;"}padding:2rem;">
-          ${msg}
-        </td>
-      </tr>
-    `;
-  },
+    const busca = AdminUtils.norm(AdminUtils.getVal("searchColab"));
+    const lista = busca
+      ? this._lista.filter(c => AdminUtils.norm([SP.pick(c, "Nome", "Title"), SP.pick(c, "Departamento")].join(" ")).includes(busca))
+      : this._lista;
 
-  renderizarTabela() {
-    const tbody = this.encontrarTbody();
-    if (!tbody) return;
-
-    const busca = this.normalizar(document.getElementById("buscaColaborador")?.value || "");
-
-    const filtrados = this.lista.filter(c => {
-      const nome = this.normalizar(c.Nome || c.Title || "");
-      const departamento = this.normalizar(c.Departamento || "");
-      const centro = this.normalizar(c.Centro_Custo || "");
-      const email = this.normalizar(c.Email || "");
-      return !busca || nome.includes(busca) || departamento.includes(busca) || centro.includes(busca) || email.includes(busca);
-    });
-
-    if (!filtrados.length) {
-      this.renderizarMensagem("Nenhum colaborador encontrado.");
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-cell">Nenhum colaborador encontrado.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = filtrados.map(c => {
-      const ativo = typeof SP.isTrue === "function"
-        ? SP.isTrue(c.Ativo)
-        : String(c.Ativo).toLowerCase() !== "false";
-
-      return `
-        <tr data-colaborador-id="${c.id}">
-          <td>${this.escape(c.Nome || c.Title || "")}</td>
-          <td>${this.escape(c.Departamento || "")}</td>
-          <td>${this.escape(c.Centro_Custo || "-")}</td>
-          <td><span class="badge badge-blue">${this.escape(c.tipo || c.Tipo || "Colaborador")}</span></td>
-          <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${ativo ? "ATIVO" : "INATIVO"}</span></td>
-          <td>
-            <div class="table-actions">
-              <button type="button" class="btn-icon" title="Editar" onclick="AdminColaboradores.abrirEditar('${c.id}')">✏️</button>
-              <button type="button" class="btn-icon danger" title="Excluir" onclick="AdminColaboradores.excluir('${c.id}')">🗑️</button>
-            </div>
-          </td>
-        </tr>
-      `;
+    tbody.innerHTML = lista.map(c => {
+      const id    = AdminUtils.esc(c.id || "");
+      const nome  = AdminUtils.esc(SP.pick(c, "Nome", "Title")       || "—");
+      const dept  = AdminUtils.esc(SP.pick(c, "Departamento")        || "—");
+      const tipo  = AdminUtils.esc(SP.pick(c, "tipo")                || "Colaborador");
+      const ativo = SP.isTrue(SP.pick(c, "Ativo"));
+      return `<tr>
+        <td>${nome}</td>
+        <td>${dept}</td>
+        <td><span class="badge badge-blue">${tipo}</span></td>
+        <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${ativo ? "Ativo" : "Inativo"}</span></td>
+        <td><div class="table-actions">
+          <button class="btn-icon" title="Editar"     onclick="AdminColaboradores.abrirEdicao('${id}')">✏️</button>
+          <button class="btn-icon danger" title="Desativar" onclick="AdminColaboradores.desativar('${id}')">🗑️</button>
+        </div></td>
+      </tr>`;
     }).join("");
   },
 
-  normalizar(valor) {
-    return String(valor || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
-  },
-
-  escape(valor) {
-    return String(valor ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  },
-
-  setEditandoId(id) {
-    this.editandoId = id ? String(id) : null;
-    window.__colaboradorEditandoId = this.editandoId;
-
-    const hidden = document.getElementById("colabEditandoId");
-    if (hidden) hidden.value = this.editandoId || "";
-
-    const modal = this.getModal();
-    if (modal) modal.dataset.editandoId = this.editandoId || "";
-  },
-
-  getEditandoId() {
-    const hidden = document.getElementById("colabEditandoId")?.value || "";
-    const modalId = this.getModal()?.dataset?.editandoId || "";
-    return this.editandoId || window.__colaboradorEditandoId || hidden || modalId || null;
-  },
-
+  // ── Modal ────────────────────────────────────────────────────
   abrirNovo() {
-    this.setEditandoId(null);
-    this.preencherModal({});
-    this.setTituloModal("NOVO COLABORADOR");
-    this.abrirModal();
+    this._editandoId = null;
+    this._limparModal();
+    const t = document.querySelector("#modalColaborador .modal-title");
+    if (t) t.textContent = "Novo colaborador";
+    AdminUtils.openModal("modalColaborador");
+    setTimeout(() => document.getElementById("colabNome")?.focus(), 80);
   },
 
-  abrirEditar(id) {
-    const c = this.lista.find(x => String(x.id) === String(id));
+  abrirEdicao(id) {
+    this._editandoId = id;
+    const c = this._lista.find(x => String(x.id) === String(id));
+    if (!c) { AdminUtils.toast("Colaborador não encontrado.", "error"); return; }
 
-    if (!c) {
-      alert("Colaborador não encontrado para edição.");
-      return;
-    }
+    AdminUtils.setVal("colabNome",         SP.pick(c, "Nome", "Title")    || "");
+    AdminUtils.setVal("colabDepartamento", SP.pick(c, "Departamento")     || "");
+    AdminUtils.setVal("colabCentroCusto",  SP.pick(c, "Centro_Custo")     || "");
+    AdminUtils.setVal("colabEmail",        SP.pick(c, "Email")            || "");
+    AdminUtils.setVal("colabTipo",         SP.pick(c, "tipo")             || "colaborador");
 
-    this.setEditandoId(id);
-    this.preencherModal(c);
-    this.setTituloModal("EDITAR COLABORADOR");
-    this.abrirModal();
+    const t = document.querySelector("#modalColaborador .modal-title");
+    if (t) t.textContent = "Editar colaborador";
+    AdminUtils.openModal("modalColaborador");
   },
 
-  getModal() {
-    return (
-      document.getElementById("modalColaborador") ||
-      document.getElementById("modalNovoColaborador")
-    );
-  },
-
-  abrirModal() {
-    const modal = this.getModal();
-    if (modal) modal.classList.add("open");
-  },
-
-  fecharModal() {
-    const modal = this.getModal();
-    if (modal) modal.classList.remove("open");
-    this.setEditandoId(null);
-  },
-
-  setTituloModal(texto) {
-    const titulo =
-      document.getElementById("modalColaboradorTitulo") ||
-      document.querySelector("#modalColaborador .modal-title") ||
-      document.querySelector("#modalNovoColaborador .modal-title") ||
-      Array.from(document.querySelectorAll(".modal-title,h2,h3")).find(el =>
-        (el.innerText || "").toUpperCase().includes("COLABORADOR")
-      );
-
-    if (titulo) titulo.textContent = texto;
-  },
-
-  preencherModal(c) {
-    this.setCampo(["colabNome", "nomeColaborador"], c.Nome || c.Title || "");
-    this.setCampo(["colabDepartamento", "departamentoColaborador"], c.Departamento || "");
-    this.setCampo(["colabEmail", "emailColaborador"], c.Email || "");
-    this.setCampo(["colabTipo", "tipoColaborador"], c.tipo || c.Tipo || "Colaborador");
-    this.setCampo(["colabCentroCusto", "centroCustoColaborador"], c.Centro_Custo || "");
-  },
-
-  setCampo(ids, valor) {
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el) {
-        el.value = valor || "";
-        return;
-      }
-    }
-  },
-
-  getCampo(ids) {
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el) return el.value.trim();
-    }
-    return "";
-  },
-
-  obterDadosFormulario() {
-    const centroCusto = this.getCampo(["colabCentroCusto", "centroCustoColaborador"]);
-
-    return {
-      nome: this.getCampo(["colabNome", "nomeColaborador"]),
-      departamento: this.getCampo(["colabDepartamento", "departamentoColaborador"]),
-      email: this.getCampo(["colabEmail", "emailColaborador"]),
-      tipo: this.getCampo(["colabTipo", "tipoColaborador"]) || "Colaborador",
-      centroCusto,
-      Centro_Custo: centroCusto
-    };
+  _limparModal() {
+    ["colabNome", "colabDepartamento", "colabCentroCusto", "colabEmail"].forEach(id => AdminUtils.setVal(id, ""));
+    AdminUtils.setVal("colabTipo", "colaborador");
   },
 
   async salvar() {
+    const nome        = AdminUtils.getVal("colabNome");
+    const departamento = AdminUtils.getVal("colabDepartamento");
+    const centroCusto  = AdminUtils.getVal("colabCentroCusto");
+    const email        = AdminUtils.getVal("colabEmail");
+    const tipo         = AdminUtils.getVal("colabTipo") || "colaborador";
+
+    if (!nome) { AdminUtils.toast("Informe o nome.", "error"); return; }
+
     try {
-      const dados = this.obterDadosFormulario();
-      const idEdicao = this.getEditandoId();
-
-      if (!dados.nome) {
-        alert("Informe o nome do colaborador.");
-        return;
-      }
-
-      if (!dados.centroCusto) {
-        alert("Informe o Centro de Custo do colaborador.");
-        return;
-      }
-
-      if (idEdicao) {
-        await SP.updateColaborador(idEdicao, dados);
-        alert("Colaborador atualizado com sucesso.");
+      await SP.init();
+      if (this._editandoId) {
+        await SP.updateColaborador(this._editandoId, { nome, departamento, centroCusto, email, tipo });
+        AdminUtils.toast("Colaborador atualizado.", "success");
       } else {
-        await SP.createColaborador(dados);
-        alert("Colaborador cadastrado com sucesso.");
+        await SP.createColaborador({ nome, departamento, centroCusto, email, tipo });
+        AdminUtils.toast("Colaborador cadastrado.", "success");
       }
-
-      this.fecharModal();
-      await this.carregar();
-    } catch (erro) {
-      console.error("Erro ao salvar colaborador:", erro);
-      alert(`Erro ao salvar colaborador: ${erro.message || erro}`);
+      AdminUtils.closeModal("modalColaborador");
+      this._editandoId = null;
+      await this._carregar();
+    } catch (e) {
+      AdminUtils.toast("Erro ao salvar: " + e.message, "error");
     }
   },
 
-  async excluir(id) {
-    const colaborador = this.lista.find(x => String(x.id) === String(id));
-    const nome = colaborador ? (colaborador.Nome || colaborador.Title || "") : "";
+  async desativar(id) {
+    if (!confirm("Desativar este colaborador?")) return;
+    try {
+      await SP.init();
+      await SP.desativarColaborador(id);
+      const c = this._lista.find(x => String(x.id) === String(id));
+      if (c) c.Ativo = false;
+      this._render();
+      AdminUtils.toast("Colaborador desativado.", "success");
+    } catch (e) {
+      AdminUtils.toast("Erro: " + e.message, "error");
+    }
+  },
 
-    const ok = confirm(
-      `Deseja EXCLUIR definitivamente este colaborador${nome ? `: ${nome}` : ""}?\n\n` +
-      "Use isto somente para cadastros duplicados ou criados por engano."
-    );
-
-    if (!ok) return;
+  // ── Importação Excel ─────────────────────────────────────────
+  async importarExcel(file) {
+    if (!file) return;
+    if (typeof XLSX === "undefined") { AdminUtils.toast("Biblioteca XLSX não carregou.", "error"); return; }
 
     try {
-      if (typeof SP.deleteColaborador === "function") {
-        await SP.deleteColaborador(id);
-      } else {
-        await SP.deleteItem("Colaboradores", id);
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: "array" });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+
+      const norm = v => AdminUtils.norm(v).replace(/[^a-z0-9]/g, "");
+      const get  = (row, ...names) => {
+        const keys = Object.keys(row);
+        for (const n of names) {
+          const k = keys.find(k => norm(k) === norm(n));
+          if (k && String(row[k]).trim()) return String(row[k]).trim();
+        }
+        return "";
+      };
+
+      const lista = rows.map(row => ({
+        nome:         get(row, "Nome", "Colaborador", "Funcionario", "Nome completo"),
+        departamento: get(row, "Departamento", "Setor", "Area"),
+        centroCusto:  get(row, "Centro_Custo", "Centro de Custo", "CC"),
+        email:        get(row, "Email", "E-mail", "Mail"),
+        tipo:         get(row, "tipo", "Tipo") || "colaborador"
+      })).filter(c => c.nome);
+
+      if (!lista.length) { AdminUtils.toast("Nenhum colaborador encontrado na planilha.", "error"); return; }
+      if (!confirm(`${lista.length} colaboradores encontrados. Importar?`)) return;
+
+      await SP.init();
+      let ok = 0, falhas = 0;
+      for (const c of lista) {
+        try { await SP.createColaborador(c); ok++; }
+        catch (e) { console.warn("Falha:", c, e); falhas++; }
       }
 
-      await this.carregar();
-      alert("Colaborador excluído com sucesso.");
-    } catch (erro) {
-      console.error("Erro ao excluir colaborador:", erro);
-      alert(`Erro ao excluir colaborador: ${erro.message || erro}`);
+      AdminUtils.toast(`Importados: ${ok}${falhas ? ` / ${falhas} falhas` : ""}.`, falhas ? "error" : "success");
+      await this._carregar();
+    } catch (e) {
+      AdminUtils.toast("Erro ao importar: " + e.message, "error");
     }
+  },
+
+  // ── Bindings ─────────────────────────────────────────────────
+  _bindBotoes() {
+    const bind = (id, ev, fn) => {
+      const el = document.getElementById(id);
+      if (el && !el.dataset.boundCol) { el.dataset.boundCol = "1"; el.addEventListener(ev, fn); }
+    };
+
+    bind("btnNovoColaborador",   "click",  () => this.abrirNovo());
+    bind("salvarColaborador",    "click",  () => this.salvar());
+    bind("cancelarColaborador",  "click",  () => AdminUtils.closeModal("modalColaborador"));
+    bind("searchColab",          "input",  () => this._render());
+
+    bind("btnImportarExcel", "click", () => {
+      const inp = document.getElementById("excelInput") || document.getElementById("inputImportarColaboradoresExcel");
+      if (inp) { inp.value = ""; inp.click(); }
+    });
+
+    const excelInputs = ["excelInput", "inputImportarColaboradoresExcel"];
+    excelInputs.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && !el.dataset.boundCol) {
+        el.dataset.boundCol = "1";
+        el.addEventListener("change", () => this.importarExcel(el.files[0]));
+      }
+    });
   }
 };
-
-// Compatibilidade com funções antigas do HTML
-window.abrirModalColaborador = () => AdminColaboradores.abrirNovo();
-window.salvarColaborador = () => AdminColaboradores.salvar();
-window.carregarColaboradores = () => AdminColaboradores.carregar();
-window.fecharModalColaborador = () => AdminColaboradores.fecharModal();
-
-document.addEventListener("click", function(e) {
-  const alvo = e.target.closest("[onclick], .nav-item, button, a");
-  if (!alvo) return;
-
-  const texto = `${alvo.innerText || ""} ${alvo.getAttribute("onclick") || ""}`.toLowerCase();
-
-  if (texto.includes("colaboradores")) {
-    setTimeout(() => AdminColaboradores.carregar(), 250);
-  }
-});
-
-document.addEventListener("input", function(e) {
-  if (e.target && e.target.id === "buscaColaborador") {
-    AdminColaboradores.renderizarTabela();
-  }
-});
-
-document.addEventListener("DOMContentLoaded", function() {
-  setTimeout(() => {
-    if (document.body.innerText.toLowerCase().includes("colaboradores")) {
-      AdminColaboradores.carregar();
-    }
-  }, 1000);
-});
