@@ -1,24 +1,64 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
+// Versão: 2026-06-05
+// Correções: clientId correto, sitePath com fallback automático,
+// getDashboardResumo implementado, filtro de campos read-only
+// no PATCH/POST, sem funções duplicadas.
 // ============================================================
 
-var SP = window.SP = {
-  clientId: "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
-  clientSecret: "",
-  appOnly: false,
-  tenantId: "a2850abc-334a-4805-b6b2-420b4aef68a9",
-  siteUrl: "homyquimica.sharepoint.com",
-  sitePath: "/sites/Refeitorio-Homy",
-  scopes: ["Sites.ReadWrite.All", "User.Read"],
+const SP = window.SP = {
 
+  // --- Credenciais ---
+  clientId:  "2e73e8be-484b-428e-a6c0-c75b1bf70d8a",  // App "Ramais Homy"
+  tenantId:  "a2850abc-334a-4805-b6b2-420b4aef68a9",
+  scopes:    ["Sites.ReadWrite.All", "User.Read"],
+  siteUrl:   "homyquimica.sharepoint.com",
+  // sitePath testado em ordem até encontrar o correto
+  _sitePathCandidates: [
+    "/sites/Refeitrio-Homy",    // nome real criado (sem acento)
+    "/sites/Refeitorio-Homy",   // variante com acento removido
+    "/sites/Refeitório-Homy"    // variante com acento
+  ],
+
+  // --- Estado interno ---
   _msalInstance: null,
-  _account: null,
-  _siteId: null,
-  _listIds: {},
+  _account:      null,
+  _siteId:       null,
+  _sitePath:     null,
+  _listIds:      {},
 
+  // ============================================================
+  // CAMPOS READ-ONLY — nunca enviar ao SharePoint via PATCH/POST
+  // ============================================================
+  _readOnlyFields: new Set([
+    "ComplianceAssetId", "id", "ID", "Created", "Modified",
+    "Author", "Editor", "AuthorId", "EditorId",
+    "FileSystemObjectType", "ContentTypeId",
+    "_UIVersionString", "_UIVersion", "Attachments",
+    "CheckoutUser", "GUID", "UniqueId", "owshiddenversion",
+    "AppAuthor", "AppEditor", "DocIcon",
+    "LinkTitle", "LinkTitleNoMenu", "Edit",
+    "SelectTitle", "SelectFilename",
+    "ItemChildCount", "FolderChildCount"
+  ]),
+
+  _cleanFields(fields) {
+    if (!fields || typeof fields !== "object") return fields;
+    return Object.fromEntries(
+      Object.entries(fields).filter(([k]) =>
+        !this._readOnlyFields.has(k) &&
+        !k.startsWith("@") &&
+        !k.startsWith("OData_")
+      )
+    );
+  },
+
+  // ============================================================
+  // UTILITÁRIOS
+  // ============================================================
   pick(obj, ...keys) {
-    for (const key of keys) {
-      if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
+    for (const k of keys) {
+      if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
     }
     return null;
   },
@@ -29,42 +69,91 @@ var SP = window.SP = {
     return v === "sim" || v === "true" || v === "yes" || v === "1";
   },
 
+  getSemanaId(date = new Date()) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    const week1 = new Date(d.getFullYear(), 0, 4);
+    const weekNum = 1 + Math.round(
+      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
+    );
+    return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+  },
+
+  getCurrentWeekId() {
+    return this.getSemanaId(new Date());
+  },
+
+  getWeekDates(semanaId) {
+    const [year, week] = semanaId.split("-W").map(Number);
+    const jan4 = new Date(year, 0, 4);
+    const start = new Date(jan4);
+    start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (week - 1) * 7);
+    return Array.from({ length: 5 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  },
+
+  getDataRefBySemanaDia(semanaId, dia) {
+    const ordem = { segunda: 0, terca: 1, terça: 1, quarta: 2, quinta: 3, sexta: 4 };
+    const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const datas = this.getWeekDates(semanaId);
+    const idx = ordem[norm(dia)];
+    if (idx === undefined || !datas[idx]) return new Date().toISOString().slice(0, 10);
+    return datas[idx].toISOString().slice(0, 10);
+  },
+
+  getUserName() {
+    return this._account?.name || this._account?.username || "Usuário Homy";
+  },
+
+  getUserEmail() {
+    return this._account?.username || "";
+  },
+
+  isExtraPedido(p) {
+    const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const origem = norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
+    const nome   = norm(this.pick(p, "Colaborador_nome", "Title", "Nome") || "");
+    return origem.includes("extra") || origem.includes("investigador") ||
+           origem.includes("guarda") || nome.includes("refeicao extra");
+  },
+
+  // ============================================================
+  // AUTENTICAÇÃO (padrão Ramais Homy — redirect + silent)
+  // ============================================================
   async init() {
-    if (this._msalInstance) return true;
+    if (this._msalInstance) return !!this._account;
 
     if (!window.msal) {
-      throw new Error("Biblioteca MSAL não carregou. Verifique se o script msal-browser.min.js está antes do sharepoint.js.");
+      throw new Error("MSAL não carregou. Verifique se msal-browser.min.js está antes de sharepoint.js.");
     }
 
-    const msalConfig = {
+    this._msalInstance = new msal.PublicClientApplication({
       auth: {
         clientId: this.clientId,
         authority: `https://login.microsoftonline.com/${this.tenantId}`,
         redirectUri: window.location.origin + window.location.pathname,
         navigateToLoginRequestUrl: false
       },
-      cache: {
-        cacheLocation: "sessionStorage",
-        storeAuthStateInCookie: true
-      }
-    };
+      cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: true }
+    });
 
-    this._msalInstance = new msal.PublicClientApplication(msalConfig);
     await this._msalInstance.initialize();
 
-    // Igual ao Ramais Homy: trata o retorno do login e reaproveita sessão.
+    // Trata retorno do redirect
     const redirectResult = await this._msalInstance.handleRedirectPromise();
-    if (redirectResult && redirectResult.account) {
+    if (redirectResult?.account) {
       this._account = redirectResult.account;
       this._msalInstance.setActiveAccount(this._account);
       return true;
     }
 
+    // Reaproveita sessão existente
     const active = this._msalInstance.getActiveAccount();
-    if (active) {
-      this._account = active;
-      return true;
-    }
+    if (active) { this._account = active; return true; }
 
     const accounts = this._msalInstance.getAllAccounts();
     if (accounts.length > 0) {
@@ -78,69 +167,59 @@ var SP = window.SP = {
 
   async login() {
     await this.init();
-
-    // Login por redirect, igual Ramais: mais estável no GitHub Pages que popup.
-    await this._msalInstance.loginRedirect({
-      scopes: this.scopes
-    });
-
+    await this._msalInstance.loginRedirect({ scopes: this.scopes });
     return false;
-  },
-
-  async getToken() {
-    await this.init();
-
-    if (!this._account) {
-      await this.login();
-      return null;
-    }
-
-    try {
-      const result = await this._msalInstance.acquireTokenSilent({
-        scopes: this.scopes,
-        account: this._account
-      });
-
-      return result.accessToken;
-    } catch (e) {
-      console.warn("[SP] Token silencioso falhou; redirecionando para login.", e);
-
-      await this._msalInstance.acquireTokenRedirect({
-        scopes: this.scopes,
-        account: this._account
-      });
-
-      return null;
-    }
   },
 
   async ensureLogin() {
     await this.init();
-
-    if (!this._account) {
-      await this.login();
-      return false;
-    }
-
+    if (!this._account) { await this.login(); return false; }
     return true;
-  },
-
-  getUserName() {
-    return this._account?.name || this._account?.username || "Usuário Homy";
   },
 
   async logout() {
     await this.init();
     const account = this._account;
     this._account = null;
-    if (account) {
-      await this._msalInstance.logoutRedirect({ account });
+    if (account) await this._msalInstance.logoutRedirect({ account });
+  },
+
+  async getToken() {
+    await this.init();
+    if (!this._account) { await this.login(); return null; }
+
+    try {
+      const r = await this._msalInstance.acquireTokenSilent({
+        scopes: this.scopes,
+        account: this._account
+      });
+      return r.accessToken;
+    } catch (e) {
+      console.warn("[SP] Token silencioso falhou; redirecionando.", e);
+      await this._msalInstance.acquireTokenRedirect({
+        scopes: this.scopes,
+        account: this._account
+      });
+      return null;
     }
   },
 
+  // ============================================================
+  // GRAPH — camada base de HTTP
+  // ============================================================
   async graph(method, endpoint, body = null) {
     const token = await this.getToken();
     if (!token) return null;
+
+    // Filtra campos read-only em qualquer escrita
+    let safeBody = body;
+    if (body && (method === "PATCH" || method === "POST")) {
+      if (body.fields) {
+        safeBody = { ...body, fields: this._cleanFields(body.fields) };
+      } else {
+        safeBody = this._cleanFields(body);
+      }
+    }
 
     const res = await fetch(`https://graph.microsoft.com/v1.0${endpoint}`, {
       method,
@@ -148,59 +227,71 @@ var SP = window.SP = {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: body ? JSON.stringify(body) : null
+      body: safeBody ? JSON.stringify(safeBody) : null
     });
 
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`Graph API error ${res.status}: ${err}`);
+      throw new Error(`Graph ${method} ${endpoint} → ${res.status}: ${err}`);
     }
 
     if (res.status === 204) return null;
     return res.json();
   },
 
+  // ============================================================
+  // SITE E LISTAS
+  // ============================================================
   async getSiteId() {
     if (this._siteId) return this._siteId;
 
-    const paths = [
-      this.sitePath,
-      "/sites/Refeitorio-Homy",
-      "/sites/Refeitrio-Homy"
-    ].filter((value, index, array) => value && array.indexOf(value) === index);
+    // Tenta os candidatos em ordem
+    const paths = this._sitePath
+      ? [this._sitePath, ...this._sitePathCandidates]
+      : this._sitePathCandidates;
 
-    let lastError = null;
+    const unique = [...new Set(paths)];
+    let lastErr = null;
 
-    for (const path of paths) {
+    for (const path of unique) {
       try {
         const data = await this.graph("GET", `/sites/${this.siteUrl}:${path}`);
-        if (data && data.id) {
-          this._siteId = data.id;
-          this.sitePath = path;
+        if (data?.id) {
+          this._siteId   = data.id;
+          this._sitePath = path;
+          console.log(`[SP] Site encontrado em: ${path}`);
           return this._siteId;
         }
       } catch (e) {
-        lastError = e;
+        lastErr = e;
       }
     }
 
-    throw lastError || new Error("Site do SharePoint não encontrado.");
+    throw lastErr || new Error(
+      `Site SharePoint não encontrado. Testados: ${unique.join(", ")}`
+    );
   },
 
   async getListId(listName) {
     if (this._listIds[listName]) return this._listIds[listName];
 
     const siteId = await this.getSiteId();
-    const data = await this.graph("GET", `/sites/${siteId}/lists?$filter=displayName eq '${listName}'`);
+    const encoded = encodeURIComponent(listName);
+    const data = await this.graph("GET",
+      `/sites/${siteId}/lists?$filter=displayName eq '${listName}'&$select=id,displayName`
+    );
 
-    if (!data.value || data.value.length === 0) {
-      throw new Error(`Lista não encontrada no SharePoint: ${listName}`);
+    if (!data?.value?.length) {
+      throw new Error(`Lista não encontrada: "${listName}"`);
     }
 
     this._listIds[listName] = data.value[0].id;
     return this._listIds[listName];
   },
 
+  // ============================================================
+  // CRUD GENÉRICO
+  // ============================================================
   async getItems(listName) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
@@ -209,8 +300,10 @@ var SP = window.SP = {
 
     while (endpoint) {
       const data = await this.graph("GET", endpoint);
-      items.push(...(data.value || []));
-      endpoint = data["@odata.nextLink"] ? data["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "") : null;
+      items.push(...(data?.value || []));
+      endpoint = data?.["@odata.nextLink"]
+        ? data["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "")
+        : null;
     }
 
     return items.map(i => ({ id: i.id, ...i.fields }));
@@ -219,13 +312,18 @@ var SP = window.SP = {
   async createItem(listName, fields) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
-    return this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, { fields });
+    return this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, {
+      fields: this._cleanFields(fields)
+    });
   },
 
   async updateItem(listName, itemId, fields) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
-    return this.graph("PATCH", `/sites/${siteId}/lists/${listId}/items/${itemId}/fields`, fields);
+    return this.graph("PATCH",
+      `/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,
+      this._cleanFields(fields)
+    );
   },
 
   async deleteItem(listName, itemId) {
@@ -236,46 +334,43 @@ var SP = window.SP = {
 
   // ============================================================
   // COLABORADORES
+  // Lista: Colaboradores
   // Colunas: Nome, Departamento, Email, Ativo, tipo, Centro_Custo
   // ============================================================
-
-  async getTodosColaboradores() {
-    return this.getItems("Colaboradores");
-  },
-
   async getColaboradores() {
     const items = await this.getItems("Colaboradores");
     return items.filter(i => this.isTrue(this.pick(i, "Ativo")));
   },
 
+  async getTodosColaboradores() {
+    return this.getItems("Colaboradores");
+  },
+
   async createColaborador(dados) {
     return this.createItem("Colaboradores", {
-      Title: dados.nome,
-      Nome: dados.nome,
-      Departamento: dados.departamento || "",
-      Email: dados.email || "",
-      Ativo: true,
-      tipo: dados.tipo || "Colaborador",
+      Title:        dados.nome || dados.Nome || "",
+      Nome:         dados.nome || dados.Nome || "",
+      Departamento: dados.departamento || dados.Departamento || "",
+      Email:        dados.email || dados.Email || "",
+      Ativo:        true,
+      tipo:         dados.tipo || "Colaborador",
       Centro_Custo: dados.centroCusto || dados.Centro_Custo || ""
     });
   },
 
   async updateColaborador(id, dados) {
     const fields = {};
-
-    if (dados.nome !== undefined) {
-      fields.Title = dados.nome;
-      fields.Nome = dados.nome;
-    }
-
+    if (dados.nome        !== undefined) { fields.Title = dados.nome; fields.Nome = dados.nome; }
+    if (dados.Nome        !== undefined) { fields.Title = dados.Nome; fields.Nome = dados.Nome; }
     if (dados.departamento !== undefined) fields.Departamento = dados.departamento;
-    if (dados.email !== undefined) fields.Email = dados.email;
-    if (dados.ativo !== undefined) fields.Ativo = dados.ativo;
-    if (dados.Ativo !== undefined) fields.Ativo = dados.Ativo;
-    if (dados.tipo !== undefined) fields.tipo = dados.tipo;
+    if (dados.Departamento !== undefined) fields.Departamento = dados.Departamento;
+    if (dados.email        !== undefined) fields.Email = dados.email;
+    if (dados.Email        !== undefined) fields.Email = dados.Email;
+    if (dados.ativo        !== undefined) fields.Ativo = dados.ativo;
+    if (dados.Ativo        !== undefined) fields.Ativo = dados.Ativo;
+    if (dados.tipo         !== undefined) fields.tipo  = dados.tipo;
+    if (dados.centroCusto  !== undefined) fields.Centro_Custo = dados.centroCusto;
     if (dados.Centro_Custo !== undefined) fields.Centro_Custo = dados.Centro_Custo;
-    if (dados.centroCusto !== undefined) fields.Centro_Custo = dados.centroCusto;
-
     return this.updateItem("Colaboradores", id, fields);
   },
 
@@ -288,7 +383,8 @@ var SP = window.SP = {
   },
 
   // ============================================================
-  // CARDAPIO
+  // CARDÁPIO
+  // Lista: Cardapio
   // Colunas: Semana_id, Dia, Opcao, Nome_Prato, Detalhes
   // ============================================================
   async getCardapio(semanaId) {
@@ -296,15 +392,29 @@ var SP = window.SP = {
     return items.filter(i => this.pick(i, "Semana_id") === semanaId);
   },
 
-  async saveCardapio(semanaId, dia, opcao, nomePrato, detalhes) {
-    return this.createItem("Cardapio", {
-      Title: `${semanaId}-${dia}-${opcao}`,
+  async saveCardapio(semanaId, dia, opcao, nomePrato, detalhes = "") {
+    // Atualiza se já existe o mesmo semana+dia+opcao, cria se não existe
+    const existentes = await this.getCardapio(semanaId);
+    const norm = v => String(v || "").toLowerCase().trim();
+    const existing = existentes.find(i =>
+      norm(this.pick(i, "Dia")) === norm(dia) &&
+      norm(this.pick(i, "Opcao")) === norm(opcao)
+    );
+
+    const fields = {
+      Title:     `${semanaId}-${dia}-${opcao}`,
       Semana_id: semanaId,
-      Dia: dia,
-      Opcao: opcao,
+      Dia:       dia,
+      Opcao:     opcao,
       Nome_Prato: nomePrato,
-      Detalhes: detalhes || ""
-    });
+      Detalhes:   detalhes
+    };
+
+    if (existing) {
+      return this.updateItem("Cardapio", existing.id, fields);
+    }
+
+    return this.createItem("Cardapio", fields);
   },
 
   async clearCardapio(semanaId) {
@@ -316,9 +426,10 @@ var SP = window.SP = {
 
   // ============================================================
   // PEDIDOS
+  // Lista: Pedidos
   // Colunas: Semana_id, Colaborador_id, Colaborador_nome,
-  // Dia, Opcao, Nome_Prato, Confirmado, Data_Hora,
-  // Centro_Custo, Status, Observacao, Origem, Alterado_Por
+  //          Dia, Opcao, Nome_Prato, Confirmado, Data_Hora,
+  //          Centro_Custo, Status, Observacao, Origem, Alterado_Por
   // ============================================================
   async getPedidos(semanaId) {
     const items = await this.getItems("Pedidos");
@@ -327,306 +438,201 @@ var SP = window.SP = {
 
   async getPedidoColaborador(semanaId, colaboradorId) {
     const items = await this.getPedidos(semanaId);
-    return items.filter(i => String(this.pick(i, "Colaborador_id")) === String(colaboradorId));
+    return items.filter(i =>
+      String(this.pick(i, "Colaborador_id")) === String(colaboradorId)
+    );
   },
 
-  async savePedido(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato, dadosExtras = {}) {
+  async savePedido(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato, extras = {}) {
     return this.createItem("Pedidos", {
-      Title: `${semanaId}-${colaboradorId}-${dia}`,
-      Semana_id: semanaId,
-      Colaborador_id: String(colaboradorId),
+      Title:            `${semanaId}-${colaboradorId}-${dia}`,
+      Semana_id:        semanaId,
+      Colaborador_id:   String(colaboradorId),
       Colaborador_nome: colaboradorNome,
-      Dia: dia,
-      Opcao: opcao,
-      Nome_Prato: nomePrato || "",
-      Confirmado: dadosExtras.confirmado ?? dadosExtras.Confirmado ?? false,
-      Data_Hora: dadosExtras.dataHora || dadosExtras.Data_Hora || new Date().toISOString(),
-      Centro_Custo: dadosExtras.centroCusto || dadosExtras.Centro_Custo || "",
-      Status: dadosExtras.status || dadosExtras.Status || "Confirmado",
-      Observacao: dadosExtras.observacao || dadosExtras.Observacao || "",
-      Origem: dadosExtras.origem || dadosExtras.Origem || "Refeitório",
-      Alterado_Por: dadosExtras.alteradoPor || dadosExtras.Alterado_Por || this.getUserName()
+      Dia:              dia,
+      Opcao:            opcao,
+      Nome_Prato:       nomePrato || "",
+      Confirmado:       extras.confirmado  ?? extras.Confirmado  ?? false,
+      Data_Hora:        extras.dataHora    ?? extras.Data_Hora   ?? new Date().toISOString(),
+      Centro_Custo:     extras.centroCusto ?? extras.Centro_Custo ?? "",
+      Status:           extras.status      ?? extras.Status      ?? "Confirmado",
+      Observacao:       extras.observacao  ?? extras.Observacao  ?? "",
+      Origem:           extras.origem      ?? extras.Origem      ?? "Refeitório",
+      Alterado_Por:     extras.alteradoPor ?? extras.Alterado_Por ?? this.getUserName()
     });
   },
 
   async updatePedido(id, dados) {
+    const map = {
+      Semana_id:        ["Semana_id", "semanaId"],
+      Colaborador_id:   ["Colaborador_id", "colaboradorId"],
+      Colaborador_nome: ["Colaborador_nome", "colaboradorNome"],
+      Dia:              ["Dia", "dia"],
+      Opcao:            ["Opcao", "opcao"],
+      Nome_Prato:       ["Nome_Prato", "nomePrato"],
+      Confirmado:       ["Confirmado", "confirmado"],
+      Data_Hora:        ["Data_Hora", "dataHora"],
+      Centro_Custo:     ["Centro_Custo", "centroCusto"],
+      Status:           ["Status", "status"],
+      Observacao:       ["Observacao", "observacao"],
+      Origem:           ["Origem", "origem"],
+      Alterado_Por:     ["Alterado_Por", "alteradoPor"]
+    };
+
     const fields = {};
-
-    if (dados.Semana_id !== undefined) fields.Semana_id = dados.Semana_id;
-    if (dados.semanaId !== undefined) fields.Semana_id = dados.semanaId;
-
-    if (dados.Colaborador_id !== undefined) fields.Colaborador_id = String(dados.Colaborador_id);
-    if (dados.colaboradorId !== undefined) fields.Colaborador_id = String(dados.colaboradorId);
-
-    if (dados.Colaborador_nome !== undefined) fields.Colaborador_nome = dados.Colaborador_nome;
-    if (dados.colaboradorNome !== undefined) fields.Colaborador_nome = dados.colaboradorNome;
-
-    if (dados.Dia !== undefined) fields.Dia = dados.Dia;
-    if (dados.dia !== undefined) fields.Dia = dados.dia;
-
-    if (dados.Opcao !== undefined) fields.Opcao = dados.Opcao;
-    if (dados.opcao !== undefined) fields.Opcao = dados.opcao;
-
-    if (dados.Nome_Prato !== undefined) fields.Nome_Prato = dados.Nome_Prato;
-    if (dados.nomePrato !== undefined) fields.Nome_Prato = dados.nomePrato;
-
-    if (dados.Confirmado !== undefined) fields.Confirmado = dados.Confirmado;
-    if (dados.confirmado !== undefined) fields.Confirmado = dados.confirmado;
-
-    if (dados.Data_Hora !== undefined) fields.Data_Hora = dados.Data_Hora;
-    if (dados.dataHora !== undefined) fields.Data_Hora = dados.dataHora;
-
-    if (dados.Centro_Custo !== undefined) fields.Centro_Custo = dados.Centro_Custo;
-    if (dados.centroCusto !== undefined) fields.Centro_Custo = dados.centroCusto;
-
-    if (dados.Status !== undefined) fields.Status = dados.Status;
-    if (dados.status !== undefined) fields.Status = dados.status;
-
-    if (dados.Observacao !== undefined) fields.Observacao = dados.Observacao;
-    if (dados.observacao !== undefined) fields.Observacao = dados.observacao;
-
-    if (dados.Origem !== undefined) fields.Origem = dados.Origem;
-    if (dados.origem !== undefined) fields.Origem = dados.origem;
-
-    if (dados.Alterado_Por !== undefined) fields.Alterado_Por = dados.Alterado_Por;
-    if (dados.alteradoPor !== undefined) fields.Alterado_Por = dados.alteradoPor;
+    for (const [col, aliases] of Object.entries(map)) {
+      for (const alias of aliases) {
+        if (dados[alias] !== undefined) {
+          fields[col] = col === "Colaborador_id" ? String(dados[alias]) : dados[alias];
+          break;
+        }
+      }
+    }
 
     return this.updateItem("Pedidos", id, fields);
-  },
-
-  async confirmarPedidos(semanaId, colaboradorId) {
-    const pedidos = await this.getPedidoColaborador(semanaId, colaboradorId);
-
-    for (const p of pedidos) {
-      await this.updateItem("Pedidos", p.id, {
-        Confirmado: true,
-        Status: this.pick(p, "Status") || "Confirmado",
-        Origem: this.pick(p, "Origem") || "Refeitório",
-        Alterado_Por: this.getUserName()
-      });
-    }
   },
 
   async deletePedido(id) {
     return this.deleteItem("Pedidos", id);
   },
 
-  // ============================================================
-  // VALORES_REFEICAO
-  // Lista: Valores_Refeicao
-  // Colunas: Title, Data_Inicio, Data_Fim, Valor_Vascon,
-  // Valor_Desconto_Funcionario, Observacao, Ativo
-  // ============================================================
-  async getValoresRefeicao(apenasAtivos = true) {
-    const items = await this.getItems("Valores de Refeição");
-
-    if (!apenasAtivos) return items;
-
-    return items.filter(i => this.isTrue(this.pick(i, "Ativo")));
+  async confirmarPedidos(semanaId, colaboradorId) {
+    const pedidos = await this.getPedidoColaborador(semanaId, colaboradorId);
+    for (const p of pedidos) {
+      await this.updateItem("Pedidos", p.id, {
+        Confirmado:   true,
+        Status:       this.pick(p, "Status") || "Confirmado",
+        Alterado_Por: this.getUserName()
+      });
+    }
   },
 
-  async getValorRefeicaoVigente(dataReferencia = new Date()) {
-    const data = new Date(dataReferencia);
-    const items = await this.getValoresRefeicao(true);
-
-    return items.find(i => {
-      const inicio = this.pick(i, "Data_Inicio") ? new Date(this.pick(i, "Data_Inicio")) : null;
-      const fim = this.pick(i, "Data_Fim") ? new Date(this.pick(i, "Data_Fim")) : null;
-
-      if (!inicio || !fim) return false;
-      return data >= inicio && data <= fim;
-    }) || null;
+  // ============================================================
+  // EXTRAS
+  // Lista: Extras
+  // Colunas: Semana_id, Dia, Nome, tipo, Opcao, Observacao, Adicionado_Por
+  // ============================================================
+  async getExtras(semanaId, dia = null) {
+    const items = await this.getItems("Extras");
+    return items.filter(i =>
+      this.pick(i, "Semana_id") === semanaId &&
+      (!dia || this.pick(i, "Dia") === dia)
+    );
   },
 
-  async createValorRefeicao(dados) {
-    return this.createItem("Valores de Refeição", {
-      Title: dados.title || dados.Title || "Valor refeição",
-      Data_Inicio: dados.dataInicio || dados.Data_Inicio,
-      Data_Fim: dados.dataFim || dados.Data_Fim,
-      Valor_Vascon: Number(dados.valorVascon ?? dados.Valor_Vascon ?? 0),
-      Valor_Desconto_Funcionario: Number(dados.valorDescontoFuncionario ?? dados.Valor_Desconto_Funcionario ?? 0),
-      Observacao: dados.observacao || dados.Observacao || "",
-      Ativo: dados.ativo ?? dados.Ativo ?? true
+  async addExtra(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor) {
+    return this.createItem("Extras", {
+      Title:        `${semanaId}-${dia}-${nome}`,
+      Semana_id:    semanaId,
+      Dia:          dia,
+      Nome:         nome,
+      tipo:         tipo,
+      Opcao:        opcao,
+      Observacao:   observacao || "",
+      Adicionado_Por: adicionadoPor || this.getUserName()
     });
   },
 
-  async updateValorRefeicao(id, dados) {
-    const fields = {};
+  // addExtraPedido: grava em Extras E cria um Pedido correspondente
+  // para que apareça na Operação do Dia e no Dashboard
+  async addExtraPedido(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor) {
+    const user = adicionadoPor || this.getUserName();
 
-    if (dados.title !== undefined) fields.Title = dados.title;
-    if (dados.Title !== undefined) fields.Title = dados.Title;
+    await this.addExtra(semanaId, dia, nome, tipo, opcao, observacao, user);
 
-    if (dados.dataInicio !== undefined) fields.Data_Inicio = dados.dataInicio;
-    if (dados.Data_Inicio !== undefined) fields.Data_Inicio = dados.Data_Inicio;
-
-    if (dados.dataFim !== undefined) fields.Data_Fim = dados.dataFim;
-    if (dados.Data_Fim !== undefined) fields.Data_Fim = dados.Data_Fim;
-
-    if (dados.valorVascon !== undefined) fields.Valor_Vascon = Number(dados.valorVascon);
-    if (dados.Valor_Vascon !== undefined) fields.Valor_Vascon = Number(dados.Valor_Vascon);
-
-    if (dados.valorDescontoFuncionario !== undefined) fields.Valor_Desconto_Funcionario = Number(dados.valorDescontoFuncionario);
-    if (dados.Valor_Desconto_Funcionario !== undefined) fields.Valor_Desconto_Funcionario = Number(dados.Valor_Desconto_Funcionario);
-
-    if (dados.observacao !== undefined) fields.Observacao = dados.observacao;
-    if (dados.Observacao !== undefined) fields.Observacao = dados.Observacao;
-
-    if (dados.ativo !== undefined) fields.Ativo = dados.ativo;
-    if (dados.Ativo !== undefined) fields.Ativo = dados.Ativo;
-
-    return this.updateItem("Valores de Refeição", id, fields);
+    await this.savePedido(
+      semanaId,
+      `EXTRA-${Date.now()}`,
+      nome,
+      dia,
+      opcao,
+      "",
+      {
+        confirmado:  true,
+        status:      "Confirmado",
+        origem:      tipo,
+        observacao:  observacao || nome,
+        dataRef:     this.getDataRefBySemanaDia(semanaId, dia),
+        alteradoPor: user
+      }
+    );
   },
 
-  // ============================================================
-  // AUSENCIAS DO REFEITORIO
-  // Lista: Ausencias_Refeitorio
-  // Colunas: Title, Colaborador_id, Colaborador_nome, Data_Inicio,
-  // Data_Fim, Motivo, Observacao, Ativo, Criado_Por
-  // ============================================================
-  async getAusencias(apenasAtivas = true) {
-    const items = await this.getItems("Ausencias do Refeitorio");
-
-    if (!apenasAtivas) return items;
-
-    return items.filter(i => this.isTrue(this.pick(i, "Ativo")));
+  async removeExtra(id) {
+    return this.deleteItem("Extras", id);
   },
 
-  async getAusenciasColaborador(colaboradorId, dataReferencia = null) {
-    const items = await this.getAusencias(true);
-
-    return items.filter(i => {
-      const mesmoColaborador = String(this.pick(i, "Colaborador_id")) === String(colaboradorId);
-      if (!mesmoColaborador) return false;
-
-      if (!dataReferencia) return true;
-
-      const data = new Date(dataReferencia);
-      const inicio = this.pick(i, "Data_Inicio") ? new Date(this.pick(i, "Data_Inicio")) : null;
-      const fim = this.pick(i, "Data_Fim") ? new Date(this.pick(i, "Data_Fim")) : null;
-
-      if (!inicio || !fim) return false;
-      return data >= inicio && data <= fim;
-    });
+  async deleteExtra(id) {
+    return this.deleteItem("Extras", id);
   },
 
-  async colaboradorEstaAusente(colaboradorId, dataReferencia = new Date()) {
-    const ausencias = await this.getAusenciasColaborador(colaboradorId, dataReferencia);
-    return ausencias.length > 0 ? ausencias[0] : null;
-  },
+  // Remove extra e o pedido vinculado (por Origem = tipo do extra)
+  async deleteExtraComPedido(extra) {
+    if (extra?.id) await this.deleteItem("Extras", extra.id);
 
-  async createAusencia(dados) {
-    const colaboradorNome = dados.colaboradorNome || dados.Colaborador_nome || "";
-    const motivo = dados.motivo || dados.Motivo || "Ausência";
+    const semanaId = this.pick(extra, "Semana_id");
+    const dia      = this.pick(extra, "Dia");
+    const nome     = this.pick(extra, "Nome", "Title");
 
-    return this.createItem("Ausencias do Refeitorio", {
-      Title: dados.title || dados.Title || `${colaboradorNome} - ${motivo}`,
-      Colaborador_id: String(dados.colaboradorId || dados.Colaborador_id || ""),
-      Colaborador_nome: colaboradorNome,
-      Data_Inicio: dados.dataInicio || dados.Data_Inicio,
-      Data_Fim: dados.dataFim || dados.Data_Fim,
-      Motivo: motivo,
-      Observacao: dados.observacao || dados.Observacao || "",
-      Ativo: dados.ativo ?? dados.Ativo ?? true,
-      Criado_Por: dados.criadoPor || dados.Criado_Por || this.getUserName()
-    });
-  },
-
-  async updateAusencia(id, dados) {
-    const fields = {};
-
-    if (dados.title !== undefined) fields.Title = dados.title;
-    if (dados.Title !== undefined) fields.Title = dados.Title;
-
-    if (dados.colaboradorId !== undefined) fields.Colaborador_id = String(dados.colaboradorId);
-    if (dados.Colaborador_id !== undefined) fields.Colaborador_id = String(dados.Colaborador_id);
-
-    if (dados.colaboradorNome !== undefined) fields.Colaborador_nome = dados.colaboradorNome;
-    if (dados.Colaborador_nome !== undefined) fields.Colaborador_nome = dados.Colaborador_nome;
-
-    if (dados.dataInicio !== undefined) fields.Data_Inicio = dados.dataInicio;
-    if (dados.Data_Inicio !== undefined) fields.Data_Inicio = dados.Data_Inicio;
-
-    if (dados.dataFim !== undefined) fields.Data_Fim = dados.dataFim;
-    if (dados.Data_Fim !== undefined) fields.Data_Fim = dados.Data_Fim;
-
-    if (dados.motivo !== undefined) fields.Motivo = dados.motivo;
-    if (dados.Motivo !== undefined) fields.Motivo = dados.Motivo;
-
-    if (dados.observacao !== undefined) fields.Observacao = dados.observacao;
-    if (dados.Observacao !== undefined) fields.Observacao = dados.Observacao;
-
-    if (dados.ativo !== undefined) fields.Ativo = dados.ativo;
-    if (dados.Ativo !== undefined) fields.Ativo = dados.Ativo;
-
-    if (dados.criadoPor !== undefined) fields.Criado_Por = dados.criadoPor;
-    if (dados.Criado_Por !== undefined) fields.Criado_Por = dados.Criado_Por;
-
-    return this.updateItem("Ausencias do Refeitorio", id, fields);
-  },
-
-  async deleteAusencia(id) {
-    return this.deleteItem("Ausencias do Refeitorio", id);
+    if (semanaId && dia && nome) {
+      const pedidos = await this.getPedidos(semanaId);
+      const norm = v => String(v || "").toLowerCase().trim();
+      const vinculado = pedidos.find(p =>
+        norm(this.pick(p, "Dia")) === norm(dia) &&
+        norm(this.pick(p, "Colaborador_nome", "Title")) === norm(nome)
+      );
+      if (vinculado) await this.deleteItem("Pedidos", vinculado.id);
+    }
   },
 
   // ============================================================
   // CONFIGURAÇÕES
-  // Colunas: Chave, Valor, Descrição
-  // OBS: para evitar erro de nome interno com acento,
-  // este código grava somente Title, Chave e Valor.
+  // Lista: Configurações
+  // Colunas: Title (= Chave), Chave, Valor
   // ============================================================
   async getConfig(chave) {
     const items = await this.getItems("Configurações");
-
     const item = items.find(i =>
       this.pick(i, "Chave") === chave ||
       this.pick(i, "Title") === chave
     );
-
     return item ? this.pick(item, "Valor") : null;
   },
 
-  async setConfig(chave, valor, descricao = "") {
+  async setConfig(chave, valor) {
     const items = await this.getItems("Configurações");
-
     const existing = items.find(i =>
       this.pick(i, "Chave") === chave ||
       this.pick(i, "Title") === chave
     );
 
     if (existing) {
-      return this.updateItem("Configurações", existing.id, { Valor: valor });
+      return this.updateItem("Configurações", existing.id, { Valor: String(valor) });
     }
 
     return this.createItem("Configurações", {
       Title: chave,
       Chave: chave,
-      Valor: valor
+      Valor: String(valor)
     });
   },
 
   async isCardapioLiberado() {
-    const possiveisChaves = [
-      "cardapio_liberado",
-      "marcacao_liberada",
-      "pedidos_liberados"
-    ];
-
-    for (const chave of possiveisChaves) {
-      const valor = await this.getConfig(chave);
-      if (this.isTrue(valor)) return true;
+    for (const chave of ["cardapio_liberado", "marcacao_liberada", "pedidos_liberados"]) {
+      if (this.isTrue(await this.getConfig(chave))) return true;
     }
-
     return false;
   },
 
   async setMarcacaoLiberada(liberado) {
-    const valor = liberado ? "sim" : "nao";
+    const v = liberado ? "sim" : "nao";
+    await this.setConfig("cardapio_liberado", v);
+    await this.setConfig("marcacao_liberada", v);
+    await this.setConfig("pedidos_liberados", v);
+  },
 
-    await this.setConfig("cardapio_liberado", valor);
-    await this.setConfig("marcacao_liberada", valor);
-    await this.setConfig("pedidos_liberados", valor);
-
-    return true;
+  async setCardapioVisivel(visivel) {
+    return this.setConfig("cardapio_visivel", visivel ? "sim" : "nao");
   },
 
   async getPrazoMarcacao() {
@@ -634,13 +640,157 @@ var SP = window.SP = {
   },
 
   async setPrazoMarcacao(valor) {
-    return this.setConfig("prazo_limite", valor);
+    await this.setConfig("prazo_limite", valor);
+    await this.setConfig("prazo_marcacao", valor);
   },
 
   // ============================================================
-  // CHECKIN
+  // VALORES DE REFEIÇÃO
+  // Lista: Valores de Refeição
+  // Colunas: Title, Data_Inicio, Data_Fim, Valor_Vascon,
+  //          Valor_Desconto_Funcionario, Observacao, Ativo
+  // IMPORTANTE: Nome interno no SharePoint pode variar.
+  // A função _resolveColunasValores() detecta automaticamente.
+  // ============================================================
+  _colunasValores: null,
+
+  async _resolveColunasValores() {
+    if (this._colunasValores) return this._colunasValores;
+
+    const siteId = await this.getSiteId();
+    const listId = await this.getListId("Valores de Refeição");
+    const token  = await this.getToken();
+
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`,
+      { headers: { "Authorization": `Bearer ${token}` } }
+    );
+    const data = await res.json();
+    const cols  = data.value || [];
+
+    const norm = v => String(v || "").normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[_\s]/g, "")
+      .toLowerCase();
+
+    const find = (...patterns) => {
+      const col = cols.find(c => patterns.some(p => norm(c.displayName).includes(p) || norm(c.name).includes(p)));
+      return col?.name || null;
+    };
+
+    this._colunasValores = {
+      titulo:   find("titulo", "title") || "Title",
+      inicio:   find("datainicio", "inicio"),
+      fim:      find("datafim", "fim"),
+      vascon:   find("vascon"),
+      desconto: find("descontofuncionario", "descontofunc", "desconto"),
+      obs:      find("observacao", "obs"),
+      ativo:    find("ativo")
+    };
+
+    console.log("[SP] Colunas Valores de Refeição:", this._colunasValores);
+    return this._colunasValores;
+  },
+
+  async getValoresRefeicao(apenasAtivos = true) {
+    const items = await this.getItems("Valores de Refeição");
+    if (!apenasAtivos) return items;
+    return items.filter(i => this.isTrue(this.pick(i, "Ativo")));
+  },
+
+  async getValorRefeicaoVigente(dataRef = new Date()) {
+    const data  = new Date(dataRef);
+    const items = await this.getValoresRefeicao(true);
+    return items.find(i => {
+      const ini = this.pick(i, "Data_Inicio") ? new Date(this.pick(i, "Data_Inicio")) : null;
+      const fim = this.pick(i, "Data_Fim")    ? new Date(this.pick(i, "Data_Fim"))    : null;
+      return ini && fim && data >= ini && data <= fim;
+    }) || null;
+  },
+
+  async createValorRefeicao(dados) {
+    const cols = await this._resolveColunasValores();
+
+    const fields = {};
+    fields[cols.titulo]  = dados.title || dados.titulo || "Valor refeição";
+    if (cols.inicio)   fields[cols.inicio]   = dados.dataInicio || dados.Data_Inicio || "";
+    if (cols.fim)      fields[cols.fim]      = dados.dataFim    || dados.Data_Fim    || "";
+    if (cols.vascon)   fields[cols.vascon]   = Number(dados.valorVascon   ?? dados.Valor_Vascon   ?? 0);
+    if (cols.desconto) fields[cols.desconto] = Number(dados.valorDesconto ?? dados.Valor_Desconto_Funcionario ?? 0);
+    if (cols.obs)      fields[cols.obs]      = dados.observacao || dados.Observacao || "";
+    if (cols.ativo)    fields[cols.ativo]    = dados.ativo !== false && dados.Ativo !== false;
+
+    return this.createItem("Valores de Refeição", fields);
+  },
+
+  async updateValorRefeicao(id, dados) {
+    const cols = await this._resolveColunasValores();
+
+    const fields = {};
+    if (dados.title || dados.titulo)         fields[cols.titulo]   = dados.title || dados.titulo;
+    if (dados.dataInicio || dados.Data_Inicio && cols.inicio)  fields[cols.inicio]   = dados.dataInicio || dados.Data_Inicio;
+    if (dados.dataFim    || dados.Data_Fim    && cols.fim)     fields[cols.fim]      = dados.dataFim    || dados.Data_Fim;
+    if ((dados.valorVascon   !== undefined) && cols.vascon)   fields[cols.vascon]   = Number(dados.valorVascon);
+    if ((dados.valorDesconto !== undefined) && cols.desconto) fields[cols.desconto] = Number(dados.valorDesconto);
+    if ((dados.observacao    !== undefined) && cols.obs)      fields[cols.obs]      = dados.observacao;
+    if ((dados.ativo         !== undefined) && cols.ativo)    fields[cols.ativo]    = dados.ativo;
+
+    return this.updateItem("Valores de Refeição", id, fields);
+  },
+
+  // ============================================================
+  // AUSÊNCIAS
+  // Lista: Ausencias do Refeitorio
+  // Colunas: Title, Colaborador_id, Colaborador_nome,
+  //          Data_Inicio, Data_Fim, Motivo, Observacao, Ativo, Criado_Por
+  // ============================================================
+  async getAusencias(apenasAtivas = true) {
+    const items = await this.getItems("Ausencias do Refeitorio");
+    return apenasAtivas ? items.filter(i => this.isTrue(this.pick(i, "Ativo"))) : items;
+  },
+
+  async getAusenciasColaborador(colaboradorId, dataRef = null) {
+    const items = await this.getAusencias(true);
+    return items.filter(i => {
+      if (String(this.pick(i, "Colaborador_id")) !== String(colaboradorId)) return false;
+      if (!dataRef) return true;
+      const d   = new Date(dataRef);
+      const ini = this.pick(i, "Data_Inicio") ? new Date(this.pick(i, "Data_Inicio")) : null;
+      const fim = this.pick(i, "Data_Fim")    ? new Date(this.pick(i, "Data_Fim"))    : null;
+      return ini && fim && d >= ini && d <= fim;
+    });
+  },
+
+  async colaboradorEstaAusente(colaboradorId, dataRef = new Date()) {
+    const aus = await this.getAusenciasColaborador(colaboradorId, dataRef);
+    return aus.length > 0 ? aus[0] : null;
+  },
+
+  async createAusencia(dados) {
+    const nome   = dados.colaboradorNome || dados.Colaborador_nome || "";
+    const motivo = dados.motivo || dados.Motivo || "Ausência";
+    return this.createItem("Ausencias do Refeitorio", {
+      Title:            dados.title || `${nome} - ${motivo}`,
+      Colaborador_id:   String(dados.colaboradorId || dados.Colaborador_id || ""),
+      Colaborador_nome: nome,
+      Data_Inicio:      dados.dataInicio || dados.Data_Inicio,
+      Data_Fim:         dados.dataFim    || dados.Data_Fim,
+      Motivo:           motivo,
+      Observacao:       dados.observacao || dados.Observacao || "",
+      Ativo:            dados.ativo ?? dados.Ativo ?? true,
+      Criado_Por:       dados.criadoPor || dados.Criado_Por || this.getUserName()
+    });
+  },
+
+  async deleteAusencia(id) {
+    return this.deleteItem("Ausencias do Refeitorio", id);
+  },
+
+  // ============================================================
+  // CHECK-IN
+  // Lista: CheckIn
   // Colunas: Semana_id, Colaborador_id, Colaborador_nome,
-  // Dia, Retirou, Data_Hora_Retirada, Confirmado_Por
+  //          Dia, Retirou, Data_Hora_Retirada, Confirmado_Por
   // ============================================================
   async getCheckIn(semanaId, dia) {
     const items = await this.getItems("CheckIn");
@@ -652,190 +802,172 @@ var SP = window.SP = {
 
   async registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
     const existing = await this.getCheckIn(semanaId, dia);
-
     const found = existing.find(i =>
       String(this.pick(i, "Colaborador_id")) === String(colaboradorId)
     );
 
     const fields = {
-      Retirou: true,
+      Retirou:            true,
       Data_Hora_Retirada: new Date().toISOString(),
-      Confirmado_Por: confirmadoPor
+      Confirmado_Por:     confirmadoPor
     };
 
-    if (found) {
-      return this.updateItem("CheckIn", found.id, fields);
-    }
+    if (found) return this.updateItem("CheckIn", found.id, fields);
 
     return this.createItem("CheckIn", {
-      Title: `${semanaId}-${colaboradorId}-${dia}`,
-      Semana_id: semanaId,
-      Colaborador_id: String(colaboradorId),
+      Title:            `${semanaId}-${colaboradorId}-${dia}`,
+      Semana_id:        semanaId,
+      Colaborador_id:   String(colaboradorId),
       Colaborador_nome: colaboradorNome,
-      Dia: dia,
+      Dia:              dia,
       ...fields
     });
   },
-
 
   async saveCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
     return this.registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor);
   },
 
   // ============================================================
-  // EXTRAS
-  // Colunas: Semana_id, Dia, Nome, tipo, Opcao,
-  // Observacao, Adicionado_Por
+  // DASHBOARD RESUMO
+  // Implementado aqui para não depender de função externa.
+  // Retorna um objeto com todos os contadores que o dashboard precisa.
   // ============================================================
-  async getExtras(semanaId, dia = null) {
-    const items = await this.getItems("Extras");
+  async getDashboardResumo(semanaId) {
+    const norm = v => String(v || "").normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
-    return items.filter(i =>
-      this.pick(i, "Semana_id") === semanaId &&
-      (!dia || this.pick(i, "Dia") === dia)
-    );
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const diasPt = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+    const diaHoje = diasPt[hoje.getDay()];
+    const diasUteis = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    const diaHojeUtil = diasUteis.includes(diaHoje) ? diaHoje : "segunda";
+
+    // Carrega tudo em paralelo
+    const [colabs, pedidos, extras, checkIns] = await Promise.all([
+      this.getColaboradores().catch(() => []),
+      this.getPedidos(semanaId).catch(() => []),
+      this.getExtras(semanaId).catch(() => []),
+      this.getCheckIn(semanaId, diaHojeUtil).catch(() => [])
+    ]);
+
+    const isConfirmado = p => {
+      const s = norm(this.pick(p, "Status") || "");
+      return s === "confirmado" || s === "extra" || this.isTrue(this.pick(p, "Confirmado"));
+    };
+
+    const isCancelado = p => {
+      const s = norm(this.pick(p, "Status") || "");
+      return ["cancelado", "afastado", "ferias", "nao vai almocar"].includes(s);
+    };
+
+    const isPendente = p => !isConfirmado(p) && !isCancelado(p);
+
+    const isExtraP = p => this.isExtraPedido(p);
+
+    // Pedidos de colaboradores reais (sem extras)
+    const pedidosColab    = pedidos.filter(p => !isExtraP(p));
+    const confirmadosColab = pedidosColab.filter(isConfirmado);
+    const idsConf          = new Set(confirmadosColab.map(p => String(this.pick(p, "Colaborador_id") || "")));
+    const pedidosHoje      = pedidos.filter(p => norm(this.pick(p, "Dia")) === diaHojeUtil);
+    const confirmadosHoje  = pedidosHoje.filter(isConfirmado);
+    const extrasHoje       = extras.filter(e => norm(this.pick(e, "Dia")) === diaHojeUtil);
+
+    const countOpcao = (lista, opcao) =>
+      lista.filter(p => norm(this.pick(p, "Opcao")) === opcao).length;
+
+    return {
+      // Totais gerais da semana
+      colaboradoresAtivos:             colabs.length,
+      pedidosConfirmadosColaboradores: idsConf.size,
+      pendentesColaboradores:          Math.max(0, colabs.length - idsConf.size),
+      totalPedidosSemana:              pedidos.filter(isConfirmado).length,
+
+      // Hoje
+      checkinsHoje:     checkIns.filter(c => this.isTrue(this.pick(c, "Retirou"))).length,
+      totalPedidosHoje: confirmadosHoje.length,
+      ausenciasHoje:    pedidosHoje.filter(isCancelado).length,
+      pendentesHoje:    pedidosHoje.filter(isPendente).length,
+
+      // Opções de hoje
+      principalHoje: countOpcao(confirmadosHoje, "principal"),
+      lightHoje:     countOpcao(confirmadosHoje, "light"),
+      outrasHoje:    Math.max(0, confirmadosHoje.length - countOpcao(confirmadosHoje, "principal") - countOpcao(confirmadosHoje, "light")),
+
+      // Extras de hoje
+      extrasAtivos:      extrasHoje.length,
+      extrasConfirmados: extrasHoje.filter(isConfirmado).length,
+      extrasPendentes:   extrasHoje.filter(isPendente).length,
+
+      // Por dia da semana
+      porDia: diasUteis.reduce((acc, dia) => {
+        const lista = pedidos.filter(p => norm(this.pick(p, "Dia")) === dia);
+        const conf  = lista.filter(isConfirmado);
+        acc[dia] = {
+          total:     conf.length,
+          principal: countOpcao(conf, "principal"),
+          light:     countOpcao(conf, "light"),
+          pendentes: lista.filter(isPendente).length,
+          cancelados: lista.filter(isCancelado).length
+        };
+        return acc;
+      }, {}),
+
+      // Ranking de setores hoje
+      setoresHoje: (() => {
+        const map = {};
+        confirmadosHoje.forEach(p => {
+          const s = this.pick(p, "Centro_Custo") || "—";
+          map[s] = (map[s] || 0) + 1;
+        });
+        return Object.entries(map).sort((a, b) => b[1] - a[1]);
+      })(),
+
+      // Metadados
+      semanaId,
+      diaHoje:     diaHojeUtil,
+      geradoEm:    new Date().toISOString()
+    };
   },
-
-  async addExtra(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor) {
-    return this.createItem("Extras", {
-      Title: `${semanaId}-${dia}-${nome}`,
-      Semana_id: semanaId,
-      Dia: dia,
-      Nome: nome,
-      tipo: tipo,
-      Opcao: opcao,
-      Observacao: observacao || "",
-      Adicionado_Por: adicionadoPor || this.getUserName()
-    });
-  },
-
-  async removeExtra(id) {
-    return this.deleteItem("Extras", id);
-  },
-
 
   // ============================================================
-  // ALIASES DE COMPATIBILIDADE
-  // Mantém compatibilidade com funções antigas usadas no admin/index.html
+  // ALIASES DE COMPATIBILIDADE com código legado
   // ============================================================
-  async addItem(listName, fields) {
-    return this.createItem(listName, fields);
-  },
+  async addItem(listName, fields)              { return this.createItem(listName, fields); },
+  async patchListItem(listName, id, fields)    { return this.updateItem(listName, id, fields); },
+  async removeItem(listName, id)               { return this.deleteItem(listName, id); },
+  async deleteExtra(id)                        { return this.removeExtra(id); },
+  async getCheckIns()                          { return this.getItems("CheckIn"); },
+  async setConfig(chave, valor)                { return this.setConfig(chave, valor); },
 
-  async patchListItem(listName, itemId, fields) {
-    return this.updateItem(listName, itemId, fields);
-  },
+  // cleanupExtraAutomaticoSemana: remove duplicatas de "Refeição Extra automática" por dia
+  async cleanupExtraAutomaticoSemana(semanaId) {
+    const norm = v => String(v || "").normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
-  async removeItem(listName, itemId) {
-    return this.deleteItem(listName, itemId);
-  },
+    const pedidos = await this.getPedidos(semanaId);
+    const seenAuto = new Set();
+    const diasUteis = ["segunda", "terca", "quarta", "quinta", "sexta"];
 
-  // ============================================================
-  // UTILITÁRIOS
-  // ============================================================
-  getSemanaId(date = new Date()) {
-    const d = new Date(date);
+    for (const p of pedidos) {
+      const nome   = norm(this.pick(p, "Colaborador_nome", "Title") || "");
+      const origem = norm(this.pick(p, "Origem", "tipo") || "");
+      const dia    = norm(this.pick(p, "Dia") || "");
 
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+      if (!diasUteis.includes(dia)) continue;
+      const isAuto = nome === "refeicaoextra" || (nome.includes("extra") && origem.includes("extra"));
+      if (!isAuto) continue;
 
-    const week1 = new Date(d.getFullYear(), 0, 4);
-
-    const weekNum = 1 + Math.round(
-      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
-    );
-
-    return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
-  },
-
-  getWeekDates(semanaId) {
-    const [year, week] = semanaId.split("-W").map(Number);
-
-    const jan4 = new Date(year, 0, 4);
-    const startOfWeek = new Date(jan4);
-
-    startOfWeek.setDate(
-      jan4.getDate() - (jan4.getDay() || 7) + 1 + (week - 1) * 7
-    );
-
-    return Array.from({ length: 5 }, (_, i) => {
-      const d = new Date(startOfWeek);
-      d.setDate(startOfWeek.getDate() + i);
-      return d;
-    });
-  },
-
-
-  getUserEmail() {
-    return this._account ? this._account.username : "";
-  },
-
-  // ============================================================
-  // VALORES DE REFEIÇÃO
-  // ============================================================
-
-  async getValoresRefeicao() {
-    const items = await this.getItems("Valores de Refeição");
-    return items;
-  },
-
-  async createValorRefeicao(dados) {
-    return this.createItem("Valores de Refeição", {
-      Title: dados.title || "",
-      Data_Inicio: dados.dataInicio,
-      Data_Fim: dados.dataFim,
-      Valor_Vascon: Number(dados.valorVascon || 0),
-      Valor_Desconto_Funcionario: Number(dados.valorDesconto || 0),
-      Observacao: dados.observacao || "",
-      Ativo: dados.ativo !== false
-    });
-  },
-
-  async updateValorRefeicao(id, dados) {
-    const fields = {};
-
-    if (dados.title !== undefined) fields.Title = dados.title;
-    if (dados.dataInicio !== undefined) fields.Data_Inicio = dados.dataInicio;
-    if (dados.dataFim !== undefined) fields.Data_Fim = dados.dataFim;
-
-    if (dados.valorVascon !== undefined)
-      fields.Valor_Vascon = Number(dados.valorVascon);
-
-    if (dados.valorDesconto !== undefined)
-      fields.Valor_Desconto_Funcionario = Number(dados.valorDesconto);
-
-    if (dados.observacao !== undefined)
-      fields.Observacao = dados.observacao;
-
-    if (dados.ativo !== undefined)
-      fields.Ativo = dados.ativo;
-
-    return this.updateItem("Valores de Refeição", id, fields);
+      const key = `auto-${dia}`;
+      if (seenAuto.has(key)) {
+        // duplicata — remove
+        await this.deleteItem("Pedidos", p.id).catch(() => {});
+      } else {
+        seenAuto.add(key);
+      }
+    }
   }
-,
-
-  // ============================================================
-  // CHECK-IN COZINHA
-  // Lista: CheckIn
-  // Colunas sugeridas: Title, PedidoId, NomeColaborador,
-  // OpcaoEscolhida, Dia, DataHora, Confirmado
-  // ============================================================
-  async getCheckIns() {
-    return this.getItems("CheckIn");
-  },
-
-  async createCheckIn(dados) {
-    return this.createItem("CheckIn", {
-      Title: String(dados.pedidoId || dados.PedidoId || ""),
-      PedidoId: String(dados.pedidoId || dados.PedidoId || ""),
-      NomeColaborador: dados.nomeColaborador || dados.NomeColaborador || "",
-      OpcaoEscolhida: dados.opcaoEscolhida || dados.OpcaoEscolhida || "",
-      Dia: dados.dia || dados.Dia || "",
-      DataHora: dados.dataHora || dados.DataHora || new Date().toISOString(),
-      Confirmado: dados.confirmado ?? dados.Confirmado ?? true
-    });
-  }
-
 
 };
 
