@@ -1,4 +1,6 @@
 // admin-operacao-dia.js — Operação do Dia do Admin Homy
+// Cards mostram todas as opções da semana (Principal, Light, Carne, Massa)
+// + Lanche SOMENTE na sexta-feira
 
 const AdminOperacao = window.AdminOperacao = {
 
@@ -16,44 +18,57 @@ const AdminOperacao = window.AdminOperacao = {
 
     try {
       await SP.init();
-      const dia        = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
-      const pedidos    = await SP.getPedidos(semanaId);
-      const norm       = v => AdminUtils.norm(v);
+      const dia     = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
+      const pedidos = await SP.getPedidos(semanaId);
+      const norm    = v => AdminUtils.norm(v);
 
-      // Remove duplicatas de extra automático (mantém só 1 por dia)
-      const seenAuto   = new Set();
+      // Remove duplicatas de extra automático por dia
+      const seenAuto = new Set();
       this._lista = pedidos.filter(p => {
         if (norm(SP.pick(p, "Dia")) !== norm(dia)) return false;
         if (SP.isExtraPedido(p)) {
-          const k = `auto-${norm(SP.pick(p, "Dia"))}`;
+          const k = `auto-${norm(dia)}`;
           if (seenAuto.has(k)) return false;
           seenAuto.add(k);
         }
         return true;
       });
 
-      this._renderTotais();
+      this._renderTotais(dia);
       this._renderTabela();
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="7" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
     }
   },
 
-  _renderTotais() {
+  _renderTotais(dia) {
     const norm = v => AdminUtils.norm(v);
     const STATUS_PROD = ["confirmado", "extra", "aprovado"];
     const STATUS_CANC = ["cancelado", "afastado", "ferias", "nao vai almocar", "bloqueado", "travado"];
+
     const isConf = p => STATUS_PROD.includes(norm(SP.pick(p, "Status") || "")) || SP.isTrue(SP.pick(p, "Confirmado"));
     const isCanc = p => STATUS_CANC.includes(norm(SP.pick(p, "Status") || ""));
+    const conf   = this._lista.filter(isConf);
 
-    AdminUtils.setTxt("opTotalConfirmado", this._lista.filter(isConf).length);
-    AdminUtils.setTxt("opTotalPrincipal",  this._lista.filter(p => isConf(p) && norm(SP.pick(p, "Opcao")) === "principal").length);
-    AdminUtils.setTxt("opTotalLight",      this._lista.filter(p => isConf(p) && norm(SP.pick(p, "Opcao")) === "light").length);
-    AdminUtils.setTxt("opTotalCancelado",  this._lista.filter(isCanc).length);
+    // Cards fixos (sempre aparecem)
+    const setCard = (id, val) => AdminUtils.setTxt(id, val);
+    setCard("opTotalConfirmado", conf.length);
+    setCard("opTotalPrincipal",  conf.filter(p => norm(SP.pick(p, "Opcao")) === "principal").length);
+    setCard("opTotalLight",      conf.filter(p => norm(SP.pick(p, "Opcao")) === "light").length);
+    setCard("opTotalCarne",      conf.filter(p => norm(SP.pick(p, "Opcao")) === "carne").length);
+    setCard("opTotalMassa",      conf.filter(p => norm(SP.pick(p, "Opcao")) === "massa").length);
+    setCard("opTotalCancelado",  this._lista.filter(isCanc).length);
+
+    // Card de Lanche: só aparece na sexta-feira
+    const cardLanche = document.getElementById("cardOpLanche");
+    if (cardLanche) {
+      cardLanche.style.display = norm(dia) === "sexta" ? "" : "none";
+      setCard("opTotalLanche", conf.filter(p => norm(SP.pick(p, "Opcao")) === "lanche").length);
+    }
   },
 
   _renderTabela() {
-    const tbody      = document.getElementById("operacaoTable");
+    const tbody = document.getElementById("operacaoTable");
     if (!tbody) return;
 
     const statusFiltro = AdminUtils.norm(AdminUtils.getVal("operacaoFiltroStatus"));
@@ -63,7 +78,7 @@ const AdminOperacao = window.AdminOperacao = {
     let lista = this._lista;
     if (statusFiltro) lista = lista.filter(p => norm(SP.pick(p, "Status") || "") === statusFiltro);
     if (busca) lista = lista.filter(p =>
-      norm([SP.pick(p, "Colaborador_nome"), SP.pick(p, "Centro_Custo")].join(" ")).includes(busca)
+      norm([SP.pick(p, "Colaborador_nome", "Title"), SP.pick(p, "Centro_Custo")].join(" ")).includes(busca)
     );
 
     if (!lista.length) {
@@ -73,12 +88,12 @@ const AdminOperacao = window.AdminOperacao = {
 
     tbody.innerHTML = lista.map(p => {
       const id     = AdminUtils.esc(p.id || "");
-      const nome   = AdminUtils.esc(SP.pick(p, "Colaborador_nome") || "—");
-      const cc     = AdminUtils.esc(SP.pick(p, "Centro_Custo")     || "—");
-      const opcao  = AdminUtils.esc(SP.pick(p, "Opcao")            || "—");
-      const prato  = AdminUtils.esc(SP.pick(p, "Nome_Prato")       || "—");
+      const nome   = AdminUtils.esc(SP.pick(p, "Colaborador_nome", "Title") || "—");
+      const cc     = AdminUtils.esc(SP.pick(p, "Centro_Custo")              || "—");
+      const opcao  = AdminUtils.esc(SP.pick(p, "Opcao")                     || "—");
+      const prato  = AdminUtils.esc(SP.pick(p, "Nome_Prato")                || "—");
       const status = SP.pick(p, "Status") || "Pendente";
-      const origem = AdminUtils.esc(SP.pick(p, "Origem", "tipo")   || "Refeitório");
+      const origem = AdminUtils.esc(SP.pick(p, "Origem", "tipo")            || "Refeitório");
       const isEx   = SP.isExtraPedido(p);
       return `<tr>
         <td${isEx ? ' style="color:#ffd36d;font-weight:700"' : ""}>${nome}</td>
@@ -88,7 +103,7 @@ const AdminOperacao = window.AdminOperacao = {
         <td>${AdminUtils.badge(status)}</td>
         <td>${origem}</td>
         <td><div class="table-actions">
-          <button class="btn-icon" title="Confirmar"     onclick="AdminOperacao.alterarStatus('${id}','Confirmado')">✅</button>
+          <button class="btn-icon" title="Confirmar"      onclick="AdminOperacao.alterarStatus('${id}','Confirmado')">✅</button>
           <button class="btn-icon danger" title="Cancelar" onclick="AdminOperacao.alterarStatus('${id}','Cancelado')">❌</button>
           <button class="btn-icon" title="Não vai almoçar" onclick="AdminOperacao.alterarStatus('${id}','Não vai almoçar')">🚫</button>
           <button class="btn-icon danger" title="Excluir"  onclick="AdminOperacao.excluir('${id}')">🗑️</button>
@@ -107,24 +122,25 @@ const AdminOperacao = window.AdminOperacao = {
         Alterado_Por: SP.getUserName(),
         Origem:       "Admin"
       });
-      AdminUtils.toast(`Status: ${status}`, "success");
-      // Atualiza localmente sem recarregar tudo
       const p = this._lista.find(x => String(x.id) === String(id));
       if (p) { p.Status = status; p.Confirmado = ["Confirmado", "Extra"].includes(status); }
-      this._renderTotais();
+      const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
+      this._renderTotais(dia);
       this._renderTabela();
+      AdminUtils.toast(`Status: ${status}`, "success");
     } catch (e) {
       AdminUtils.toast("Erro: " + e.message, "error");
     }
   },
 
   async excluir(id) {
-    if (!confirm("Excluir este pedido da operação?")) return;
+    if (!confirm("Excluir este pedido?")) return;
     try {
       await SP.init();
       await SP.deletePedido(id);
       this._lista = this._lista.filter(p => String(p.id) !== String(id));
-      this._renderTotais();
+      const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
+      this._renderTotais(dia);
       this._renderTabela();
       AdminUtils.toast("Pedido excluído.", "success");
     } catch (e) {
@@ -138,7 +154,6 @@ const AdminOperacao = window.AdminOperacao = {
       if (el && !el.dataset.boundOp) { el.dataset.boundOp = "1"; el.addEventListener(ev, fn); }
     };
 
-    // Inicializa dia com o dia de hoje
     const diaEl = document.getElementById("operacaoDia");
     if (diaEl && !diaEl.dataset.boundOp) diaEl.value = AdminUtils.DIA_HOJE();
 
