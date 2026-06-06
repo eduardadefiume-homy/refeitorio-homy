@@ -233,7 +233,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 <div id="loginScreen">
   <div class="login-center">
     <div class="login-circle">
-      <img src="../logo.png" alt="Homy" onerror="this.style.display='none'">
+      <img src="../favicon.png" alt="Homy" onerror="this.style.display='none'">
     </div>
     <div class="login-text-block">
       <div class="login-title">Painel Administrador</div>
@@ -252,7 +252,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-header">
-      <img class="sidebar-logo" src="../logo.png" alt="Homy" onerror="this.style.display='none'">
+      <img class="sidebar-logo" src="../favicon.png" alt="Homy" onerror="this.style.display='none'">
       <div>
         <div class="sidebar-title">Admin</div>
         <div class="sidebar-sub">Refeitório</div>
@@ -464,6 +464,9 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" id="opTotalConfirmado">—</div><div class="stat-label">Confirmados</div></div>
           <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="opTotalPrincipal">—</div><div class="stat-label">Principal</div></div>
           <div class="stat-card"><div class="stat-icon">🍃</div><div class="stat-value" id="opTotalLight">—</div><div class="stat-label">Light</div></div>
+          <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="opTotalCarne">—</div><div class="stat-label">Carne</div></div>
+          <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="opTotalMassa">—</div><div class="stat-label">Massa</div></div>
+          <div class="stat-card" id="cardOpLanche" style="display:none"><div class="stat-icon">🍔</div><div class="stat-value" id="opTotalLanche">—</div><div class="stat-label">Lanche (Sexta)</div></div>
           <div class="stat-card"><div class="stat-icon">⚠️</div><div class="stat-value" id="opTotalCancelado">—</div><div class="stat-label">Cancelados</div></div>
         </div>
         <div style="display:flex;gap:.6rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
@@ -502,7 +505,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
         </div>
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Nome</th><th>Departamento</th><th>Tipo</th><th>Status</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Nome</th><th>Departamento</th><th>Centro Custo</th><th>Tipo</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="colabTable"><tr><td colspan="5" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
         </div>
@@ -554,7 +557,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
         <div class="alert alert-info">ℹ️ Apenas um registro deve estar ativo por vez. Novo registro ativo desativa o anterior.</div>
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Título</th><th>Início</th><th>Fim</th><th>Vascon</th><th>Funcionário</th><th>Status</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Título</th><th>Início</th><th>Fim</th><th>Vascon</th><th>Desconto Funcionário</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="valoresTable"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
         </div>
@@ -564,6 +567,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="module" id="mod-relatorios">
         <div class="section-header">
           <div class="section-title">📈 Relatórios</div>
+          <button class="btn-secondary" id="btnExportarRelatorio">📥 Exportar Excel</button>
         </div>
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-icon">🍗</div><div class="stat-value" id="rel-principal">—</div><div class="stat-label">Principal</div></div>
@@ -572,10 +576,28 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">—</div><div class="stat-label">Massa</div></div>
           <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">—</div><div class="stat-label">Lanche</div></div>
         </div>
-        <div class="table-wrap" style="margin-top:1rem">
+
+        <div class="section-title" style="font-size:1rem;margin:1.2rem 0 .6rem">📅 Por dia</div>
+        <div class="table-wrap">
           <table class="table">
             <thead><tr><th>Dia</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
-            <tbody id="relTable"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
+            <tbody id="relTableDia"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="section-title" style="font-size:1rem;margin:1.4rem 0 .6rem">🏢 Por centro de custo</div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
+            <tbody id="relTableCC"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="section-title" style="font-size:1rem;margin:1.4rem 0 .6rem">👤 Por colaborador (total de refeições — para desconto)</div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Total refeições</th><th>Dias</th></tr></thead>
+            <tbody id="relTableColab"><tr><td colspan="4" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
         </div>
       </div>
