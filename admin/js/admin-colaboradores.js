@@ -1,4 +1,5 @@
 // admin-colaboradores.js — Colaboradores do Admin Homy
+// Colunas SharePoint: Nome, Departamento, Centro_Custo, Email, Ativo, tipo
 
 const AdminColaboradores = window.AdminColaboradores = {
 
@@ -13,14 +14,14 @@ const AdminColaboradores = window.AdminColaboradores = {
   async _carregar() {
     const tbody = document.getElementById("colabTable") || document.getElementById("colaboradoresTableBody");
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-cell">Carregando...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Carregando...</td></tr>`;
 
     try {
       await SP.init();
       this._lista = await SP.getTodosColaboradores();
       this._render();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
     }
   },
 
@@ -30,23 +31,29 @@ const AdminColaboradores = window.AdminColaboradores = {
 
     const busca = AdminUtils.norm(AdminUtils.getVal("searchColab"));
     const lista = busca
-      ? this._lista.filter(c => AdminUtils.norm([SP.pick(c, "Nome", "Title"), SP.pick(c, "Departamento")].join(" ")).includes(busca))
+      ? this._lista.filter(c => AdminUtils.norm([
+          SP.pick(c, "Nome", "Title"),
+          SP.pick(c, "Departamento"),
+          SP.pick(c, "Centro_Custo")
+        ].join(" ")).includes(busca))
       : this._lista;
 
     if (!lista.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty-cell">Nenhum colaborador encontrado.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Nenhum colaborador encontrado.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = lista.map(c => {
       const id    = AdminUtils.esc(c.id || "");
-      const nome  = AdminUtils.esc(SP.pick(c, "Nome", "Title")       || "—");
-      const dept  = AdminUtils.esc(SP.pick(c, "Departamento")        || "—");
-      const tipo  = AdminUtils.esc(SP.pick(c, "tipo")                || "Colaborador");
+      const nome  = AdminUtils.esc(SP.pick(c, "Nome", "Title") || "—");
+      const dept  = AdminUtils.esc(SP.pick(c, "Departamento")  || "—");
+      const cc    = AdminUtils.esc(SP.pick(c, "Centro_Custo")  || "—");
+      const tipo  = AdminUtils.esc(SP.pick(c, "tipo")          || "Colaborador");
       const ativo = SP.isTrue(SP.pick(c, "Ativo"));
       return `<tr>
         <td>${nome}</td>
         <td>${dept}</td>
+        <td>${cc}</td>
         <td><span class="badge badge-blue">${tipo}</span></td>
         <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${ativo ? "Ativo" : "Inativo"}</span></td>
         <td><div class="table-actions">
@@ -57,7 +64,6 @@ const AdminColaboradores = window.AdminColaboradores = {
     }).join("");
   },
 
-  // ── Modal ────────────────────────────────────────────────────
   abrirNovo() {
     this._editandoId = null;
     this._limparModal();
@@ -71,13 +77,11 @@ const AdminColaboradores = window.AdminColaboradores = {
     this._editandoId = id;
     const c = this._lista.find(x => String(x.id) === String(id));
     if (!c) { AdminUtils.toast("Colaborador não encontrado.", "error"); return; }
-
     AdminUtils.setVal("colabNome",         SP.pick(c, "Nome", "Title")    || "");
     AdminUtils.setVal("colabDepartamento", SP.pick(c, "Departamento")     || "");
     AdminUtils.setVal("colabCentroCusto",  SP.pick(c, "Centro_Custo")     || "");
     AdminUtils.setVal("colabEmail",        SP.pick(c, "Email")            || "");
     AdminUtils.setVal("colabTipo",         SP.pick(c, "tipo")             || "colaborador");
-
     const t = document.querySelector("#modalColaborador .modal-title");
     if (t) t.textContent = "Editar colaborador";
     AdminUtils.openModal("modalColaborador");
@@ -89,14 +93,12 @@ const AdminColaboradores = window.AdminColaboradores = {
   },
 
   async salvar() {
-    const nome        = AdminUtils.getVal("colabNome");
+    const nome         = AdminUtils.getVal("colabNome");
     const departamento = AdminUtils.getVal("colabDepartamento");
     const centroCusto  = AdminUtils.getVal("colabCentroCusto");
     const email        = AdminUtils.getVal("colabEmail");
     const tipo         = AdminUtils.getVal("colabTipo") || "colaborador";
-
     if (!nome) { AdminUtils.toast("Informe o nome.", "error"); return; }
-
     try {
       await SP.init();
       if (this._editandoId) {
@@ -128,75 +130,86 @@ const AdminColaboradores = window.AdminColaboradores = {
     }
   },
 
-  // ── Importação Excel ─────────────────────────────────────────
+  // Lê as colunas NOME, DEPARTAMENTO, C.C da planilha da Homy
   async importarExcel(file) {
     if (!file) return;
     if (typeof XLSX === "undefined") { AdminUtils.toast("Biblioteca XLSX não carregou.", "error"); return; }
-
     try {
       const buf  = await file.arrayBuffer();
       const wb   = XLSX.read(buf, { type: "array" });
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
 
-      const norm = v => AdminUtils.norm(v).replace(/[^a-z0-9]/g, "");
-      const get  = (row, ...names) => {
+      const normKey = v => AdminUtils.norm(String(v || "")).replace(/[^a-z0-9]/g, "");
+      const get = (row, ...names) => {
         const keys = Object.keys(row);
         for (const n of names) {
-          const k = keys.find(k => norm(k) === norm(n));
+          const k = keys.find(k => normKey(k) === normKey(n) || normKey(k).startsWith(normKey(n).slice(0, 3)));
           if (k && String(row[k]).trim()) return String(row[k]).trim();
         }
         return "";
       };
 
       const lista = rows.map(row => ({
-        nome:         get(row, "Nome", "Colaborador", "Funcionario", "Nome completo"),
-        departamento: get(row, "Departamento", "Setor", "Area"),
-        centroCusto:  get(row, "Centro_Custo", "Centro de Custo", "CC"),
+        nome:         get(row, "NOME", "Nome", "Colaborador"),
+        departamento: get(row, "DEPARTAMENTO", "Departamento", "Setor"),
+        // coluna C.C na planilha = Centro de Custo
+        centroCusto:  get(row, "C.C", "CC", "Centro_Custo", "CentroCusto", "Centro de Custo"),
         email:        get(row, "Email", "E-mail", "Mail"),
-        tipo:         get(row, "tipo", "Tipo") || "colaborador"
+        tipo:         get(row, "Tipo", "tipo") || "colaborador"
       })).filter(c => c.nome);
 
-      if (!lista.length) { AdminUtils.toast("Nenhum colaborador encontrado na planilha.", "error"); return; }
-      if (!confirm(`${lista.length} colaboradores encontrados. Importar?`)) return;
+      if (!lista.length) { AdminUtils.toast("Nenhum colaborador com coluna NOME encontrado.", "error"); return; }
+
+      const confirmar = confirm(
+        `${lista.length} colaboradores encontrados.\n\n` +
+        `⚠️ Isso vai APAGAR todos os colaboradores do SharePoint e reimportar a lista.\n\nContinuar?`
+      );
+      if (!confirmar) return;
 
       await SP.init();
+
+      // Apaga todos os atuais
+      AdminUtils.toast("Apagando lista anterior...", "info");
+      const atuais = await SP.getTodosColaboradores();
+      for (const c of atuais) {
+        try { await SP.deleteColaborador(c.id); } catch (e) { console.warn("Falha ao apagar:", c.id, e); }
+      }
+
+      // Importa nova lista
+      AdminUtils.toast(`Importando ${lista.length} colaboradores...`, "info");
       let ok = 0, falhas = 0;
       for (const c of lista) {
         try { await SP.createColaborador(c); ok++; }
-        catch (e) { console.warn("Falha:", c, e); falhas++; }
+        catch (e) { console.warn("Falha ao criar:", c.nome, e); falhas++; }
       }
 
-      AdminUtils.toast(`Importados: ${ok}${falhas ? ` / ${falhas} falhas` : ""}.`, falhas ? "error" : "success");
+      AdminUtils.toast(
+        `Pronto: ${ok} importados${falhas ? ` / ${falhas} falhas` : ""}.`,
+        falhas ? "error" : "success"
+      );
       await this._carregar();
     } catch (e) {
       AdminUtils.toast("Erro ao importar: " + e.message, "error");
     }
   },
 
-  // ── Bindings ─────────────────────────────────────────────────
   _bindBotoes() {
     const bind = (id, ev, fn) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.boundCol) { el.dataset.boundCol = "1"; el.addEventListener(ev, fn); }
     };
-
-    bind("btnNovoColaborador",   "click",  () => this.abrirNovo());
-    bind("salvarColaborador",    "click",  () => this.salvar());
-    bind("cancelarColaborador",  "click",  () => AdminUtils.closeModal("modalColaborador"));
-    bind("searchColab",          "input",  () => this._render());
-
+    bind("btnNovoColaborador",  "click", () => this.abrirNovo());
+    bind("salvarColaborador",   "click", () => this.salvar());
+    bind("cancelarColaborador", "click", () => AdminUtils.closeModal("modalColaborador"));
+    bind("searchColab",         "input", () => this._render());
     bind("btnImportarExcel", "click", () => {
-      const inp = document.getElementById("excelInput") || document.getElementById("inputImportarColaboradoresExcel");
+      const inp = document.getElementById("excelInput");
       if (inp) { inp.value = ""; inp.click(); }
     });
-
-    const excelInputs = ["excelInput", "inputImportarColaboradoresExcel"];
-    excelInputs.forEach(id => {
-      const el = document.getElementById(id);
-      if (el && !el.dataset.boundCol) {
-        el.dataset.boundCol = "1";
-        el.addEventListener("change", () => this.importarExcel(el.files[0]));
-      }
-    });
+    const excelEl = document.getElementById("excelInput");
+    if (excelEl && !excelEl.dataset.boundCol) {
+      excelEl.dataset.boundCol = "1";
+      excelEl.addEventListener("change", () => this.importarExcel(excelEl.files[0]));
+    }
   }
 };
