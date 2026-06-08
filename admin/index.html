@@ -555,11 +555,45 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <button class="btn-primary" id="btnNovoValor">+ Novo valor</button>
         </div>
         <div class="alert alert-info">ℹ️ Apenas um registro deve estar ativo por vez. Novo registro ativo desativa o anterior.</div>
-        <div class="table-wrap">
+        <div class="table-wrap" style="margin-bottom:1.5rem">
           <table class="table">
             <thead><tr><th>Título</th><th>Início</th><th>Fim</th><th>Vascon</th><th>Desconto Funcionário</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody id="valoresTable"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
+        </div>
+
+        <!-- Seção NF Vascon -->
+        <div class="dashboard-panel" style="margin-top:.5rem">
+          <div class="dashboard-panel-title">📄 Nota Fiscal Vascon — Upload e Reconciliação</div>
+          <div class="alert alert-info" style="margin-bottom:1rem">
+            Selecione o período de valores, informe o total da NF e faça o upload do PDF para auditoria.
+          </div>
+          <div class="form-grid" style="margin-bottom:1rem">
+            <input type="hidden" id="nfValorId">
+            <div class="form-group">
+              <label class="form-label">Período — início</label>
+              <input type="date" class="form-input" id="nfInicio">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Período — fim</label>
+              <input type="date" class="form-input" id="nfFim">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Total da NF Vascon (R$)</label>
+              <input class="form-input" id="nfTotalDigitado" placeholder="Ex.: 3.372,00">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Valor unitário cadastrado</label>
+              <div class="form-input" id="nfVasconUnit" style="background:rgba(255,255,255,.03);cursor:default;color:rgba(143,170,210,.6)">—</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+            <button class="btn-secondary" id="btnUploadNF">📎 Upload PDF da NF</button>
+            <button class="btn-primary"   id="btnReconciliar">🔍 Reconciliar com sistema</button>
+            <input type="file" id="inputNFPDF" accept=".pdf" style="display:none">
+            <span id="nfUploadStatus" style="font-size:.78rem;color:rgba(143,170,210,.6)"></span>
+          </div>
+          <div id="nfResultado"></div>
         </div>
       </div>
 
@@ -569,36 +603,43 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <div class="section-title">📈 Relatórios</div>
           <button class="btn-secondary" id="btnExportarRelatorio">📥 Exportar Excel</button>
         </div>
+
+        <!-- Filtros -->
+        <div class="homy-filter-box" style="margin-bottom:1rem">
+          <div class="form-group">
+            <label class="form-label">Data início</label>
+            <input type="date" class="form-input" id="relDataIni" style="width:160px">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data fim</label>
+            <input type="date" class="form-input" id="relDataFim" style="width:160px">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tipo de relatório</label>
+            <select class="form-select" id="relTipo" style="width:220px">
+              <option value="dia">Por dia de refeição</option>
+              <option value="cc">Por centro de custo</option>
+              <option value="ccfunc">Por CC e funcionário (desconto folha)</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:flex-end">
+            <button class="btn-primary" id="btnBuscarRelatorio">🔎 Gerar relatório</button>
+          </div>
+        </div>
+
+        <!-- Cards totais -->
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-icon">🍗</div><div class="stat-value" id="rel-principal">—</div><div class="stat-label">Principal</div></div>
           <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="rel-light">—</div><div class="stat-label">Light</div></div>
           <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="rel-carne">—</div><div class="stat-label">Carne</div></div>
           <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">—</div><div class="stat-label">Massa</div></div>
           <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">—</div><div class="stat-label">Lanche</div></div>
+          <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value" id="rel-total">—</div><div class="stat-label">Total</div></div>
         </div>
 
-        <div class="section-title" style="font-size:1rem;margin:1.2rem 0 .6rem">📅 Por dia</div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Dia</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
-            <tbody id="relTableDia"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
-          </table>
-        </div>
-
-        <div class="section-title" style="font-size:1rem;margin:1.4rem 0 .6rem">🏢 Por centro de custo</div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
-            <tbody id="relTableCC"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
-          </table>
-        </div>
-
-        <div class="section-title" style="font-size:1rem;margin:1.4rem 0 .6rem">👤 Por colaborador (total de refeições — para desconto)</div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Total refeições</th><th>Dias</th></tr></thead>
-            <tbody id="relTableColab"><tr><td colspan="4" class="empty-cell">Carregando...</td></tr></tbody>
-          </table>
+        <!-- Resultado dinâmico (preenchido pelo JS conforme tipo) -->
+        <div id="relConteudo" style="margin-top:1rem">
+          <div class="alert alert-info">Selecione o período e clique em Gerar relatório.</div>
         </div>
       </div>
 
@@ -785,6 +826,39 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     <div class="modal-footer">
       <button class="btn-secondary" id="cancelarValorRefeicao">Cancelar</button>
       <button class="btn-success"   id="salvarValorRefeicao">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Modal NF Vascon (reconciliação detalhada via botão na tabela) -->
+<div class="modal-overlay" id="modalNFVascon">
+  <div class="modal-box" style="max-width:700px">
+    <div class="modal-header">
+      <div class="modal-title">Reconciliação NF Vascon</div>
+      <div class="modal-close" id="fecharModalNF">✕</div>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="nfValorIdModal">
+      <div class="form-grid" style="margin-bottom:1rem">
+        <div class="form-group">
+          <label class="form-label">Período — início</label>
+          <input type="date" class="form-input" id="nfInicioModal">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Período — fim</label>
+          <input type="date" class="form-input" id="nfFimModal">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Total da NF (R$)</label>
+          <input class="form-input" id="nfTotalModal" placeholder="Ex.: 3.372,00">
+        </div>
+      </div>
+      <button class="btn-primary" id="btnReconciliarModal" style="margin-bottom:1rem">🔍 Reconciliar</button>
+      <div id="nfResultadoModal"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary modal-close">Fechar</button>
     </div>
   </div>
 </div>
