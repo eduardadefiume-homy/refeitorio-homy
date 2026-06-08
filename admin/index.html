@@ -9,7 +9,7 @@
 
 <!-- Dependências externas -->
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 
 <!-- Camada de dados (sempre primeiro) -->
@@ -542,7 +542,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
         <div class="alert alert-warning">⚠️ Extras são refeições fora do quadro de colaboradores.</div>
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Nome</th><th>Tipo</th><th>Dia</th><th>Opção</th><th>Observação</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Nome</th><th>Tipo</th><th>Dia</th><th>Opção</th><th>Centro Custo</th><th>Observação</th><th>Ações</th></tr></thead>
             <tbody id="extrasTable"><tr><td colspan="6" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
         </div>
@@ -744,12 +744,15 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="extraNome" placeholder="Nome do visitante"></div>
+        <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="extraNome" placeholder="Nome do visitante / prestador"></div>
         <div class="form-group"><label class="form-label">Tipo</label>
           <select class="form-select" id="extraTipo">
-            <option value="visitante">Visitante</option><option value="motorista">Motorista</option>
-            <option value="investigador">Investigador</option><option value="guarda">Guarda</option>
-            <option value="prestador">Prestador</option><option value="marmita">Marmita</option>
+            <option value="visitante">Visitante</option>
+            <option value="motorista">Motorista</option>
+            <option value="prestador">Prestador de Serviço</option>
+            <option value="investigador">Investigador</option>
+            <option value="guarda">Guarda</option>
+            <option value="marmita">Marmita</option>
           </select>
         </div>
         <div class="form-group"><label class="form-label">Dia</label>
@@ -763,6 +766,15 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
             <option value="principal">Principal</option><option value="light">Light</option>
             <option value="carne">Carne</option><option value="massa">Massa</option>
           </select>
+        </div>
+        <div class="form-group" id="extraCCGroup" style="grid-column:1/-1">
+          <label class="form-label">Centro de Custo <span style="color:rgba(192,40,28,.9)">*</span></label>
+          <input class="form-input" id="extraCC" list="extraCCList" placeholder="Digite ou selecione o CC...">
+          <datalist id="extraCCList"></datalist>
+          <div style="font-size:.72rem;color:rgba(143,170,210,.5);margin-top:.3rem">
+            Para Guarda/Investigador o CC é preenchido automaticamente como <b>Portaria</b>.<br>
+            Para Visitante/Motorista é preenchido como <b>ADM Geral</b>.
+          </div>
         </div>
         <div class="form-group" style="grid-column:1/-1"><label class="form-label">Observação</label><textarea class="form-textarea" id="extraObs" placeholder="Informações adicionais..."></textarea></div>
       </div>
