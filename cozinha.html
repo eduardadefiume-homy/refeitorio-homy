@@ -783,5 +783,156 @@ async function iniciarCozinha(){
 
 iniciarCozinha();
 </script>
+<script>
+(function fixCozinhaCardapio(){
+
+  // Textos que NÃO devem aparecer como detalhe na cozinha
+  function ehObsSuja(texto){
+    const n = String(texto||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+    return n.includes("cardapio acima esta sujeito") ||
+           n.includes("sujeito a alteracoes") ||
+           n.includes("opcoes carne e massa substituem") ||
+           n.includes("opcao carne substitui") ||
+           n.includes("opcao massa substitui") ||
+           n.includes("opcoes light e lanche substituem") ||
+           n.includes("opcao light substitui") ||
+           n.includes("opcao lanche substitui") ||
+           n.includes("esta opcao substitui") ||
+           n.includes("extraido automaticamente") ||
+           n.includes("pdf vascon") ||
+           n.length < 2;
+  }
+
+  const NOMES_GENERICOS = [
+    "prato principal","principal","light","carne","massa","lanche",
+    "cardapio","prato","sem nome",""
+  ];
+
+  function ehNomeGenerico(v){
+    return NOMES_GENERICOS.includes(
+      String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim()
+    );
+  }
+
+  // Observação por opção — aparece como nota amarela no card
+  const OBS_POR_OPCAO = {
+    principal: "O cardápio acima está sujeito a alterações.",
+    light:     "Esta opção substitui o prato principal completo.",
+    lanche:    "Esta opção substitui o prato principal completo.",
+    carne:     "Esta opção substitui a carne do prato principal.",
+    massa:     "Esta opção substitui a carne do prato principal."
+  };
+
+  // Sobrescreve carregarCardapio após ela ser definida
+  function patchCarregarCardapio(){
+    if(typeof window.carregarCardapio !== "function") return false;
+
+    window.carregarCardapio = async function(semanaId, dia){
+      try{
+        const cardapio = await window.SP.getCardapio(semanaId);
+        const itens = cardapio.filter(c => {
+          const diaItem = String((c.Dia||c.dia||"")).normalize("NFD")
+            .replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+          const diaAlvo = String(dia||"").normalize("NFD")
+            .replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+          return diaItem === diaAlvo || diaItem.startsWith(diaAlvo.slice(0,3));
+        });
+
+        const box = document.getElementById("cardapioHoje");
+        if(!box) return;
+
+        if(!itens.length){
+          box.innerHTML = "Nenhum cardápio cadastrado para hoje.";
+          return;
+        }
+
+        // Ordem de exibição
+        const ORDEM = ["principal","light","carne","massa","lanche"];
+        itens.sort((a,b) => {
+          const ta = ORDEM.indexOf(String(a.Opcao||a.opcao||"").toLowerCase());
+          const tb = ORDEM.indexOf(String(b.Opcao||b.opcao||"").toLowerCase());
+          return (ta<0?99:ta)-(tb<0?99:tb);
+        });
+
+        box.innerHTML = '<div class="cozinha-cardapio-grid">' +
+          itens.map(i => {
+            const opcao   = String(i.Opcao||i.opcao||"principal").toLowerCase();
+            let   nomeRaw = String(i.Nome_Prato||i.nomePrato||i.Prato||i.Title||"").trim();
+            const detRaw  = String(i.Detalhes||i.detalhes||"");
+
+            // Filtra linhas sujas dos detalhes
+            let linhas = detRaw
+              .split(/\r?\n|;/)
+              .map(x => x.replace(/^[-•·\s]+/,"").trim())
+              .filter(x => x.length > 1 && !ehObsSuja(x));
+
+            // Nome genérico → usa primeiro detalhe como nome
+            if(ehNomeGenerico(nomeRaw) && linhas.length > 0){
+              if(opcao === "principal"){
+                nomeRaw = "Cardápio do Dia";
+              } else {
+                nomeRaw  = linhas[0];
+                linhas   = linhas.slice(1);
+              }
+            }
+            if(ehNomeGenerico(nomeRaw)) nomeRaw = "Cardápio não cadastrado";
+
+            const titulo = {
+              principal:"PRINCIPAL", light:"LIGHT", carne:"CARNE",
+              massa:"MASSA", lanche:"LANCHE"
+            }[opcao] || opcao.toUpperCase();
+
+            const obs = OBS_POR_OPCAO[opcao] || "";
+
+            return '<article class="cozinha-cardapio-card">' +
+              '<div class="cozinha-cardapio-head">' +
+                '<span class="tag-'+opcao+'">'+titulo+'</span>' +
+                '<strong>'+nomeRaw+'</strong>' +
+              '</div>' +
+              (linhas.length
+                ? '<div class="cozinha-cardapio-body">' +
+                    linhas.map(l => '<div class="cozinha-cardapio-item">• '+l+'</div>').join("") +
+                  '</div>'
+                : '') +
+              (obs
+                ? '<div class="cozinha-cardapio-obs">ℹ️ '+obs+'</div>'
+                : '') +
+            '</article>';
+          }).join("") +
+        '</div>';
+
+      } catch(e){
+        console.warn("Cardápio cozinha:", e);
+        const box = document.getElementById("cardapioHoje");
+        if(box) box.textContent = "Não foi possível carregar o cardápio.";
+      }
+    };
+
+    return true;
+  }
+
+  // Adiciona CSS para .cozinha-cardapio-obs
+  const style = document.createElement("style");
+  style.textContent = `.cozinha-cardapio-obs{
+    margin:.4rem 1rem .8rem;
+    padding:.45rem .7rem;
+    border-radius:8px;
+    background:rgba(255,180,0,.07);
+    border:1px solid rgba(255,180,0,.18);
+    font-size:.72rem;
+    color:rgba(255,210,120,.85);
+    line-height:1.45;
+  }`;
+  document.head.appendChild(style);
+
+  // Tenta patchar imediatamente e por até 3s
+  let t = 0;
+  const iv = setInterval(function(){
+    if(patchCarregarCardapio()){ clearInterval(iv); console.log("[fix-cozinha] patch aplicado"); }
+    if(++t > 30) clearInterval(iv);
+  }, 100);
+
+})();
+</script>
 </body>
 </html>
