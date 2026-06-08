@@ -6,9 +6,9 @@
 // clientId: aa37acf9-f3bd-4d1e-968a-fde57f79094c
 //
 // Decisão técnica:
-// - Admin usa loginPopup por clique explícito
-// - Páginas públicas usam sessão existente e não ficam disparando login em loop
-// - Graph não inicia múltiplas interações simultâneas
+// - Login sempre por redirect
+// - Sem loginPopup
+// - Sem acquireTokenPopup
 // - SharePoint continua sendo a fonte oficial dos dados
 // - no PATCH/POST, sem funções duplicadas.
 // ============================================================
@@ -215,10 +215,6 @@ const SP = window.SP = {
     return window.location.origin + window.location.pathname;
   },
 
-  _isAdminPage() {
-    return window.location.pathname.toLowerCase().includes("/admin/");
-  },
-
   _getAllStorageKeys() {
     return [
       ...Object.keys(sessionStorage),
@@ -346,21 +342,6 @@ const SP = window.SP = {
     };
 
     try {
-      if (this._isAdminPage()) {
-        const result = await this._msalInstance.loginPopup(request);
-
-        if (result?.account) {
-          this._account = result.account;
-          this._msalInstance.setActiveAccount(result.account);
-          this._loginEmAndamento = false;
-          this._clearMsalInteractionOnly();
-          return true;
-        }
-
-        this._loginEmAndamento = false;
-        return false;
-      }
-
       await this._msalInstance.loginRedirect(request);
       return false;
 
@@ -383,7 +364,8 @@ const SP = window.SP = {
 
     if (logado && this._account) return true;
 
-    return this.login();
+    await this.login();
+    return false;
   },
 
   async getToken() {
@@ -416,8 +398,8 @@ const SP = window.SP = {
     await this.init();
 
     if (!this._account) {
-      const ok = await this.login();
-      if (!ok) return null;
+      await this.login();
+      return null;
     }
 
     try {
@@ -434,15 +416,6 @@ const SP = window.SP = {
       if (msg.includes("interaction_in_progress")) {
         this._clearMsalInteractionOnly();
         return null;
-      }
-
-      if (this._isAdminPage()) {
-        const popup = await this._msalInstance.acquireTokenPopup({
-          scopes: this.scopes,
-          account: this._account
-        });
-
-        return popup.accessToken;
       }
 
       await this._msalInstance.acquireTokenRedirect({
@@ -1448,3 +1421,4 @@ const SP = window.SP = {
 };
 
 window.SP = SP;
+
