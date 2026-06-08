@@ -14,19 +14,23 @@ const AdminCore = window.AdminCore = {
     configuracoes: { title: "Configurações",     sub: "Parâmetros gerais do sistema" }
   },
 
-  // ── Inicialização ───────────────────────────────────────────
+  _navBound: false,
+  _semanaBound: false,
+  _appCarregado: false,
+
   async init() {
     AdminUtils.bindModalClose();
     this._bindNav();
     this._bindSemana();
 
-    // Tenta reaproveitar sessão existente antes de mostrar login
     try {
       const logado = await SP.init();
-      if (logado) {
+
+      if (logado && SP._account) {
         this._mostrarApp();
         return;
       }
+
     } catch (e) {
       console.warn("[AdminCore] init SP:", e);
     }
@@ -34,35 +38,52 @@ const AdminCore = window.AdminCore = {
     this._mostrarLogin();
   },
 
-  // ── Login ───────────────────────────────────────────────────
   async login() {
     const btn = document.getElementById("btnLogin");
     const status = document.getElementById("loginStatus");
 
     try {
-      if (btn) { btn.disabled = true; btn.textContent = "⏳ Abrindo Microsoft..."; }
-      if (status) status.textContent = "Preparando autenticação...";
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Abrindo Microsoft...";
+      }
+
+      if (status) {
+        status.textContent = "Preparando autenticação...";
+      }
+
+      if (SP._hasInteractionInProgress && SP._hasInteractionInProgress()) {
+        if (SP._clearMsalInteractionOnly) SP._clearMsalInteractionOnly();
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
 
       const ok = await SP.login();
 
-       if (!ok || !SP._account) {
-       throw new Error("Login Microsoft não foi concluído.");
+      if (!ok || !SP._account) {
+        throw new Error("Login Microsoft não foi concluído.");
       }
 
-       const result = { account: SP._account };
-
-      if (!result?.account) throw new Error("Login sem conta autenticada.");
-
-      SP._account = result.account;
-      SP._msalInstance.setActiveAccount(result.account);
+      if (status) {
+        status.textContent = "Login concluído. Carregando painel...";
+      }
 
       this._mostrarApp();
 
     } catch (e) {
       console.error("[AdminCore] login:", e);
-      if (status) status.textContent = "Erro: " + (e.message || e.errorCode || e);
-      if (btn) { btn.disabled = false; btn.textContent = "🔐 Entrar com conta Homy"; }
-      AdminUtils.toast("Erro no login: " + (e.message || e), "error");
+
+      const msg = e.message || e.errorCode || String(e);
+
+      if (status) {
+        status.textContent = "Erro: " + msg;
+      }
+
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Entrar com conta Homy";
+      }
+
+      AdminUtils.toast("Erro no login: " + msg, "error");
     }
   },
 
@@ -72,33 +93,45 @@ const AdminCore = window.AdminCore = {
     } catch (e) {
       console.warn("[AdminCore] logout:", e);
     }
+
+    this._appCarregado = false;
     document.getElementById("loginScreen")?.classList.remove("hide");
     document.getElementById("app")?.classList.remove("show");
   },
 
-  // ── Tela ────────────────────────────────────────────────────
   _mostrarApp() {
     document.getElementById("loginScreen")?.classList.add("hide");
+
     const app = document.getElementById("app");
     if (app) app.classList.add("show");
 
     const userInfo = document.getElementById("userInfo");
     if (userInfo) userInfo.textContent = SP.getUserName();
 
-    // Atualiza badge de semana
     const badge = document.getElementById("semanaBadge");
     if (badge) badge.textContent = AdminUtils.formatSemana(AdminState.getSemanaId());
 
-    this.loadModule("dashboard");
+    if (!this._appCarregado) {
+      this._appCarregado = true;
+      this.loadModule("dashboard");
+    }
   },
 
   _mostrarLogin() {
     document.getElementById("loginScreen")?.classList.remove("hide");
     document.getElementById("app")?.classList.remove("show");
+
+    const btn = document.getElementById("btnLogin");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Entrar com conta Homy";
+    }
   },
 
-  // ── Navegação ───────────────────────────────────────────────
   _bindNav() {
+    if (this._navBound) return;
+    this._navBound = true;
+
     document.querySelectorAll(".nav-item[data-module]").forEach(item => {
       item.addEventListener("click", () => {
         this.loadModule(item.dataset.module);
@@ -110,8 +143,11 @@ const AdminCore = window.AdminCore = {
   },
 
   _bindSemana() {
+    if (this._semanaBound) return;
+    this._semanaBound = true;
+
     document.getElementById("btnSemanaAnterior")?.addEventListener("click", () => AdminState.semanaAnterior());
-    document.getElementById("btnSemanaProxima")?.addEventListener("click",  () => AdminState.semanaProxima());
+    document.getElementById("btnSemanaProxima")?.addEventListener("click", () => AdminState.semanaProxima());
   },
 
   loadModule(mod) {
@@ -119,25 +155,22 @@ const AdminCore = window.AdminCore = {
 
     AdminState.moduloAtivo = mod;
 
-    // Atualiza nav
     document.querySelectorAll(".nav-item[data-module]").forEach(el => {
       el.classList.toggle("active", el.dataset.module === mod);
     });
 
-    // Atualiza topbar
     const info = this.MODULOS[mod];
-    AdminUtils.setTxt("topbarTitle", info.title);
-    AdminUtils.setTxt("topbarSub",   info.sub);
 
-    // Mostra módulo correto
+    AdminUtils.setTxt("topbarTitle", info.title);
+    AdminUtils.setTxt("topbarSub", info.sub);
+
     document.querySelectorAll(".module").forEach(el => el.classList.remove("active"));
     document.getElementById(`mod-${mod}`)?.classList.add("active");
 
-    // Atualiza label de semana
     AdminUtils.setTxt("semanaLabel", AdminState.getSemanaLabel());
 
-    // Carrega dados do módulo
     const semanaId = AdminState.getSemanaId();
+
     const loaders = {
       dashboard:     () => AdminDashboard?.load(semanaId),
       cardapio:      () => AdminCardapio?.load(semanaId),
@@ -150,9 +183,13 @@ const AdminCore = window.AdminCore = {
       configuracoes: () => AdminConfiguracoes?.load()
     };
 
-    loaders[mod]?.();
+    try {
+      loaders[mod]?.();
+    } catch (e) {
+      console.error(`[AdminCore] erro ao carregar módulo ${mod}:`, e);
+      AdminUtils.toast("Erro ao carregar módulo: " + (e.message || e), "error");
+    }
   }
 };
 
-// Inicializa quando o DOM estiver pronto
 document.addEventListener("DOMContentLoaded", () => AdminCore.init());
