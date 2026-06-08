@@ -122,10 +122,10 @@ const SP = window.SP = {
            origem.includes("guarda") || nome.includes("refeicao extra");
   },
 
-    // ============================================================
+     // ============================================================
   // AUTENTICAÇÃO
   // App registration: Refeitorio Homy
-  // Padrão: redirect nas páginas públicas e popup no admin
+  // Regra: getToken não inicia login automático
   // ============================================================
   _msalReadyPromise: null,
   _redirectHandled: false,
@@ -139,24 +139,34 @@ const SP = window.SP = {
     return window.location.pathname.toLowerCase().includes("/admin/");
   },
 
-  _msalInteractionInProgress() {
-    const keys = Object.keys(sessionStorage);
-    return keys.some(k =>
-      k.includes("interaction.status") ||
-      k.includes("msal.interaction.status")
+  _storageKeys() {
+    return [
+      ...Object.keys(sessionStorage),
+      ...Object.keys(localStorage)
+    ];
+  },
+
+  _hasInteractionInProgress() {
+    return this._storageKeys().some(k =>
+      k.toLowerCase().includes("interaction.status") ||
+      k.toLowerCase().includes("msal.interaction.status")
     );
   },
 
-  async _waitInteractionClear(timeoutMs = 8000) {
-    const started = Date.now();
-
-    while (this._msalInteractionInProgress()) {
-      if (Date.now() - started > timeoutMs) {
-        sessionStorage.clear();
-        break;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 150));
+  _clearMsalInteractionOnly() {
+    for (const storage of [sessionStorage, localStorage]) {
+      Object.keys(storage).forEach(k => {
+        const key = k.toLowerCase();
+        if (
+          key.includes("interaction.status") ||
+          key.includes("msal.interaction.status") ||
+          key.includes("request.state") ||
+          key.includes("nonce.id_token") ||
+          key.includes("authority")
+        ) {
+          storage.removeItem(k);
+        }
+      });
     }
   },
 
@@ -192,19 +202,22 @@ const SP = window.SP = {
         this._redirectHandled = true;
 
         try {
-          const redirectResult = await this._msalInstance.handleRedirectPromise();
+          const result = await this._msalInstance.handleRedirectPromise();
 
-          if (redirectResult?.account) {
-            this._account = redirectResult.account;
-            this._msalInstance.setActiveAccount(this._account);
+          if (result?.account) {
+            this._account = result.account;
+            this._msalInstance.setActiveAccount(result.account);
             this._loginEmAndamento = false;
+            this._clearMsalInteractionOnly();
             return true;
           }
         } catch (e) {
-          console.warn("[SP] handleRedirectPromise:", e);
+          console.warn("[SP] handleRedirectPromise falhou:", e);
 
-          if (String(e?.errorCode || e?.message || "").includes("interaction_in_progress")) {
-            await this._waitInteractionClear();
+          const msg = String(e?.errorCode || e?.message || e || "");
+
+          if (msg.includes("interaction_in_progress")) {
+            this._clearMsalInteractionOnly();
           }
         }
       }
@@ -232,7 +245,11 @@ const SP = window.SP = {
     await this.init();
 
     if (this._account) return true;
-    if (this._loginEmAndamento) return false;
+
+    if (this._loginEmAndamento || this._hasInteractionInProgress()) {
+      this._clearMsalInteractionOnly();
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
 
     this._loginEmAndamento = true;
 
@@ -243,14 +260,13 @@ const SP = window.SP = {
 
     try {
       if (this._isAdminPage()) {
-        await this._waitInteractionClear();
-
         const result = await this._msalInstance.loginPopup(request);
 
         if (result?.account) {
           this._account = result.account;
-          this._msalInstance.setActiveAccount(this._account);
+          this._msalInstance.setActiveAccount(result.account);
           this._loginEmAndamento = false;
+          this._clearMsalInteractionOnly();
           return true;
         }
 
@@ -258,7 +274,6 @@ const SP = window.SP = {
         return false;
       }
 
-      await this._waitInteractionClear();
       await this._msalInstance.loginRedirect(request);
       return false;
 
@@ -268,8 +283,8 @@ const SP = window.SP = {
       const msg = String(e?.errorCode || e?.message || e || "");
 
       if (msg.includes("interaction_in_progress")) {
-        await this._waitInteractionClear();
-        return false;
+        this._clearMsalInteractionOnly();
+        throw new Error("Login Microsoft já estava em andamento. Recarregue a página e clique em entrar novamente.");
       }
 
       throw e;
@@ -284,10 +299,89 @@ const SP = window.SP = {
     return this.login();
   },
 
+  async getToken() {
+    await this.init();
+
+    if (!this._account) {
+      return null;
+    }
+
+    try {
+      const result = await this._msalInstance.acquireTokenSilent({
+        scopes: this.scopes,
+        account: this._account
+      });
+
+      return result.accessToken;
+
+    } catch (e) {
+      const msg = String(e?.errorCode || e?.message || e || "");
+      console.warn("[SP] acquireTokenSilent falhou:", e);
+
+      if (msg.includes("interaction_in_progress")) {
+        this._clearMsalInteractionOnly();
+        return null;
+      }
+
+      if (
+        msg.includes("interaction_required") ||
+        msg.includes("consent_required") ||
+        msg.includes("login_required")
+      ) {
+        return null;
+      }
+
+      return null;
+    }
+  },
+
+  async getTokenInterativo() {
+    await this.init();
+
+    if (!this._account) {
+      const ok = await this.login();
+      if (!ok) return null;
+    }
+
+    try {
+      const silent = await this._msalInstance.acquireTokenSilent({
+        scopes: this.scopes,
+        account: this._account
+      });
+
+      return silent.accessToken;
+
+    } catch (e) {
+      const msg = String(e?.errorCode || e?.message || e || "");
+
+      if (msg.includes("interaction_in_progress")) {
+        this._clearMsalInteractionOnly();
+        return null;
+      }
+
+      if (this._isAdminPage()) {
+        const popup = await this._msalInstance.acquireTokenPopup({
+          scopes: this.scopes,
+          account: this._account
+        });
+
+        return popup.accessToken;
+      }
+
+      await this._msalInstance.acquireTokenRedirect({
+        scopes: this.scopes,
+        account: this._account
+      });
+
+      return null;
+    }
+  },
+
   async logout() {
     await this.init();
 
     const account = this._account;
+
     this._account = null;
     this._loginEmAndamento = false;
 
@@ -300,54 +394,7 @@ const SP = window.SP = {
       });
     }
   },
-
-  async getToken() {
-    await this.init();
-
-    if (!this._account) {
-      await this.login();
-      return null;
-    }
-
-    const request = {
-      scopes: this.scopes,
-      account: this._account
-    };
-
-    try {
-      const result = await this._msalInstance.acquireTokenSilent(request);
-      return result.accessToken;
-
-    } catch (e) {
-      const msg = String(e?.errorCode || e?.message || e || "");
-
-      console.warn("[SP] acquireTokenSilent falhou:", e);
-
-      if (msg.includes("interaction_in_progress")) {
-        await this._waitInteractionClear();
-        return null;
-      }
-
-      if (this._isAdminPage()) {
-        const result = await this._msalInstance.acquireTokenPopup({
-          scopes: this.scopes,
-          account: this._account
-        });
-
-        return result.accessToken;
-      }
-
-      await this._waitInteractionClear();
-
-      await this._msalInstance.acquireTokenRedirect({
-        scopes: this.scopes,
-        account: this._account
-      });
-
-      return null;
-    }
-  },
-
+  
   // ============================================================
   // GRAPH — camada base de HTTP
   // ============================================================
