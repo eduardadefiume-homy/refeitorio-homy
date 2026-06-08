@@ -398,9 +398,14 @@ const SP = window.SP = {
   // ============================================================
   // GRAPH — camada base de HTTP
   // ============================================================
-  async graph(method, endpoint, body = null) {
-    const token = await this.getToken();
-    if (!token) return null;
+  async graph(method, endpoint, body = null, options = {}) {
+    const token = options.interativo
+      ? await this.getTokenInterativo()
+      : await this.getToken();
+
+    if (!token) {
+      throw new Error("Usuário não autenticado no Microsoft. Entre novamente antes de acessar o SharePoint.");
+    }
 
     // Filtra campos read-only em qualquer escrita
     let safeBody = body;
