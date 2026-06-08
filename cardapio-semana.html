@@ -305,25 +305,47 @@ function splitDetalhes(v){
 }
 
 // ── Normaliza 1 item do SharePoint para o formato da tela ────────────────────
+const NOMES_GENERICOS = [
+  "prato principal", "principal", "light", "carne", "massa", "lanche",
+  "cardapio nao cadastrado", "cardapio", "prato", "sem nome", ""
+];
+
+function ehNomeGenerico(v){
+  return NOMES_GENERICOS.includes(norm(v));
+}
+
 function normalizarItem(item){
   const tag     = normOpcao(pick(item,"Opcao","opcao"));
   const nomeRaw = String(pick(item,"Nome_Prato","nomePrato","Prato","Title")||"").trim();
   const detRaw  = String(pick(item,"Detalhes","detalhes")||"").trim();
 
-  // Se o nome contém ";" ou " · " e os detalhes são vazios/sujos,
-  // trata a primeira parte como nome e o resto como detalhes
   let nome     = nomeRaw;
   let detalhes = splitDetalhes(detRaw);
 
-  if((nomeRaw.includes(";") || nomeRaw.includes(" · ")) && detalhes.length === 0){
+  // Caso 1: nome contém múltiplos itens separados por ; ou ·
+  // (PDF Vascon importado assim) — primeiro item = nome, resto = detalhes
+  if(nomeRaw.includes(";") || nomeRaw.includes(" · ")){
     const partes = nomeRaw.split(/;| · /).map(x => x.trim()).filter(Boolean);
-    nome     = partes[0] || nomeRaw;
-    detalhes = partes.slice(1).filter(x => !ehDetalheSujo(x));
+    if(partes.length > 1){
+      nome     = partes[0];
+      // só adiciona detalhes extras se os existentes forem vazios/sujos
+      if(detalhes.length === 0){
+        detalhes = partes.slice(1).filter(x => !ehDetalheSujo(x));
+      }
+    }
   }
 
-  // Nome genérico / vazio = não exibe
-  if(!nome || norm(nome) === "prato principal" || norm(nome) === "cardapio nao cadastrado"){
+  // Caso 2: nome é genérico mas detalhes têm conteúdo
+  // → usa o primeiro detalhe como nome e o restante como detalhes
+  if(ehNomeGenerico(nome) && detalhes.length > 0){
+    nome     = detalhes[0];
+    detalhes = detalhes.slice(1);
+  }
+
+  // Caso 3: nome ainda genérico/vazio → fallback visual
+  if(ehNomeGenerico(nome)){
     nome = "Cardápio não cadastrado";
+    detalhes = [];
   }
 
   return {
