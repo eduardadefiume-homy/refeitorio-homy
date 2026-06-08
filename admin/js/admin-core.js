@@ -45,29 +45,14 @@ const AdminCore = window.AdminCore = {
     try {
       if (btn) {
         btn.disabled = true;
-        btn.textContent = "Abrindo Microsoft...";
+        btn.textContent = "Redirecionando Microsoft...";
       }
 
       if (status) {
-        status.textContent = "Preparando autenticação...";
+        status.textContent = "Abrindo login Microsoft...";
       }
 
-      if (SP._hasInteractionInProgress && SP._hasInteractionInProgress()) {
-        if (SP._clearMsalInteractionOnly) SP._clearMsalInteractionOnly();
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      const ok = await SP.login();
-
-      if (!ok || !SP._account) {
-        throw new Error("Login Microsoft não foi concluído.");
-      }
-
-      if (status) {
-        status.textContent = "Login concluído. Carregando painel...";
-      }
-
-      this._mostrarApp();
+      await SP.login();
 
     } catch (e) {
       console.error("[AdminCore] login:", e);
