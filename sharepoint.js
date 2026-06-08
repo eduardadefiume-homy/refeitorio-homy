@@ -120,7 +120,7 @@ const SP = window.SP = {
       ? path.slice(0, path.indexOf(marker) + marker.length)
       : "/";
 
-    return window.location.origin + appRoot;
+    return window.location.origin + appRoot + "index.html";
   },
 
   _authReturnUrlKey: "homy_auth_return_url",
@@ -128,7 +128,9 @@ const SP = window.SP = {
   _normalizeUrlForCompare(url) {
     try {
       const u = new URL(url, window.location.href);
-      return (u.origin + u.pathname).replace(/\/$/, "");
+      return (u.origin + u.pathname)
+        .replace(/\/index\.html$/i, "")
+        .replace(/\/$/, "");
     } catch (_) {
       return "";
     }
@@ -168,6 +170,17 @@ const SP = window.SP = {
     return true;
   },
 
+  _clearAuthResponseFromUrl() {
+    const hash = window.location.hash || "";
+    if (!/(^#|&)(code|error|client_info|session_state|state)=/.test(hash)) {
+      return;
+    }
+    const cleanPath = this._normalizeUrlForCompare(window.location.href) === this._normalizeUrlForCompare(this.getAuthRedirectUri())
+      ? new URL(this.getAuthRedirectUri()).pathname
+      : window.location.pathname;
+    window.history.replaceState(null, document.title, cleanPath + window.location.search);
+  },
+
   isExtraPedido(p) {
     const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const origem = norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
@@ -203,11 +216,13 @@ const SP = window.SP = {
     if (redirectResult?.account) {
       this._account = redirectResult.account;
       this._msalInstance.setActiveAccount(this._account);
-      this._restoreAuthReturnUrl();
+      if (!this._restoreAuthReturnUrl()) this._clearAuthResponseFromUrl();
       return true;
     }
 
     // Reaproveita sessão existente
+    this._clearAuthResponseFromUrl();
+
     const active = this._msalInstance.getActiveAccount();
     if (active) {
       this._account = active;

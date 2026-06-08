@@ -254,7 +254,7 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=homy-msal-20260608-1");
+      return loadScript("sharepoint.js?v=homy-msal-20260608-2");
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
