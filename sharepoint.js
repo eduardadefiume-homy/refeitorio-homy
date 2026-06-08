@@ -9,7 +9,7 @@
 const SP = window.SP = {
 
   // --- Credenciais ---
-  clientId:  "2e73e8be-484b-428e-a6c0-c75b1bf70d8a",  // App "Ramais Homy"
+  clientId:  "aa37acf9-f3bd-4d1e-968a-fde57f79094c",  // App "Refeitório Homy"
   tenantId:  "a2850abc-334a-4805-b6b2-420b4aef68a9",
   scopes:    ["Sites.ReadWrite.All", "User.Read"],
   siteUrl:   "homyquimica.sharepoint.com",
