@@ -123,6 +123,51 @@ const SP = window.SP = {
     return window.location.origin + appRoot;
   },
 
+  _authReturnUrlKey: "homy_auth_return_url",
+
+  _normalizeUrlForCompare(url) {
+    try {
+      const u = new URL(url, window.location.href);
+      return (u.origin + u.pathname).replace(/\/$/, "");
+    } catch (_) {
+      return "";
+    }
+  },
+
+  _rememberAuthReturnUrl() {
+    const current = window.location.href;
+    if (this._normalizeUrlForCompare(current) === this._normalizeUrlForCompare(this.getAuthRedirectUri())) {
+      return;
+    }
+    sessionStorage.setItem(this._authReturnUrlKey, current);
+  },
+
+  _restoreAuthReturnUrl() {
+    const target = sessionStorage.getItem(this._authReturnUrlKey);
+    if (!target) return false;
+
+    let targetUrl;
+    try {
+      targetUrl = new URL(target, window.location.href);
+    } catch (_) {
+      sessionStorage.removeItem(this._authReturnUrlKey);
+      return false;
+    }
+
+    const currentIsAuthRoot =
+      this._normalizeUrlForCompare(window.location.href) === this._normalizeUrlForCompare(this.getAuthRedirectUri());
+    const targetIsAuthRoot =
+      this._normalizeUrlForCompare(targetUrl.href) === this._normalizeUrlForCompare(this.getAuthRedirectUri());
+
+    if (targetUrl.origin !== window.location.origin || targetIsAuthRoot || !currentIsAuthRoot) {
+      return false;
+    }
+
+    sessionStorage.removeItem(this._authReturnUrlKey);
+    window.location.replace(targetUrl.href);
+    return true;
+  },
+
   isExtraPedido(p) {
     const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const origem = norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
@@ -146,7 +191,7 @@ const SP = window.SP = {
         clientId: this.clientId,
         authority: `https://login.microsoftonline.com/${this.tenantId}`,
         redirectUri: this.getAuthRedirectUri(),
-        navigateToLoginRequestUrl: true
+        navigateToLoginRequestUrl: false
       },
       cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: true }
     });
@@ -158,17 +203,23 @@ const SP = window.SP = {
     if (redirectResult?.account) {
       this._account = redirectResult.account;
       this._msalInstance.setActiveAccount(this._account);
+      this._restoreAuthReturnUrl();
       return true;
     }
 
     // Reaproveita sessão existente
     const active = this._msalInstance.getActiveAccount();
-    if (active) { this._account = active; return true; }
+    if (active) {
+      this._account = active;
+      this._restoreAuthReturnUrl();
+      return true;
+    }
 
     const accounts = this._msalInstance.getAllAccounts();
     if (accounts.length > 0) {
       this._account = accounts[0];
       this._msalInstance.setActiveAccount(this._account);
+      this._restoreAuthReturnUrl();
       return true;
     }
 
@@ -177,6 +228,7 @@ const SP = window.SP = {
 
   async login() {
     await this.init();
+    this._rememberAuthReturnUrl();
     await this._msalInstance.loginRedirect({ scopes: this.scopes });
     return false;
   },
@@ -206,6 +258,7 @@ const SP = window.SP = {
       return r.accessToken;
     } catch (e) {
       console.warn("[SP] Token silencioso falhou; redirecionando.", e);
+      this._rememberAuthReturnUrl();
       await this._msalInstance.acquireTokenRedirect({
         scopes: this.scopes,
         account: this._account
