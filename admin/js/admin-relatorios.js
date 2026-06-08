@@ -1,22 +1,43 @@
-// admin-relatorios.js — Relatórios do Admin Homy
-// Relatórios por dia, por centro de custo e por colaborador (total mensal)
+// admin-relatorios.js — Relatórios inteligentes do Admin Homy
+// Filtro por período, por dia, por CC, por CC+funcionário, exportação Excel
 
 const AdminRelatorios = window.AdminRelatorios = {
 
+  _pedidos: [],
+  _periodo: { ini: "", fim: "" },
+
   async load(semanaId) {
+    // Preenche período padrão com a semana atual
+    const datas = SP.getWeekDates(semanaId);
+    const ini   = datas[0].toISOString().slice(0, 10);
+    const fim   = datas[4].toISOString().slice(0, 10);
+    AdminUtils.setVal("relDataIni", ini);
+    AdminUtils.setVal("relDataFim", fim);
+    this._bindControles();
+    await this._buscar(ini, fim);
+  },
+
+  async _buscar(ini, fim) {
+    this._periodo = { ini, fim };
+    const wrap = document.getElementById("relConteudo");
+    if (wrap) wrap.innerHTML = `<div class="alert alert-info">Carregando...</div>`;
+
     try {
       await SP.init();
-      const pedidos = await SP.getPedidos(semanaId);
-      this._renderCards(pedidos);
-      this._renderPorDia(pedidos);
-      this._renderPorCentroCusto(pedidos);
-      this._renderPorColaborador(pedidos);
-      this._bindExportar(pedidos, semanaId);
-    } catch (e) {
-      ["relTableDia", "relTableCC", "relTableColab"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = `<tr><td colspan="7" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
+      const todos = await SP.getItems("Pedidos");
+
+      this._pedidos = todos.filter(p => {
+        // Filtra por Data_Hora ou tenta Semana_id como fallback
+        const dh   = (SP.pick(p, "Data_Hora") || "").slice(0, 10);
+        const ok   = dh && dh >= ini && dh <= fim;
+        return ok;
       });
+
+      this._renderCards();
+      this._renderTipo();
+    } catch (e) {
+      const wrap = document.getElementById("relConteudo");
+      if (wrap) wrap.innerHTML = `<div class="alert" style="background:rgba(220,50,50,.1);color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</div>`;
     }
   },
 
@@ -29,51 +50,68 @@ const AdminRelatorios = window.AdminRelatorios = {
     return lista.filter(p => AdminUtils.norm(SP.pick(p, "Opcao")) === op).length;
   },
 
-  _renderCards(pedidos) {
-    const conf = pedidos.filter(p => this._isConf(p));
+  _renderCards() {
+    const conf = this._pedidos.filter(p => this._isConf(p));
     AdminUtils.setTxt("rel-principal", this._countOp(conf, "principal"));
     AdminUtils.setTxt("rel-light",     this._countOp(conf, "light"));
     AdminUtils.setTxt("rel-carne",     this._countOp(conf, "carne"));
     AdminUtils.setTxt("rel-massa",     this._countOp(conf, "massa"));
     AdminUtils.setTxt("rel-lanche",    this._countOp(conf, "lanche"));
+    AdminUtils.setTxt("rel-total",     conf.length);
   },
 
-  _renderPorDia(pedidos) {
-    const tbody = document.getElementById("relTableDia");
-    if (!tbody) return;
-    const conf = pedidos.filter(p => this._isConf(p));
+  _renderTipo() {
+    const tipo = AdminUtils.getVal("relTipo") || "dia";
+    const wrap = document.getElementById("relConteudo");
+    if (!wrap) return;
 
-    const linhas = AdminUtils.DIAS.map(dia => {
-      const lista = conf.filter(p => AdminUtils.norm(SP.pick(p, "Dia")) === dia);
-      return `<tr>
-        <td>${AdminUtils.DIA_LABEL[dia]}</td>
-        <td>${this._countOp(lista, "principal")}</td>
-        <td>${this._countOp(lista, "light")}</td>
-        <td>${this._countOp(lista, "carne")}</td>
-        <td>${this._countOp(lista, "massa")}</td>
-        <td>${this._countOp(lista, "lanche")}</td>
-        <td><strong>${lista.length}</strong></td>
-      </tr>`;
-    }).join("");
+    const conf = this._pedidos.filter(p => this._isConf(p));
 
-    const total = conf.length;
-    tbody.innerHTML = linhas + `<tr style="border-top:2px solid rgba(255,255,255,.15)">
-      <td><strong>Total</strong></td>
-      <td>${this._countOp(conf, "principal")}</td>
-      <td>${this._countOp(conf, "light")}</td>
-      <td>${this._countOp(conf, "carne")}</td>
-      <td>${this._countOp(conf, "massa")}</td>
-      <td>${this._countOp(conf, "lanche")}</td>
-      <td><strong>${total}</strong></td>
-    </tr>`;
+    if (tipo === "dia")         this._renderPorDia(conf, wrap);
+    else if (tipo === "cc")     this._renderPorCC(conf, wrap);
+    else if (tipo === "ccfunc") this._renderPorCCFunc(conf, wrap);
   },
 
-  _renderPorCentroCusto(pedidos) {
-    const tbody = document.getElementById("relTableCC");
-    if (!tbody) return;
-    const conf = pedidos.filter(p => this._isConf(p));
+  _renderPorDia(conf, wrap) {
+    // Agrupa por data real (Data_Hora slice 0,10)
+    const mapa = {};
+    conf.forEach(p => {
+      const d = (SP.pick(p, "Data_Hora") || "").slice(0, 10) || SP.pick(p, "Dia") || "—";
+      if (!mapa[d]) mapa[d] = [];
+      mapa[d].push(p);
+    });
 
-    // Agrupa por Centro_Custo
+    const sorted = Object.entries(mapa).sort(([a], [b]) => a.localeCompare(b));
+
+    wrap.innerHTML = `
+      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">📅 Por dia — período ${this._periodo.ini} a ${this._periodo.fim}</div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
+          <tbody>
+            ${sorted.length ? sorted.map(([data, lista]) => `<tr>
+              <td>${data}</td>
+              <td>${this._countOp(lista, "principal")}</td>
+              <td>${this._countOp(lista, "light")}</td>
+              <td>${this._countOp(lista, "carne")}</td>
+              <td>${this._countOp(lista, "massa")}</td>
+              <td>${this._countOp(lista, "lanche")}</td>
+              <td><strong>${lista.length}</strong></td>
+            </tr>`).join("") + `<tr style="border-top:2px solid rgba(255,255,255,.15)">
+              <td><strong>Total</strong></td>
+              <td>${this._countOp(conf, "principal")}</td>
+              <td>${this._countOp(conf, "light")}</td>
+              <td>${this._countOp(conf, "carne")}</td>
+              <td>${this._countOp(conf, "massa")}</td>
+              <td>${this._countOp(conf, "lanche")}</td>
+              <td><strong>${conf.length}</strong></td>
+            </tr>` : `<tr><td colspan="7" class="empty-cell">Nenhum pedido no período.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+  },
+
+  _renderPorCC(conf, wrap) {
     const mapa = {};
     conf.forEach(p => {
       const cc = SP.pick(p, "Centro_Custo") || "Sem CC";
@@ -83,76 +121,160 @@ const AdminRelatorios = window.AdminRelatorios = {
 
     const sorted = Object.entries(mapa).sort((a, b) => b[1].length - a[1].length);
 
-    if (!sorted.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Nenhum pedido com centro de custo registrado.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = sorted.map(([cc, lista]) => `<tr>
-      <td>${AdminUtils.esc(cc)}</td>
-      <td>${this._countOp(lista, "principal")}</td>
-      <td>${this._countOp(lista, "light")}</td>
-      <td>${this._countOp(lista, "carne")}</td>
-      <td>${this._countOp(lista, "massa")}</td>
-      <td>${this._countOp(lista, "lanche")}</td>
-      <td><strong>${lista.length}</strong></td>
-    </tr>`).join("");
+    wrap.innerHTML = `
+      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">🏢 Por centro de custo — período ${this._periodo.ini} a ${this._periodo.fim}</div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
+          <tbody>
+            ${sorted.length ? sorted.map(([cc, lista]) => `<tr>
+              <td>${AdminUtils.esc(cc)}</td>
+              <td>${this._countOp(lista, "principal")}</td>
+              <td>${this._countOp(lista, "light")}</td>
+              <td>${this._countOp(lista, "carne")}</td>
+              <td>${this._countOp(lista, "massa")}</td>
+              <td>${this._countOp(lista, "lanche")}</td>
+              <td><strong>${lista.length}</strong></td>
+            </tr>`).join("") : `<tr><td colspan="7" class="empty-cell">Nenhum pedido no período.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
   },
 
-  _renderPorColaborador(pedidos) {
-    const tbody = document.getElementById("relTableColab");
-    if (!tbody) return;
-    const conf = pedidos.filter(p => this._isConf(p));
-
-    // Agrupa por colaborador
+  _renderPorCCFunc(conf, wrap) {
+    // Agrupa por CC e dentro por colaborador
     const mapa = {};
     conf.forEach(p => {
+      const cc   = SP.pick(p, "Centro_Custo")      || "Sem CC";
       const nome = SP.pick(p, "Colaborador_nome", "Title") || "Desconhecido";
-      const cc   = SP.pick(p, "Centro_Custo") || "—";
-      const key  = nome;
-      if (!mapa[key]) mapa[key] = { nome, cc, lista: [] };
+      const key  = `${cc}||${nome}`;
+      if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
       mapa[key].lista.push(p);
     });
 
-    const sorted = Object.values(mapa).sort((a, b) => b.lista.length - a.lista.length);
+    const sorted = Object.values(mapa).sort((a, b) =>
+      a.cc.localeCompare(b.cc) || b.lista.length - a.lista.length
+    );
 
-    if (!sorted.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="empty-cell">Nenhum pedido confirmado nesta semana.</td></tr>`;
-      return;
-    }
+    let ccAtual = null;
+    const linhas = sorted.map(({ cc, nome, lista }) => {
+      let cabecalho = "";
+      if (cc !== ccAtual) {
+        ccAtual = cc;
+        const totalCC = sorted.filter(x => x.cc === cc).reduce((s, x) => s + x.lista.length, 0);
+        cabecalho = `<tr style="background:rgba(255,255,255,.06)">
+          <td colspan="4" style="font-weight:700;color:#fff">🏢 ${AdminUtils.esc(cc)} — ${totalCC} refeições</td>
+        </tr>`;
+      }
+      return cabecalho + `<tr>
+        <td style="padding-left:1.5rem">${AdminUtils.esc(nome)}</td>
+        <td>${AdminUtils.esc(cc)}</td>
+        <td>${lista.length}</td>
+        <td style="font-size:.78rem;color:rgba(143,170,210,.6)">
+          ${[...new Set(lista.map(p => (SP.pick(p, "Data_Hora") || "").slice(0, 10)).filter(Boolean))].sort().join(", ")}
+        </td>
+      </tr>`;
+    }).join("");
 
-    tbody.innerHTML = sorted.map(({ nome, cc, lista }) => `<tr>
-      <td>${AdminUtils.esc(nome)}</td>
-      <td>${AdminUtils.esc(cc)}</td>
-      <td>${lista.length}</td>
-      <td style="font-size:.78rem;color:rgba(143,170,210,.6)">
-        ${AdminUtils.DIAS.filter(d => lista.some(p => AdminUtils.norm(SP.pick(p, "Dia")) === d))
-          .map(d => AdminUtils.DIA_LABEL[d]).join(", ")}
-      </td>
-    </tr>`).join("");
+    wrap.innerHTML = `
+      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">👤 Por CC e funcionário — período ${this._periodo.ini} a ${this._periodo.fim}</div>
+      <div class="alert alert-info" style="margin-bottom:.8rem">Total de refeições por colaborador no período — use para cálculo de desconto em folha.</div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Total refeições</th><th>Datas</th></tr></thead>
+          <tbody>${linhas || `<tr><td colspan="4" class="empty-cell">Nenhum pedido no período.</td></tr>`}</tbody>
+        </table>
+      </div>`;
   },
 
-  _bindExportar(pedidos, semanaId) {
-    const btn = document.getElementById("btnExportarRelatorio");
-    if (btn && !btn.dataset.bound) {
-      btn.dataset.bound = "1";
-      btn.addEventListener("click", () => {
-        if (typeof XLSX === "undefined") { AdminUtils.toast("Biblioteca XLSX não carregou.", "error"); return; }
-        const conf = pedidos.filter(p => this._isConf(p));
-        const linhas = conf.map(p => ({
-          Colaborador:   SP.pick(p, "Colaborador_nome") || "",
-          Centro_Custo:  SP.pick(p, "Centro_Custo")     || "",
-          Dia:           SP.pick(p, "Dia")               || "",
-          Opcao:         SP.pick(p, "Opcao")             || "",
-          Prato:         SP.pick(p, "Nome_Prato")        || "",
-          Status:        SP.pick(p, "Status")            || ""
-        }));
-        const ws = XLSX.utils.json_to_sheet(linhas);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
-        XLSX.writeFile(wb, `relatorio-${semanaId}.xlsx`);
-        AdminUtils.toast("Relatório exportado.", "success");
+  // ── Exportação Excel ─────────────────────────────────────────
+  _exportar() {
+    if (typeof XLSX === "undefined") { AdminUtils.toast("Biblioteca XLSX não carregou.", "error"); return; }
+    const tipo = AdminUtils.getVal("relTipo") || "dia";
+    const conf = this._pedidos.filter(p => this._isConf(p));
+
+    let linhas = [];
+    let nomeAba = "Relatorio";
+
+    if (tipo === "dia") {
+      nomeAba = "Por Dia";
+      const mapa = {};
+      conf.forEach(p => {
+        const d = (SP.pick(p, "Data_Hora") || "").slice(0, 10) || "—";
+        if (!mapa[d]) mapa[d] = [];
+        mapa[d].push(p);
       });
+      linhas = Object.entries(mapa).sort(([a], [b]) => a.localeCompare(b)).map(([data, lista]) => ({
+        Data:      data,
+        Principal: this._countOp(lista, "principal"),
+        Light:     this._countOp(lista, "light"),
+        Carne:     this._countOp(lista, "carne"),
+        Massa:     this._countOp(lista, "massa"),
+        Lanche:    this._countOp(lista, "lanche"),
+        Total:     lista.length
+      }));
+    } else if (tipo === "cc") {
+      nomeAba = "Por CC";
+      const mapa = {};
+      conf.forEach(p => {
+        const cc = SP.pick(p, "Centro_Custo") || "Sem CC";
+        if (!mapa[cc]) mapa[cc] = [];
+        mapa[cc].push(p);
+      });
+      linhas = Object.entries(mapa).sort((a, b) => b[1].length - a[1].length).map(([cc, lista]) => ({
+        Centro_Custo: cc,
+        Principal:    this._countOp(lista, "principal"),
+        Light:        this._countOp(lista, "light"),
+        Carne:        this._countOp(lista, "carne"),
+        Massa:        this._countOp(lista, "massa"),
+        Lanche:       this._countOp(lista, "lanche"),
+        Total:        lista.length
+      }));
+    } else if (tipo === "ccfunc") {
+      nomeAba = "Por CC e Funcionario";
+      const mapa = {};
+      conf.forEach(p => {
+        const cc   = SP.pick(p, "Centro_Custo")             || "Sem CC";
+        const nome = SP.pick(p, "Colaborador_nome", "Title") || "Desconhecido";
+        const key  = `${cc}||${nome}`;
+        if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
+        mapa[key].lista.push(p);
+      });
+      linhas = Object.values(mapa)
+        .sort((a, b) => a.cc.localeCompare(b.cc) || b.lista.length - a.lista.length)
+        .map(({ cc, nome, lista }) => ({
+          Centro_Custo:     cc,
+          Colaborador:      nome,
+          Total_Refeicoes:  lista.length,
+          Periodo_Ini:      this._periodo.ini,
+          Periodo_Fim:      this._periodo.fim
+        }));
     }
+
+    if (!linhas.length) { AdminUtils.toast("Nenhum dado para exportar.", "info"); return; }
+
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, nomeAba);
+    XLSX.writeFile(wb, `relatorio-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`);
+    AdminUtils.toast("Excel exportado.", "success");
+  },
+
+  _bindControles() {
+    const bind = (id, ev, fn) => {
+      const el = document.getElementById(id);
+      if (el && !el.dataset.boundRel) { el.dataset.boundRel = "1"; el.addEventListener(ev, fn); }
+    };
+
+    bind("btnBuscarRelatorio",    "click",  async () => {
+      const ini = AdminUtils.getVal("relDataIni");
+      const fim = AdminUtils.getVal("relDataFim");
+      if (!ini || !fim) { AdminUtils.toast("Informe o período.", "error"); return; }
+      if (ini > fim)    { AdminUtils.toast("Data início maior que fim.", "error"); return; }
+      await this._buscar(ini, fim);
+    });
+
+    bind("relTipo", "change", () => this._renderTipo());
+    bind("btnExportarRelatorio", "click", () => this._exportar());
   }
 };
