@@ -43,12 +43,13 @@ const AdminCore = window.AdminCore = {
       if (btn) { btn.disabled = true; btn.textContent = "⏳ Abrindo Microsoft..."; }
       if (status) status.textContent = "Preparando autenticação...";
 
-      await SP.init();
+      const ok = await SP.login();
 
-      const result = await SP._msalInstance.loginPopup({
-        scopes: SP.scopes,
-        prompt: "select_account"
-      });
+       if (!ok || !SP._account) {
+       throw new Error("Login Microsoft não foi concluído.");
+      }
+
+       const result = { account: SP._account };
 
       if (!result?.account) throw new Error("Login sem conta autenticada.");
 
