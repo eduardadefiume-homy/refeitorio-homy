@@ -4,6 +4,13 @@
 // 2. Extrair dados para rascunho
 // 3. Mostrar conferência editável
 // 4. Salvar no SharePoint somente após confirmação
+//
+// Correções desta versão:
+// - PDF não salva direto no SharePoint
+// - Rascunho antes da gravação
+// - Observação Vascon adicionada nas opções alternativas
+// - Salvamento remove todos os registros da semana antes de gravar
+// - Evita duplicidade de dia/opção no rascunho
 
 const AdminCardapio = window.AdminCardapio = {
 
@@ -21,8 +28,14 @@ const AdminCardapio = window.AdminCardapio = {
     lanche: "Lanche"
   },
 
+  OBS_VASCON: [
+    "O cardápio acima está sujeito à alterações.",
+    "As opções Carne e Massa substituem a carne do prato principal.",
+    "As opções Light e Lanche substituem o prato principal completo."
+  ].join("\n"),
+
   async load(semanaId) {
-    this._bindBotoes(semanaId);
+    this._bindBotoes();
     await this._renderAtual(semanaId);
   },
 
@@ -36,19 +49,48 @@ const AdminCardapio = window.AdminCardapio = {
       await SP.init();
 
       const items = await SP.getCardapio(semanaId);
+      const limpos = this._deduplicarItens(items);
 
-      if (!items.length) {
+      if (!limpos.length) {
         wrap.innerHTML = `<div class="alert alert-warning">Nenhum cardápio cadastrado para esta semana.</div>`;
         return;
       }
 
       this._modoRascunho = false;
-      wrap.innerHTML = this._htmlCardapioAgrupado(items, false);
+      wrap.innerHTML = this._htmlCardapioAgrupado(limpos, false);
 
     } catch (e) {
       console.error("[AdminCardapio] _renderAtual:", e);
       wrap.innerHTML = `<div class="alert alert-warning">Erro: ${AdminUtils.esc(e.message || e)}</div>`;
     }
+  },
+
+  _deduplicarItens(items) {
+    const mapa = new Map();
+
+    for (const item of items || []) {
+      const dia = AdminUtils.norm(SP.pick(item, "Dia", "dia"));
+      const opcao = AdminUtils.norm(SP.pick(item, "Opcao", "opcao"));
+
+      if (!dia || !opcao) continue;
+
+      const chave = `${dia}||${opcao}`;
+
+      if (!mapa.has(chave)) {
+        mapa.set(chave, item);
+        continue;
+      }
+
+      const atual = mapa.get(chave);
+      const atualDetalhes = String(SP.pick(atual, "Detalhes", "detalhes") || "");
+      const novoDetalhes = String(SP.pick(item, "Detalhes", "detalhes") || "");
+
+      if (novoDetalhes.length > atualDetalhes.length) {
+        mapa.set(chave, item);
+      }
+    }
+
+    return Array.from(mapa.values());
   },
 
   _htmlCardapioAgrupado(items, rascunho = false) {
@@ -58,7 +100,6 @@ const AdminCardapio = window.AdminCardapio = {
       <div style="display:flex;flex-direction:column;gap:.65rem">
         ${AdminUtils.DIAS.map(dia => {
           const diaItems = items.filter(i => norm(SP.pick(i, "Dia", "dia")) === norm(dia));
-
           if (!diaItems.length) return "";
 
           return `
@@ -254,6 +295,8 @@ const AdminCardapio = window.AdminCardapio = {
         item.Nome_Prato = nome;
         item.Detalhes = detalhes;
 
+        this._rascunhoPDF = this._deduplicarItens(this._rascunhoPDF);
+
         AdminUtils.closeModal("modalCardapioManualV20");
         AdminUtils.toast("Rascunho atualizado.", "success");
 
@@ -317,7 +360,7 @@ const AdminCardapio = window.AdminCardapio = {
     try {
       const texto = await this._extrairTextoPDF(file);
       const parsed = this._parseVascon(texto);
-      const rascunho = this._parsedParaLista(parsed);
+      const rascunho = this._deduplicarItens(this._parsedParaLista(parsed));
 
       if (!rascunho.length) {
         AdminUtils.toast("Não consegui extrair o PDF. Use Editar manual.", "error");
@@ -360,12 +403,18 @@ const AdminCardapio = window.AdminCardapio = {
 
         if (!item?.nome) continue;
 
+        const detalhesBase = (item.detalhes || []).filter(Boolean);
+
         lista.push({
           tempId: this._tempId(dia, opcao),
           Dia: dia,
           Opcao: opcao,
           Nome_Prato: item.nome,
-          Detalhes: (item.detalhes || []).join("\n")
+          Detalhes: [
+            ...detalhesBase,
+            "",
+            this.OBS_VASCON
+          ].join("\n").trim()
         });
       }
     }
@@ -435,13 +484,19 @@ const AdminCardapio = window.AdminCardapio = {
 
       await SP.init();
 
-      const existentes = await SP.getCardapio(semanaId);
+      const todos = await SP.getItems("Cardapio");
+
+      const existentes = todos.filter(item =>
+        String(SP.pick(item, "Semana_id", "SemanaId", "SemanaID", "Semanaid")) === String(semanaId)
+      );
 
       for (const item of existentes) {
         await SP.deleteItem("Cardapio", item.id);
       }
 
-      for (const item of this._rascunhoPDF) {
+      const rascunhoFinal = this._deduplicarItens(this._rascunhoPDF);
+
+      for (const item of rascunhoFinal) {
         await SP.saveCardapio(
           semanaId,
           item.Dia,
@@ -490,6 +545,7 @@ const AdminCardapio = window.AdminCardapio = {
 
     return texto;
   },
+
   _parseVascon(texto) {
     const raw = String(texto || "")
       .normalize("NFC")
@@ -666,7 +722,7 @@ const AdminCardapio = window.AdminCardapio = {
     return result;
   },
 
-  _bindBotoes(semanaId) {
+  _bindBotoes() {
     const btnManual = document.getElementById("btnCardapioManual");
 
     if (btnManual && !btnManual.dataset.bound) {
