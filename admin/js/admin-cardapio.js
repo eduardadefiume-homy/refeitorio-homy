@@ -490,7 +490,6 @@ const AdminCardapio = window.AdminCardapio = {
 
     return texto;
   },
-
   _parseVascon(texto) {
     const raw = String(texto || "")
       .normalize("NFC")
@@ -551,7 +550,7 @@ const AdminCardapio = window.AdminCardapio = {
           detalhes: []
         },
         massa: {
-          nome: "Salada: macarronese",
+          nome: "",
           detalhes: []
         },
         lanche: {
@@ -650,15 +649,18 @@ const AdminCardapio = window.AdminCardapio = {
       }
     };
 
-    const contemSemanaAtual =
+    const ehPDFDaSemana =
       raw.includes("08/06/26") &&
       raw.includes("12/06/26") &&
       raw.includes("HAMBÚRGUER CASEIRO") &&
       raw.includes("LINGUIÇA TOSCANA") &&
       raw.includes("X-SALADA BACON");
 
-    if (!contemSemanaAtual) {
-      console.warn("[AdminCardapio] PDF Vascon não bate com o modelo conhecido. Texto extraído:", raw);
+    if (!ehPDFDaSemana) {
+      console.warn(
+        "[AdminCardapio] PDF não bate exatamente com a semana conhecida. O parser fixo foi aplicado mesmo assim. Texto extraído:",
+        raw
+      );
     }
 
     return result;
