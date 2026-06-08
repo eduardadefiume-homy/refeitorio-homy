@@ -1,6 +1,6 @@
 // ============================================================
 // admin-relatorios.js — Relatórios do Admin Homy
-// Correção: bind robusto dos botões Gerar relatório e Exportar Excel
+// Exportação Excel no padrão visual Homy
 // ============================================================
 
 const AdminRelatorios = window.AdminRelatorios = {
@@ -32,7 +32,6 @@ const AdminRelatorios = window.AdminRelatorios = {
       const el = document.getElementById(id);
       if (el) return el;
     }
-
     return null;
   },
 
@@ -116,9 +115,7 @@ const AdminRelatorios = window.AdminRelatorios = {
 
       this._pedidos = todos.filter(p => {
         const dataPedido = String(SP.pick(p, "Data_Hora", "Data") || "").slice(0, 10);
-
         if (!dataPedido) return false;
-
         return dataPedido >= ini && dataPedido <= fim;
       });
 
@@ -391,7 +388,7 @@ const AdminRelatorios = window.AdminRelatorios = {
     });
   },
 
-  exportar() {
+  async exportar() {
     const tipo = this._getTipo();
     const confirmados = this._pedidos.filter(p => this._isConfirmado(p));
 
@@ -416,9 +413,22 @@ const AdminRelatorios = window.AdminRelatorios = {
   _exportarPorDia(confirmados) {
     const linhas = this._dadosPorDia(confirmados);
 
-    this._exportarExcelSimples({
+    this._exportarExcelHomy({
       nomeArquivo: this._nomeArquivo("por-dia"),
-      colunas: ["Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
+      titulo: "RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR DIA",
+      periodo: this._periodoTexto(),
+      resumo: [
+        ["Total de refeições", linhas.reduce((s, l) => s + l.Total, 0)]
+      ],
+      colunas: [
+        { key: "Data", label: "Data", width: 18 },
+        { key: "Principal", label: "Principal", width: 15 },
+        { key: "Light", label: "Light", width: 15 },
+        { key: "Carne", label: "Carne", width: 15 },
+        { key: "Massa", label: "Massa", width: 15 },
+        { key: "Lanche", label: "Lanche", width: 15 },
+        { key: "Total", label: "Total", width: 15 }
+      ],
       linhas
     });
   },
@@ -426,9 +436,22 @@ const AdminRelatorios = window.AdminRelatorios = {
   _exportarPorCentroCusto(confirmados) {
     const linhas = this._dadosPorCentroCusto(confirmados);
 
-    this._exportarExcelSimples({
+    this._exportarExcelHomy({
       nomeArquivo: this._nomeArquivo("por-centro-custo"),
-      colunas: ["Centro_Custo", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
+      titulo: "RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR CENTRO DE CUSTO",
+      periodo: this._periodoTexto(),
+      resumo: [
+        ["Total de refeições", linhas.reduce((s, l) => s + l.Total, 0)]
+      ],
+      colunas: [
+        { key: "Centro_Custo", label: "Centro de custo", width: 30 },
+        { key: "Principal", label: "Principal", width: 15 },
+        { key: "Light", label: "Light", width: 15 },
+        { key: "Carne", label: "Carne", width: 15 },
+        { key: "Massa", label: "Massa", width: 15 },
+        { key: "Lanche", label: "Lanche", width: 15 },
+        { key: "Total", label: "Total", width: 15 }
+      ],
       linhas
     });
   },
@@ -436,38 +459,240 @@ const AdminRelatorios = window.AdminRelatorios = {
   _exportarPorCentroCustoFuncionario(confirmados) {
     const linhas = this._dadosPorCentroCustoFuncionario(confirmados);
 
-    this._exportarExcelSimples({
+    this._exportarExcelHomy({
       nomeArquivo: this._nomeArquivo("por-centro-custo-funcionario"),
-      colunas: ["Centro_Custo", "Colaborador", "Total_Refeicoes", "Periodo_Inicio", "Periodo_Fim"],
-      linhas
+      titulo: "RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR COLABORADOR",
+      periodo: this._periodoTexto(),
+      resumo: [
+        ["Gerado em", this._hojeBR()],
+        ["Total de refeições", linhas.reduce((s, l) => s + l.Total_Refeicoes, 0)],
+        ["Valor unitário Vascon", 0],
+        ["Valor unitário descontado", 0]
+      ],
+      colunas: [
+        { key: "Colaborador", label: "Colaborador", width: 34 },
+        { key: "Centro_Custo", label: "Centro de custo", width: 22 },
+        { key: "Total_Refeicoes", label: "Quantidade", width: 18 },
+        { key: "ValorUnitario", label: "Valor de cada refeição", width: 22, money: true },
+        { key: "DescontoFolha", label: "Desconto em folha", width: 22, money: true },
+        { key: "ValorVasconEstimado", label: "Valor Vascon estimado", width: 24, money: true }
+      ],
+      linhas: linhas.map(l => ({
+        ...l,
+        ValorUnitario: 0,
+        DescontoFolha: 0,
+        ValorVasconEstimado: 0
+      }))
     });
   },
 
-  _exportarExcelSimples({ nomeArquivo, colunas, linhas }) {
+  _exportarExcelHomy({ nomeArquivo, titulo, periodo, resumo, colunas, linhas }) {
     if (!window.XLSX) {
       AdminUtils.toast("Biblioteca XLSX não carregada.", "error");
       return;
     }
 
-    const dados = linhas.map(l => {
-      const obj = {};
-      colunas.forEach(c => {
-        obj[c] = l[c] ?? "";
-      });
-      return obj;
+    const aoa = [];
+
+    aoa.push([titulo]);
+    aoa.push([periodo]);
+    aoa.push([]);
+
+    (resumo || []).forEach(item => {
+      aoa.push([item[0], item[1]]);
     });
 
-    const ws = XLSX.utils.json_to_sheet(dados);
-    const wb = XLSX.utils.book_new();
+    aoa.push([]);
+    aoa.push(colunas.map(c => c.label));
 
+    linhas.forEach(linha => {
+      aoa.push(colunas.map(c => {
+        const valor = linha[c.key];
+        return valor === null || valor === undefined ? "" : valor;
+      }));
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    const totalCols = colunas.length;
+    const headerRow = aoa.findIndex(row =>
+      row.length &&
+      row[0] === colunas[0].label
+    );
+
+    ws["!merges"] = [
+      {
+        s: { r: 0, c: 0 },
+        e: { r: 0, c: totalCols - 1 }
+      },
+      {
+        s: { r: 1, c: 0 },
+        e: { r: 1, c: totalCols - 1 }
+      }
+    ];
+
+    ws["!cols"] = colunas.map(c => ({ wch: c.width || 18 }));
+
+    ws["!freeze"] = {
+      xSplit: 0,
+      ySplit: headerRow + 1,
+      topLeftCell: `A${headerRow + 2}`,
+      activePane: "bottomLeft",
+      state: "frozen"
+    };
+
+    ws["!autofilter"] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: headerRow, c: 0 },
+        e: { r: Math.max(headerRow, aoa.length - 1), c: totalCols - 1 }
+      })
+    };
+
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+
+    const border = {
+      top: { style: "thin", color: { rgb: "D9E2F3" } },
+      bottom: { style: "thin", color: { rgb: "D9E2F3" } },
+      left: { style: "thin", color: { rgb: "D9E2F3" } },
+      right: { style: "thin", color: { rgb: "D9E2F3" } }
+    };
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= Math.max(range.e.c, totalCols - 1); C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+
+        if (!ws[ref]) {
+          ws[ref] = { t: "s", v: "" };
+        }
+
+        ws[ref].s = {
+          font: {
+            name: "Calibri",
+            sz: 11,
+            color: { rgb: "000000" }
+          },
+          alignment: {
+            vertical: "center",
+            horizontal: "left",
+            wrapText: true
+          },
+          border
+        };
+
+        if (R === 0) {
+          ws[ref].s = {
+            font: {
+              name: "Calibri",
+              sz: 14,
+              bold: true,
+              color: { rgb: "FFFFFF" }
+            },
+            fill: {
+              fgColor: { rgb: "071A33" }
+            },
+            alignment: {
+              vertical: "center",
+              horizontal: "center"
+            }
+          };
+        }
+
+        if (R === 1) {
+          ws[ref].s = {
+            font: {
+              name: "Calibri",
+              sz: 11,
+              bold: true,
+              color: { rgb: "FFFFFF" }
+            },
+            fill: {
+              fgColor: { rgb: "C9281D" }
+            },
+            alignment: {
+              vertical: "center",
+              horizontal: "center"
+            }
+          };
+        }
+
+        if (R === headerRow) {
+          ws[ref].s = {
+            font: {
+              name: "Calibri",
+              sz: 11,
+              bold: true,
+              color: { rgb: "FFFFFF" }
+            },
+            fill: {
+              fgColor: { rgb: "071A33" }
+            },
+            alignment: {
+              vertical: "center",
+              horizontal: "center",
+              wrapText: true
+            },
+            border
+          };
+        }
+
+        if (R > headerRow && C >= 0) {
+          const col = colunas[C];
+
+          if (col?.money) {
+            ws[ref].t = "n";
+            ws[ref].z = '"R$" #,##0.00';
+            ws[ref].s.alignment = {
+              vertical: "center",
+              horizontal: "right"
+            };
+          }
+
+          if (typeof ws[ref].v === "number" && !col?.money) {
+            ws[ref].s.alignment = {
+              vertical: "center",
+              horizontal: "center"
+            };
+          }
+        }
+      }
+    }
+
+    ws["!rows"] = aoa.map((_, idx) => {
+      if (idx === 0) return { hpt: 22 };
+      if (idx === 1) return { hpt: 18 };
+      if (idx === headerRow) return { hpt: 20 };
+      return { hpt: 18 };
+    });
+
+    const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
-    XLSX.writeFile(wb, nomeArquivo);
+
+    XLSX.writeFile(wb, nomeArquivo, {
+      bookType: "xlsx",
+      cellStyles: true
+    });
 
     AdminUtils.toast("Excel exportado com sucesso.", "success");
   },
 
+  _periodoTexto() {
+    return `Período: ${this._dataBR(this._periodo.ini)} a ${this._dataBR(this._periodo.fim)}`;
+  },
+
   _nomeArquivo(tipo) {
     return `relatorio-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`;
+  },
+
+  _dataBR(dataIso) {
+    if (!dataIso) return "";
+    const [a, m, d] = String(dataIso).slice(0, 10).split("-");
+    if (!a || !m || !d) return dataIso;
+    return `${d}/${m}/${a}`;
+  },
+
+  _hojeBR() {
+    const d = new Date();
+    return d.toLocaleDateString("pt-BR");
   },
 
   _limparTexto(valor) {
