@@ -7,58 +7,13 @@ const AdminExtras = window.AdminExtras = {
   _lista: [],
   _ccsDisponiveis: [],
 
-  // CCs oficiais da Homy Química (fonte: plano de contas)
-  CC_FIXOS: [
-    "DIRETORIA PRESIDENCIAL",
-    "DIRETORIA ADMINISTRATIVA",
-    "DIRETORIA DE PRODUTOS",
-    "ADM GERAL",
-    "CUSTOS",
-    "LEGALIZAÇÃO",
-    "CONTABILIDADE",
-    "FISCAL",
-    "FINANCEIRO",
-    "RECURSOS HUMANOS",
-    "DEPARTAMENTO PESSOAL",
-    "TI",
-    "RECEPÇÃO",
-    "PORTARIA",
-    "ASSEIO E CONSERVAÇÃO",
-    "JARDINAGEM",
-    "SUPRIMENTOS",
-    "CONTROLADORIA E COMPLIANCE",
-    "ADM CONTRATOS",
-    "SGI",
-    "P&D",
-    "PATIO EXTERNO",
-    "ADM VENDAS",
-    "COML INTERNO - SUPORTE",
-    "COML INTERNO - ATIVO",
-    "COML EXTERNO - CLT",
-    "COML EXTERNO - REPRESENTANTE",
-    "SUPORTE TECNICO INDUSTRIAL",
-    "SUPORTE TECNICO OBRAS/INFRA",
-    "MARKETING",
-    "FATURAMENTO",
-    "LOGISTICA",
-    "EXPEDIÇÃO",
-    "PRODUÇÃO",
-    "ENVASE MANUAL",
-    "ENVASE AUTOMATICO",
-    "LABORATORIO E CONTROLE QUALIDADE",
-    "APOIO A PRODUÇÃO",
-    "PCP",
-    "MANUTENÇÃO",
-    "ALMOXARIFADO DE INSUMOS"
-  ],
-
-  // CC automático por tipo de extra (nomes oficiais do plano de contas)
+  // CC automático por tipo de extra (formato NOME - CÓDIGO)
   CC_POR_TIPO: {
-    "guarda":       "PORTARIA",
-    "investigador": "PORTARIA",
-    "visitante":    "ADM GERAL",
-    "motorista":    "ADM GERAL",
-    "marmita":      "ADM GERAL",
+    "guarda":       "PORTARIA - 120602",
+    "investigador": "PORTARIA - 120602",
+    "visitante":    "ADM GERAL - 120101",
+    "motorista":    "ADM GERAL - 120101",
+    "marmita":      "ADM GERAL - 120101",
     "prestador":    "" // dinâmico — Luana escolhe
   },
 
@@ -69,22 +24,92 @@ const AdminExtras = window.AdminExtras = {
     await this._carregar(semanaId);
   },
 
-  // Carrega CCs distintos da lista de Colaboradores + fixos
+  // Mapa oficial: código → nome (plano de contas Homy)
+  CC_MAPA: {
+    "110101": "DIRETORIA PRESIDENCIAL",
+    "110201": "DIRETORIA ADMINISTRATIVA",
+    "110202": "DIRETORIA DE PRODUTOS",
+    "120101": "ADM GERAL",
+    "120102": "CUSTOS",
+    "120103": "LEGALIZAÇÃO",
+    "120201": "CONTABILIDADE",
+    "120202": "FISCAL",
+    "120301": "FINANCEIRO",
+    "120401": "RECURSOS HUMANOS",
+    "120402": "DEPARTAMENTO PESSOAL",
+    "120501": "TI",
+    "120601": "RECEPÇÃO",
+    "120602": "PORTARIA",
+    "120603": "ASSEIO E CONSERVAÇÃO",
+    "120604": "JARDINAGEM",
+    "150101": "SUPRIMENTOS",
+    "160101": "CONTROLADORIA E COMPLIANCE",
+    "160102": "ADM CONTRATOS",
+    "170101": "SGI",
+    "180101": "P&D",
+    "190101": "PATIO EXTERNO",
+    "220101": "ADM VENDAS",
+    "220201": "COML INTERNO - SUPORTE",
+    "220202": "COML INTERNO - ATIVO",
+    "220301": "COML EXTERNO - CLT",
+    "220302": "COML EXTERNO - REPRESENTANTE",
+    "230101": "SUPORTE TECNICO INDUSTRIAL",
+    "230102": "SUPORTE TECNICO OBRAS/INFRA",
+    "240101": "MARKETING",
+    "250101": "FATURAMENTO",
+    "250102": "LOGISTICA",
+    "250103": "EXPEDIÇÃO",
+    "320101": "PRODUÇÃO",
+    "320201": "ENVASE MANUAL",
+    "320202": "ENVASE AUTOMATICO",
+    "320301": "LABORATORIO E CONTROLE QUALIDADE",
+    "360101": "APOIO A PRODUÇÃO",
+    "360102": "PCP",
+    "360201": "MANUTENÇÃO",
+    "360301": "ALMOXARIFADO DE INSUMOS"
+  },
+
+  // Normaliza um valor de CC para o formato "NOME - CÓDIGO"
+  _normalizarCC(valor) {
+    if (!valor) return null;
+    const v = String(valor).trim();
+    // Se já está no formato "NOME - CÓDIGO", retorna como está
+    if (v.includes(" - ")) return v;
+    // Se é só código numérico, busca o nome no mapa
+    if (/^\d+$/.test(v)) {
+      const nome = this.CC_MAPA[v];
+      return nome ? `${nome} - ${v}` : null; // descarta códigos desconhecidos
+    }
+    // É um nome — busca o código correspondente
+    const entrada = Object.entries(this.CC_MAPA).find(([, n]) => n === v.toUpperCase());
+    return entrada ? `${entrada[1]} - ${entrada[0]}` : v;
+  },
+
+  // Carrega CCs distintos da lista de Colaboradores + fixos do mapa oficial
   async _carregarCCs() {
     try {
       await SP.init();
       const colabs = await SP.getTodosColaboradores().catch(() => []);
-      const ccsDoSP = [...new Set(
-        colabs
-          .map(c => String(SP.pick(c, "Centro_Custo") || "").trim())
-          .filter(Boolean)
-      )].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
-      // Mescla CCs do SP com os fixos, sem duplicar
-      const todos = [...new Set([...this.CC_FIXOS, ...ccsDoSP])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+      // Normaliza CCs vindos do SharePoint
+      const ccsDoSP = colabs
+        .map(c => this._normalizarCC(SP.pick(c, "Centro_Custo") || ""))
+        .filter(Boolean);
+
+      // CCs fixos do mapa oficial no formato "NOME - CÓDIGO"
+      const ccsFixos = Object.entries(this.CC_MAPA)
+        .map(([cod, nome]) => `${nome} - ${cod}`);
+
+      // Mescla sem duplicar, ordena por nome
+      const todos = [...new Set([...ccsFixos, ...ccsDoSP])]
+        .sort((a, b) => a.localeCompare(b, "pt-BR"));
+
       this._ccsDisponiveis = todos;
     } catch (e) {
-      this._ccsDisponiveis = this.CC_FIXOS;
+      // Fallback: só os fixos
+      this._ccsDisponiveis = Object.entries(this.CC_MAPA)
+        .map(([cod, nome]) => `${nome} - ${cod}`)
+        .sort((a, b) => a.localeCompare(b, "pt-BR"));
     }
   },
 
