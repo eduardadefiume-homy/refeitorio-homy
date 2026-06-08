@@ -376,6 +376,20 @@ function formatDataCurta(date){
   return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
 }
 
+// ── Textos de observação que já vêm do SharePoint e precisam ser removidos ────
+function ehObsVascon(texto){
+  const n=norm(texto);
+  return n.includes("cardapio acima esta sujeito") ||
+         n.includes("sujeito a alteracoes") ||
+         n.includes("opcoes carne e massa substituem") ||
+         n.includes("opcao carne substitui") ||
+         n.includes("opcao massa substitui") ||
+         n.includes("opcoes light e lanche substituem") ||
+         n.includes("opcao light substitui") ||
+         n.includes("opcao lanche substitui") ||
+         n.includes("esta opcao substitui");
+}
+
 // ── Normaliza item do SharePoint → formato da tela ────────────────────────────
 function normalizarItemCardapio(item){
   const tag     = normOpcao(pick(item,"Opcao","opcao"));
@@ -383,12 +397,16 @@ function normalizarItemCardapio(item){
   const detRaw  = String(pick(item,"Detalhes","detalhes")||"").trim();
 
   let nome     = nomeRaw;
-  let detalhes = splitDetalhes(detRaw);
+  // Remove detalhes sujos E observações Vascon que já vieram do SharePoint
+  let detalhes = splitDetalhes(detRaw).filter(x => !ehObsVascon(x));
 
   // Nome com ";" = PDF concatenado: primeira parte é nome, resto são detalhes
   if(nome.includes(";")){
     const partes=nome.split(";").map(x=>x.trim()).filter(Boolean);
-    if(partes.length>1){ nome=partes[0]; if(!detalhes.length) detalhes=partes.slice(1).filter(x=>!ehDetalheSujo(x)); }
+    if(partes.length>1){
+      nome=partes[0];
+      if(!detalhes.length) detalhes=partes.slice(1).filter(x=>!ehDetalheSujo(x)&&!ehObsVascon(x));
+    }
   }
 
   // Nome genérico + detalhes existem
@@ -410,8 +428,8 @@ function normalizarItemCardapio(item){
     tag,
     tagClass: TAG_CLASS[tag]||"tag-principal",
     nome,
-    detalhes,
-    aviso: OBS_POR_OPCAO[tag] || null   // observação específica da opção
+    detalhes,                          // só detalhes reais do prato
+    aviso: OBS_POR_OPCAO[tag] || null  // observação única e correta por opção
   };
 }
 
