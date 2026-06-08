@@ -4,7 +4,7 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
 
   async load() {
     // Remove bindings anteriores para re-vincular corretamente
-    ["toggleEmail","toggleExtra"].forEach(id => {
+    ["toggleEmail", "toggleExtra"].forEach(id => {
       const el = document.getElementById(id);
       if (el) delete el.dataset.boundCfg;
     });
@@ -22,7 +22,7 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
       this._setToggle("toggleEmail", SP.isTrue(emailNotif));
       this._setToggle("toggleExtra", SP.isTrue(extraAuto));
     } catch (e) {
-      console.warn("[Configurações]", e);
+      console.warn("[Configurações] carregarToggles:", e);
     }
   },
 
@@ -34,21 +34,31 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
   // Cria 1 extra automático por dia útil da semana (CC = ADM GERAL)
   async _criarExtrasAutomaticos(semanaId) {
     const diasUteis = ["segunda", "terca", "quarta", "quinta", "sexta"];
-    const user = SP.getUserName();
+    const user = SP.getUserName ? SP.getUserName() : "";
     let criados = 0;
 
+    // Carrega todos os extras da semana de uma vez (1 chamada só)
+    let extrasExistentes = [];
+    try {
+      extrasExistentes = await SP.getExtras(semanaId);
+    } catch (e) {
+      extrasExistentes = [];
+    }
+
     for (const dia of diasUteis) {
+      // Verifica se já existe extra automático nesse dia
+      const normDia = dia.toLowerCase().trim();
+      const jaExiste = extrasExistentes.some(e => {
+        const eDia  = AdminUtils.norm(SP.pick(e, "Dia")           || "");
+        const eTipo = AdminUtils.norm(SP.pick(e, "tipo", "Tipo")  || "");
+        const eNome = AdminUtils.norm(SP.pick(e, "Nome", "Title") || "");
+        return eDia === normDia &&
+               (eTipo.includes("extra") || eNome.includes("refeicao extra") || eNome.includes("refeição extra"));
+      });
+
+      if (jaExiste) continue;
+
       try {
-        // Verifica se já existe extra automático nesse dia
-        const extras = await SP.getExtras(semanaId, dia);
-        const jaExiste = extras.some(e => {
-          const n = AdminUtils.norm(SP.pick(e, "Nome", "Title") || "");
-          const t = AdminUtils.norm(SP.pick(e, "tipo", "Tipo") || "");
-          return n.includes("refeicao extra") || t.includes("extra automatica") || t.includes("extra auto");
-        });
-
-        if (jaExiste) continue;
-
         await SP._addExtraPedidoCC(
           semanaId, dia,
           "Refeição Extra",
@@ -60,7 +70,7 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
         );
         criados++;
       } catch (e) {
-        console.warn(`[extra auto] falha em ${dia}:`, e);
+        console.warn("[extra auto] falha em " + dia + ":", e);
       }
     }
 
@@ -69,22 +79,25 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
 
   // Remove extras automáticos da semana
   async _removerExtrasAutomaticos(semanaId) {
-    const diasUteis = ["segunda", "terca", "quarta", "quinta", "sexta"];
-    let removidos = 0;
+    let extrasExistentes = [];
+    try {
+      extrasExistentes = await SP.getExtras(semanaId);
+    } catch (e) {
+      return 0;
+    }
 
-    for (const dia of diasUteis) {
-      try {
-        const extras = await SP.getExtras(semanaId, dia);
-        for (const e of extras) {
-          const n = AdminUtils.norm(SP.pick(e, "Nome", "Title") || "");
-          const t = AdminUtils.norm(SP.pick(e, "tipo", "Tipo") || "");
-          if (n.includes("refeicao extra") || t.includes("extra automatica") || t.includes("extra auto")) {
-            await SP.deleteExtraComPedido(e);
-            removidos++;
-          }
+    let removidos = 0;
+    for (const e of extrasExistentes) {
+      const eTipo = AdminUtils.norm(SP.pick(e, "tipo", "Tipo")  || "");
+      const eNome = AdminUtils.norm(SP.pick(e, "Nome", "Title") || "");
+      if (eTipo.includes("extra automatica") || eTipo.includes("extra auto") ||
+          eNome.includes("refeicao extra") || eNome.includes("refeição extra")) {
+        try {
+          await SP.deleteExtraComPedido(e);
+          removidos++;
+        } catch (err) {
+          console.warn("[extra auto] falha ao remover:", err);
         }
-      } catch (err) {
-        console.warn(`[extra auto] falha ao remover em ${dia}:`, err);
       }
     }
 
@@ -100,7 +113,9 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
         try {
           await SP.setConfig("notificar_email", this.checked ? "sim" : "nao");
           AdminUtils.toast(
-            this.checked ? "✅ Notificação por email ativada." : "🔕 Notificação por email desativada.",
+            this.checked
+              ? "✅ Notificação por email ativada."
+              : "🔕 Notificação por email desativada.",
             "success"
           );
         } catch (e) {
@@ -123,30 +138,32 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
           const semanaId = AdminState.getSemanaId();
 
           if (ativo) {
-            AdminUtils.toast("⏳ Criando extras automáticos da semana...", "info");
+            AdminUtils.toast("⏳ Criando extras automáticos...", "info");
             const criados = await AdminConfiguracoes._criarExtrasAutomaticos(semanaId);
             AdminUtils.toast(
               criados > 0
-                ? `✅ Refeição extra automática ativada. ${criados} extras criados para esta semana.`
-                : "✅ Refeição extra automática ativada. Extras já existiam para esta semana.",
+                ? "✅ Ativado. " + criados + " extras criados para esta semana."
+                : "✅ Ativado. Extras já existiam para esta semana.",
               "success"
             );
           } else {
-            AdminUtils.toast("⏳ Removendo extras automáticos da semana...", "info");
+            AdminUtils.toast("⏳ Removendo extras automáticos...", "info");
             const removidos = await AdminConfiguracoes._removerExtrasAutomaticos(semanaId);
             AdminUtils.toast(
-              `🔕 Refeição extra automática desativada. ${removidos} extras removidos desta semana.`,
+              "🔕 Desativado. " + removidos + " extras removidos desta semana.",
               "success"
             );
           }
 
           // Recarrega módulo de extras se estiver visível
-          if (AdminState.moduloAtivo === "extras") {
-            AdminExtras?.load(semanaId);
+          if (typeof AdminExtras !== "undefined" && AdminState.moduloAtivo === "extras") {
+            AdminExtras.load(semanaId);
           }
+
         } catch (e) {
-          AdminUtils.toast("Erro: " + e.message, "error");
-          // Reverte o toggle visualmente
+          console.error("[toggleExtra]", e);
+          AdminUtils.toast("Erro: " + (e.message || e), "error");
+          // Reverte o toggle visualmente em caso de erro
           tExtra.checked = !ativo;
         } finally {
           tExtra.disabled = false;
