@@ -304,57 +304,320 @@ window.HOMY_SP_READY = (function(){
 })();
 </script>
 <script>
-const DIAS_KEY=["seg","ter","qua","qui","sex"];
-const DIAS_LABEL={seg:"Segunda",ter:"Terça",qua:"Quarta",qui:"Quinta",sex:"Sexta"};
-const MESES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
-const TAG_CLASS={principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
-let weekOffset=0;
-let CARDAPIO={seg:[],ter:[],qua:[],qui:[],sex:[]};
-let DATAS=[];
+const DIAS_KEY = ["seg", "ter", "qua", "qui", "sex"];
 
-function val(obj,...keys){ for(const k of keys){ if(obj && obj[k] !== undefined && obj[k] !== null) return obj[k]; } return ""; }
-function normalizarDia(v){ const s=String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""); if(s.startsWith("seg"))return"seg"; if(s.startsWith("ter"))return"ter"; if(s.startsWith("qua"))return"qua"; if(s.startsWith("qui"))return"qui"; if(s.startsWith("sex"))return"sex"; return s; }
-function detalhesLista(v){ return String(v||"").split(/\n|;/).map(x=>x.trim()).filter(Boolean); }
-function addWeeks(date,w){ const d=new Date(date); d.setDate(d.getDate()+w*7); return d; }
-function getSemanaId(date){ return SP && SP.getSemanaId ? SP.getSemanaId(date) : ""; }
+const DIAS_LABEL = {
+  seg: "Segunda",
+  ter: "Terça",
+  qua: "Quarta",
+  qui: "Quinta",
+  sex: "Sexta"
+};
 
-function openModal(op){ document.getElementById("modalTag").textContent=op.tag; document.getElementById("modalTag").className="modal-tag "+op.tagClass; document.getElementById("modalTitle").textContent=op.nome; document.getElementById("modalBody").innerHTML=op.detalhes.map(d=>'<div class="modal-detail"><span class="modal-detail-text">'+d+'</span></div>').join(""); document.getElementById("modalOverlay").classList.add("open"); document.body.style.overflow="hidden"; }
-function closeModal(){ document.getElementById("modalOverlay").classList.remove("open"); document.body.style.overflow=""; }
-document.getElementById("modalClose").addEventListener("click",closeModal); document.getElementById("modalOverlay").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();}); document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
-function makeCard(op){ const card=document.createElement("div"); card.className="option-card"; card.innerHTML='<div class="option-header"><span class="option-tag '+op.tagClass+'">'+op.tag+'</span><span class="option-name">'+op.nome+'</span></div><div class="option-body">'+op.detalhes.map(x=>'<div class="option-detail">'+x+'</div>').join("")+'</div><div class="option-hint">Toque para ver detalhes</div>'; card.addEventListener("click",()=>openModal(op)); return card; }
+const TAG_CLASS = {
+  principal: "tag-principal",
+  light: "tag-light",
+  carne: "tag-carne",
+  massa: "tag-massa",
+  lanche: "tag-lanche"
+};
 
-function renderTabs(){
-  const hoje=new Date(); const f=DATAS[0], l=DATAS[4];
-  document.getElementById("weekRange").textContent=f.getDate()+"/"+String(f.getMonth()+1).padStart(2,"0")+" – "+l.getDate()+"/"+String(l.getMonth()+1).padStart(2,"0")+"/"+l.getFullYear();
-  document.getElementById("weekBadge").textContent="Semana "+(getSemanaId(f).split("-W")[1]||"");
-  const tabs=document.getElementById("dayTabs"); tabs.innerHTML=""; let def="seg";
-  DIAS_KEY.forEach((key,i)=>{ const d=DATAS[i]; const isToday=d.toDateString()===hoje.toDateString(); if(isToday) def=key; const t=document.createElement("div"); t.className="day-tab"+(isToday?" today":""); t.dataset.day=key; t.innerHTML='<span class="day-name">'+["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][d.getDay()]+'</span><span class="day-num">'+d.getDate()+'</span>'+(isToday?'<div class="day-today-dot"></div>':''); t.addEventListener("click",()=>setDay(key)); tabs.appendChild(t); });
+const TAG_LABEL = {
+  principal: "Principal",
+  light: "Light",
+  carne: "Carne",
+  massa: "Massa",
+  lanche: "Lanche"
+};
+
+const ORDEM_OPCOES = ["principal", "light", "carne", "massa", "lanche"];
+
+let weekOffset = 0;
+let CARDAPIO = { seg: [], ter: [], qua: [], qui: [], sex: [] };
+let DATAS = [];
+
+function val(obj, ...keys) {
+  for (const k of keys) {
+    if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
+  }
+
+  return "";
+}
+
+function escapeHtml(valor) {
+  return String(valor || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function normalizarTexto(valor) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function normalizarDia(v) {
+  const s = normalizarTexto(v);
+
+  if (s.startsWith("seg")) return "seg";
+  if (s.startsWith("ter")) return "ter";
+  if (s.startsWith("qua")) return "qua";
+  if (s.startsWith("qui")) return "qui";
+  if (s.startsWith("sex")) return "sex";
+
+  return s;
+}
+
+function normalizarOpcao(v) {
+  const s = normalizarTexto(v);
+
+  if (s.startsWith("prin")) return "principal";
+  if (s.startsWith("lig")) return "light";
+  if (s.startsWith("car")) return "carne";
+  if (s.startsWith("mas")) return "massa";
+  if (s.startsWith("lan")) return "lanche";
+
+  return s || "principal";
+}
+
+function detalhesLista(v) {
+  return String(v || "")
+    .replace(/\r/g, "\n")
+    .split(/\n|;/)
+    .map(x => x.replace(/^[-•·\s]+/, "").trim())
+    .filter(Boolean);
+}
+
+function ehObservacaoVascon(texto) {
+  const n = normalizarTexto(texto);
+
+  return n.includes("cardapio acima esta sujeito") ||
+    n.includes("opcoes carne e massa substituem") ||
+    n.includes("opcoes light e lanche substituem");
+}
+
+function addWeeks(date, w) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + w * 7);
+  return d;
+}
+
+function getSemanaId(date) {
+  return SP && SP.getSemanaId ? SP.getSemanaId(date) : "";
+}
+
+function deduplicarItensCardapio(items) {
+  const mapa = new Map();
+
+  for (const item of items || []) {
+    const semana = String(val(item, "Semana_id", "SemanaId", "SemanaID", "Semanaid") || "").trim();
+    const dia = normalizarDia(val(item, "Dia", "dia"));
+    const opcao = normalizarOpcao(val(item, "Opcao", "opcao"));
+
+    if (!dia || !opcao) continue;
+
+    const chave = `${semana}|${dia}|${opcao}`;
+
+    if (!mapa.has(chave)) {
+      mapa.set(chave, item);
+      continue;
+    }
+
+    const atual = mapa.get(chave);
+    const detAtual = String(val(atual, "Detalhes", "detalhes") || "");
+    const detNovo = String(val(item, "Detalhes", "detalhes") || "");
+
+    if (detNovo.length > detAtual.length) {
+      mapa.set(chave, item);
+    }
+  }
+
+  return Array.from(mapa.values());
+}
+
+function montarObservacaoPadrao(tag) {
+  if (tag === "principal") return [];
+
+  return [
+    "O cardápio acima está sujeito à alterações.",
+    tag === "carne" || tag === "massa"
+      ? "As opções Carne e Massa substituem a carne do prato principal."
+      : "As opções Light e Lanche substituem o prato principal completo."
+  ];
+}
+
+function normalizarItemTela(item) {
+  const tag = normalizarOpcao(val(item, "Opcao", "opcao"));
+  const nome = val(item, "Nome_Prato", "nomePrato", "NomePrato", "Prato", "Title") || "Prato não informado";
+
+  let detalhes = detalhesLista(val(item, "Detalhes", "detalhes"));
+
+  if (tag !== "principal") {
+    const temObs = detalhes.some(ehObservacaoVascon);
+
+    if (!temObs) {
+      detalhes = [
+        ...detalhes,
+        ...montarObservacaoPadrao(tag)
+      ];
+    }
+  }
+
+  return {
+    tag,
+    tagLabel: TAG_LABEL[tag] || tag,
+    tagClass: TAG_CLASS[tag] || "tag-principal",
+    nome,
+    detalhes
+  };
+}
+
+function openModal(op) {
+  const modalTag = document.getElementById("modalTag");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalBody = document.getElementById("modalBody");
+  const modalOverlay = document.getElementById("modalOverlay");
+
+  modalTag.textContent = op.tagLabel || op.tag;
+  modalTag.className = "modal-tag " + op.tagClass;
+  modalTitle.textContent = op.nome;
+
+  const detalhesNormais = (op.detalhes || []).filter(x => !ehObservacaoVascon(x));
+  const observacoes = (op.detalhes || []).filter(ehObservacaoVascon);
+
+  const detalhesHtml = detalhesNormais.length
+    ? detalhesNormais.map(d =>
+        '<div class="modal-detail"><span class="modal-detail-text">' + escapeHtml(d) + '</span></div>'
+      ).join("")
+    : '<div class="modal-detail"><span class="modal-detail-text">Sem detalhes adicionais cadastrados.</span></div>';
+
+  const observacoesHtml = observacoes.length
+    ? '<div class="modal-note">' + observacoes.map(escapeHtml).join("<br>") + '</div>'
+    : "";
+
+  modalBody.innerHTML = detalhesHtml + observacoesHtml;
+
+  modalOverlay.classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function closeModal() {
+  document.getElementById("modalOverlay").classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+document.getElementById("modalClose").addEventListener("click", closeModal);
+
+document.getElementById("modalOverlay").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeModal();
+});
+
+function makeCard(op) {
+  const detalhesPreview = (op.detalhes || [])
+    .filter(x => !ehObservacaoVascon(x))
+    .slice(0, 6);
+
+  const card = document.createElement("div");
+  card.className = "option-card";
+
+  card.innerHTML =
+    '<div class="option-header">' +
+      '<span class="option-tag ' + escapeHtml(op.tagClass) + '">' + escapeHtml(op.tagLabel || op.tag) + '</span>' +
+      '<span class="option-name">' + escapeHtml(op.nome) + '</span>' +
+    '</div>' +
+    '<div class="option-body">' +
+      detalhesPreview.map(x => '<div class="option-detail">' + escapeHtml(x) + '</div>').join("") +
+    '</div>' +
+    '<div class="option-hint">Toque para ver detalhes</div>';
+
+  card.addEventListener("click", () => openModal(op));
+  return card;
+}
+
+function ordenarOpcoes(lista) {
+  return [...(lista || [])].sort((a, b) => {
+    const ia = ORDEM_OPCOES.indexOf(a.tag);
+    const ib = ORDEM_OPCOES.indexOf(b.tag);
+
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+}
+
+function renderTabs() {
+  const hoje = new Date();
+  const f = DATAS[0];
+  const l = DATAS[4];
+
+  document.getElementById("weekRange").textContent =
+    f.getDate() + "/" + String(f.getMonth() + 1).padStart(2, "0") +
+    " – " +
+    l.getDate() + "/" + String(l.getMonth() + 1).padStart(2, "0") + "/" + l.getFullYear();
+
+  document.getElementById("weekBadge").textContent = "Semana " + (getSemanaId(f).split("-W")[1] || "");
+
+  const tabs = document.getElementById("dayTabs");
+  tabs.innerHTML = "";
+
+  let def = "seg";
+
+  DIAS_KEY.forEach((key, i) => {
+    const d = DATAS[i];
+    const isToday = d.toDateString() === hoje.toDateString();
+
+    if (isToday) def = key;
+
+    const t = document.createElement("div");
+    t.className = "day-tab" + (isToday ? " today" : "");
+    t.dataset.day = key;
+
+    t.innerHTML =
+      '<span class="day-name">' + ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][d.getDay()] + '</span>' +
+      '<span class="day-num">' + d.getDate() + '</span>' +
+      (isToday ? '<div class="day-today-dot"></div>' : "");
+
+    t.addEventListener("click", () => setDay(key));
+    tabs.appendChild(t);
+  });
+
   setDay(def);
 }
-function setDay(key){
-  const idx=DIAS_KEY.indexOf(key), d=DATAS[idx], hoje=new Date();
+
+function setDay(key) {
+  const idx = DIAS_KEY.indexOf(key);
+  const d = DATAS[idx];
+  const hoje = new Date();
 
   document.querySelectorAll(".day-tab")
-    .forEach(t=>t.classList.toggle("active",t.dataset.day===key));
+    .forEach(t => t.classList.toggle("active", t.dataset.day === key));
 
-  const area=document.getElementById("cardsArea");
-  area.innerHTML="";
+  const area = document.getElementById("cardsArea");
+  area.innerHTML = "";
 
-  const panel=document.createElement("div");
-  panel.className="day-panel active";
+  const panel = document.createElement("div");
+  panel.className = "day-panel active";
 
-  const isToday=d.toDateString()===hoje.toDateString();
+  const isToday = d.toDateString() === hoje.toDateString();
 
-  panel.innerHTML=
-    '<div class="day-header"><span class="day-header-date">'+
-    DIAS_LABEL[key]+', '+d.getDate()+' de '+MESES[d.getMonth()]+'</span>'+
-    (isToday?'<span class="day-header-badge">Hoje</span>':'')+
+  panel.innerHTML =
+    '<div class="day-header"><span class="day-header-date">' +
+    DIAS_LABEL[key] + ', ' + d.getDate() + ' de ' + MESES[d.getMonth()] + '</span>' +
+    (isToday ? '<span class="day-header-badge">Hoje</span>' : '') +
     '</div>';
 
-  const itens=CARDAPIO[key]||[];
+  const itens = ordenarOpcoes(CARDAPIO[key] || []);
 
-  if(!itens.length){
+  if (!itens.length) {
     panel.innerHTML +=
       '<div class="nota-card"><span class="nota-icon">ℹ️</span><span class="nota-text">Nenhum cardápio cadastrado para este dia.</span></div>';
 
@@ -362,26 +625,61 @@ function setDay(key){
     return;
   }
 
-  const grid=document.createElement("div");
-  grid.className="options-grid";
+  const grid = document.createElement("div");
+  grid.className = "options-grid";
 
-  itens.forEach(op=>grid.appendChild(makeCard(op)));
+  itens.forEach(op => grid.appendChild(makeCard(op)));
 
   panel.appendChild(grid);
   area.appendChild(panel);
 }
-async function carregarSemana(){
-  try{
-    await window.HOMY_SP_READY; await SP.ensureLogin();
-    const base=addWeeks(new Date(),weekOffset); const semanaId=getSemanaId(base); DATAS=SP.getWeekDates(semanaId);
-    CARDAPIO={seg:[],ter:[],qua:[],qui:[],sex:[]};
-    const itens=await SP.getCardapio(semanaId);
-    (itens||[]).forEach(i=>{ const dia=normalizarDia(val(i,"Dia","dia")); if(!CARDAPIO[dia]) return; const tag=String(val(i,"Opcao","opcao")||"principal").toLowerCase(); CARDAPIO[dia].push({tag,tagClass:TAG_CLASS[tag]||"tag-principal",nome:val(i,"Nome_Prato","nomePrato","Prato","Title")||"Prato não informado",detalhes:detalhesLista(val(i,"Detalhes","detalhes"))}); });
+
+async function carregarSemana() {
+  try {
+    await window.HOMY_SP_READY;
+    await SP.ensureLogin();
+
+    const base = addWeeks(new Date(), weekOffset);
+    const semanaId = getSemanaId(base);
+
+    DATAS = SP.getWeekDates(semanaId);
+    CARDAPIO = { seg: [], ter: [], qua: [], qui: [], sex: [] };
+
+    let itens = await SP.getCardapio(semanaId);
+    itens = deduplicarItensCardapio(itens);
+
+    itens.forEach(i => {
+      const dia = normalizarDia(val(i, "Dia", "dia"));
+
+      if (!CARDAPIO[dia]) return;
+
+      CARDAPIO[dia].push(normalizarItemTela(i));
+    });
+
+    for (const dia of DIAS_KEY) {
+      CARDAPIO[dia] = ordenarOpcoes(CARDAPIO[dia]);
+    }
+
     renderTabs();
-  }catch(e){ console.error("Erro ao carregar cardápio real:",e); document.getElementById("cardsArea").innerHTML='<div class="nota-card"><span class="nota-icon">⚠️</span><span class="nota-text">Não foi possível conectar ao SharePoint. Verifique o login Microsoft.</span></div>'; }
+
+  } catch (e) {
+    console.error("Erro ao carregar cardápio real:", e);
+
+    document.getElementById("cardsArea").innerHTML =
+      '<div class="nota-card"><span class="nota-icon">⚠️</span><span class="nota-text">Não foi possível conectar ao SharePoint. Verifique o login Microsoft.</span></div>';
+  }
 }
-document.getElementById("prevWeek").addEventListener("click",()=>{weekOffset--;carregarSemana();});
-document.getElementById("nextWeek").addEventListener("click",()=>{weekOffset++;carregarSemana();});
+
+document.getElementById("prevWeek").addEventListener("click", () => {
+  weekOffset--;
+  carregarSemana();
+});
+
+document.getElementById("nextWeek").addEventListener("click", () => {
+  weekOffset++;
+  carregarSemana();
+});
+
 carregarSemana();
 </script>
 
