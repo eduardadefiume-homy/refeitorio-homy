@@ -293,7 +293,12 @@ function ehObsVascon(texto){
   const n = norm(texto);
   return n.includes("cardapio acima esta sujeito") ||
          n.includes("opcoes carne e massa substituem") ||
-         n.includes("opcoes light e lanche substituem");
+         n.includes("opcoes light e lanche substituem") ||
+         n.includes("opcao carne substitui") ||
+         n.includes("opcao massa substitui") ||
+         n.includes("opcao light substitui") ||
+         n.includes("opcao lanche substitui") ||
+         n.includes("sujeito a alteracoes");
 }
 
 function splitDetalhes(v){
@@ -303,6 +308,16 @@ function splitDetalhes(v){
     .map(x => x.replace(/^[-•·\s]+/,"").trim())
     .filter(x => x.length > 1 && !ehDetalheSujo(x));
 }
+
+// ── Observações fixas da Vascon por opção ────────────────────────────────────
+// Aparecem no modal como nota de rodapé, nunca no card preview
+const OBS_VASCON = {
+  principal: "O cardápio acima está sujeito a alterações.",
+  light:     "A opção Light substitui o prato principal completo.\nO cardápio acima está sujeito a alterações.",
+  lanche:    "A opção Lanche substitui o prato principal completo.\nO cardápio acima está sujeito a alterações.",
+  carne:     "A opção Carne substitui a carne do prato principal.\nO cardápio acima está sujeito a alterações.",
+  massa:     "A opção Massa substitui a carne do prato principal.\nO cardápio acima está sujeito a alterações."
+};
 
 // ── Normaliza 1 item do SharePoint para o formato da tela ────────────────────
 const NOMES_GENERICOS = [
@@ -327,25 +342,41 @@ function normalizarItem(item){
   if(nomeRaw.includes(";") || nomeRaw.includes(" · ")){
     const partes = nomeRaw.split(/;| · /).map(x => x.trim()).filter(Boolean);
     if(partes.length > 1){
-      nome     = partes[0];
-      // só adiciona detalhes extras se os existentes forem vazios/sujos
+      nome = partes[0];
       if(detalhes.length === 0){
         detalhes = partes.slice(1).filter(x => !ehDetalheSujo(x));
       }
     }
   }
 
-  // Caso 2: nome é genérico mas detalhes têm conteúdo
-  // → usa o primeiro detalhe como nome e o restante como detalhes
+  // Caso 2: nome é "Prato Principal" (genérico) — o nome real É o próprio
+  // campo Detalhes, que contém o cardápio completo do dia.
+  // Neste caso exibimos "Cardápio do Dia" como título e os detalhes embaixo.
   if(ehNomeGenerico(nome) && detalhes.length > 0){
-    nome     = detalhes[0];
-    detalhes = detalhes.slice(1);
+    // Para o principal: o nome visual fica "Cardápio do Dia"
+    // e todos os detalhes ficam listados abaixo
+    if(tag === "principal"){
+      nome = "Cardápio do Dia";
+    } else {
+      // Para carne/massa/light/lanche: o primeiro detalhe é o prato
+      nome     = detalhes[0];
+      detalhes = detalhes.slice(1);
+    }
   }
 
-  // Caso 3: nome ainda genérico/vazio → fallback visual
+  // Caso 3: nome ainda genérico/vazio → fallback
   if(ehNomeGenerico(nome)){
-    nome = "Cardápio não cadastrado";
+    nome     = "Cardápio não cadastrado";
     detalhes = [];
+  }
+
+  // Adiciona observação Vascon fixa para a opção (vai aparecer só no modal)
+  const obsTexto = OBS_VASCON[tag];
+  if(obsTexto){
+    detalhes = [
+      ...detalhes,
+      ...obsTexto.split("\n").map(x => x.trim()).filter(Boolean)
+    ];
   }
 
   return {
