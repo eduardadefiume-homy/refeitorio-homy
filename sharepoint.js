@@ -113,6 +113,16 @@ const SP = window.SP = {
     return this._account?.username || "";
   },
 
+  getAuthRedirectUri() {
+    const path = window.location.pathname;
+    const marker = "/refeitorio-homy/";
+    const appRoot = path.includes(marker)
+      ? path.slice(0, path.indexOf(marker) + marker.length)
+      : "/";
+
+    return window.location.origin + appRoot;
+  },
+
   isExtraPedido(p) {
     const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const origem = norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
@@ -135,8 +145,8 @@ const SP = window.SP = {
       auth: {
         clientId: this.clientId,
         authority: `https://login.microsoftonline.com/${this.tenantId}`,
-        redirectUri: window.location.origin + window.location.pathname,
-        navigateToLoginRequestUrl: false
+        redirectUri: this.getAuthRedirectUri(),
+        navigateToLoginRequestUrl: true
       },
       cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: true }
     });
@@ -947,7 +957,6 @@ const SP = window.SP = {
   async removeItem(listName, id)               { return this.deleteItem(listName, id); },
   async deleteExtra(id)                        { return this.removeExtra(id); },
   async getCheckIns()                          { return this.getItems("CheckIn"); },
-  async setConfig(chave, valor)                { return this.setConfig(chave, valor); },
 
   // cleanupExtraAutomaticoSemana: remove duplicatas de "Refeição Extra automática" por dia
   async cleanupExtraAutomaticoSemana(semanaId) {
