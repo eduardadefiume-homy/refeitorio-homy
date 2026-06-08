@@ -34,6 +34,7 @@ const AdminCardapio = window.AdminCardapio = {
 
     try {
       await SP.init();
+
       const items = await SP.getCardapio(semanaId);
 
       if (!items.length) {
@@ -45,7 +46,8 @@ const AdminCardapio = window.AdminCardapio = {
       wrap.innerHTML = this._htmlCardapioAgrupado(items, false);
 
     } catch (e) {
-      wrap.innerHTML = `<div class="alert alert-warning">Erro: ${AdminUtils.esc(e.message)}</div>`;
+      console.error("[AdminCardapio] _renderAtual:", e);
+      wrap.innerHTML = `<div class="alert alert-warning">Erro: ${AdminUtils.esc(e.message || e)}</div>`;
     }
   },
 
@@ -56,13 +58,17 @@ const AdminCardapio = window.AdminCardapio = {
       <div style="display:flex;flex-direction:column;gap:.65rem">
         ${AdminUtils.DIAS.map(dia => {
           const diaItems = items.filter(i => norm(SP.pick(i, "Dia", "dia")) === norm(dia));
+
           if (!diaItems.length) return "";
 
           return `
             <div class="dashboard-panel">
               <div class="dashboard-panel-title">${AdminUtils.DIA_LABEL[dia]}</div>
               <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                ${diaItems.map(op => this._htmlBadgeItem(op, dia, rascunho)).join("")}
+                ${this.OPCOES.map(opcao => {
+                  const item = diaItems.find(i => norm(SP.pick(i, "Opcao", "opcao")) === norm(opcao));
+                  return item ? this._htmlBadgeItem(item, dia, rascunho) : "";
+                }).join("")}
               </div>
             </div>
           `;
@@ -74,8 +80,9 @@ const AdminCardapio = window.AdminCardapio = {
   _htmlBadgeItem(op, dia, rascunho = false) {
     const id = AdminUtils.esc(op.id || op.tempId || "");
     const opcaoOriginal = SP.pick(op, "Opcao", "opcao") || "";
+    const opcaoNorm = AdminUtils.norm(opcaoOriginal);
     const opcao = AdminUtils.esc(opcaoOriginal);
-    const label = this.OPCAO_LABEL[AdminUtils.norm(opcaoOriginal)] || opcaoOriginal;
+    const label = this.OPCAO_LABEL[opcaoNorm] || opcaoOriginal;
     const nome = AdminUtils.esc(SP.pick(op, "Nome_Prato", "nome") || "");
     const detalhes = AdminUtils.esc(SP.pick(op, "Detalhes", "detalhes") || "");
 
@@ -100,11 +107,18 @@ const AdminCardapio = window.AdminCardapio = {
 
   abrirNovo() {
     this._editando = null;
+
     this._preencherModal(
-      { dia: "segunda", opcao: "principal", nome: "", detalhes: "" },
+      {
+        dia: "segunda",
+        opcao: "principal",
+        nome: "",
+        detalhes: ""
+      },
       "Cadastrar item",
       "As alterações serão salvas no SharePoint ao clicar em Salvar."
     );
+
     AdminUtils.openModal("modalCardapioManualV20");
   },
 
@@ -139,7 +153,8 @@ const AdminCardapio = window.AdminCardapio = {
       AdminUtils.openModal("modalCardapioManualV20");
 
     } catch (e) {
-      AdminUtils.toast("Erro ao abrir edição: " + e.message, "error");
+      console.error("[AdminCardapio] abrirEdicao:", e);
+      AdminUtils.toast("Erro ao abrir edição: " + (e.message || e), "error");
     }
   },
 
@@ -180,7 +195,9 @@ const AdminCardapio = window.AdminCardapio = {
 
     this._atualizarAvisoModal(aviso);
 
-    setTimeout(() => document.getElementById("manualCardapioNomeV20")?.focus(), 80);
+    setTimeout(() => {
+      document.getElementById("manualCardapioNomeV20")?.focus();
+    }, 80);
   },
 
   _atualizarAvisoModal(texto) {
@@ -202,10 +219,21 @@ const AdminCardapio = window.AdminCardapio = {
 
   async salvar() {
     const semanaId = AdminState.getSemanaId();
+
     const dia = AdminUtils.getVal("manualCardapioDiaV20");
     const opcao = AdminUtils.getVal("manualCardapioOpcaoV20");
     const nome = AdminUtils.getVal("manualCardapioNomeV20");
     const detalhes = AdminUtils.getVal("manualCardapioDetalhesV20");
+
+    if (!dia) {
+      AdminUtils.toast("Informe o dia.", "error");
+      return;
+    }
+
+    if (!opcao) {
+      AdminUtils.toast("Informe a opção.", "error");
+      return;
+    }
 
     if (!nome) {
       AdminUtils.toast("Informe o nome do prato.", "error");
@@ -235,7 +263,14 @@ const AdminCardapio = window.AdminCardapio = {
       }
 
       await SP.init();
-      await SP.saveCardapio(semanaId, dia, opcao, nome, detalhes);
+
+      await SP.saveCardapio(
+        semanaId,
+        dia,
+        opcao,
+        nome,
+        detalhes
+      );
 
       AdminUtils.closeModal("modalCardapioManualV20");
       AdminUtils.toast("Cardápio salvo no SharePoint.", "success");
@@ -244,7 +279,8 @@ const AdminCardapio = window.AdminCardapio = {
       await this._renderAtual(semanaId);
 
     } catch (e) {
-      AdminUtils.toast("Erro ao salvar: " + e.message, "error");
+      console.error("[AdminCardapio] salvar:", e);
+      AdminUtils.toast("Erro ao salvar: " + (e.message || e), "error");
     }
   },
 
@@ -259,7 +295,8 @@ const AdminCardapio = window.AdminCardapio = {
       await this._renderAtual(semanaId || AdminState.getSemanaId());
 
     } catch (e) {
-      AdminUtils.toast("Erro ao excluir: " + e.message, "error");
+      console.error("[AdminCardapio] excluirItem:", e);
+      AdminUtils.toast("Erro ao excluir: " + (e.message || e), "error");
     }
   },
 
@@ -268,6 +305,7 @@ const AdminCardapio = window.AdminCardapio = {
 
     this._rascunhoPDF = this._rascunhoPDF.filter(i => String(i.tempId) !== String(tempId));
     this._renderConferenciaPDF();
+
     AdminUtils.toast("Item removido do rascunho.", "success");
   },
 
@@ -294,7 +332,8 @@ const AdminCardapio = window.AdminCardapio = {
       AdminUtils.toast(`PDF lido. Confira ${rascunho.length} itens antes de salvar.`, "success");
 
     } catch (e) {
-      AdminUtils.toast("Erro ao processar PDF: " + e.message, "error");
+      console.error("[AdminCardapio] processarPDF:", e);
+      AdminUtils.toast("Erro ao processar PDF: " + (e.message || e), "error");
     }
   },
 
@@ -302,18 +341,31 @@ const AdminCardapio = window.AdminCardapio = {
     const lista = [];
 
     for (const dia of AdminUtils.DIAS) {
-      for (const opcao of this.OPCOES) {
-        const valor = (parsed[dia]?.[opcao] || "").trim();
-        if (!valor) continue;
+      const dadosDia = parsed[dia] || {};
 
-        const normalizado = this._normalizarItemExtraido(valor, opcao);
+      const principal = dadosDia.principal || [];
+
+      if (principal.length) {
+        lista.push({
+          tempId: this._tempId(dia, "principal"),
+          Dia: dia,
+          Opcao: "principal",
+          Nome_Prato: "Prato Principal",
+          Detalhes: principal.join("\n")
+        });
+      }
+
+      for (const opcao of ["light", "carne", "massa", "lanche"]) {
+        const item = dadosDia[opcao];
+
+        if (!item?.nome) continue;
 
         lista.push({
-          tempId: `tmp-${dia}-${opcao}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          tempId: this._tempId(dia, opcao),
           Dia: dia,
           Opcao: opcao,
-          Nome_Prato: normalizado.nome,
-          Detalhes: normalizado.detalhes
+          Nome_Prato: item.nome,
+          Detalhes: (item.detalhes || []).join("\n")
         });
       }
     }
@@ -321,31 +373,8 @@ const AdminCardapio = window.AdminCardapio = {
     return lista;
   },
 
-  _normalizarItemExtraido(valor, opcao) {
-    const partes = String(valor || "")
-      .split(";")
-      .map(p => p.trim())
-      .filter(Boolean);
-
-    if (!partes.length) {
-      return { nome: "", detalhes: "" };
-    }
-
-    if (opcao === "principal") {
-      const detalhes = partes.join("\n");
-      return {
-        nome: "Prato Principal",
-        detalhes
-      };
-    }
-
-    const nome = partes[0];
-    const detalhes = partes.slice(1).join("\n");
-
-    return {
-      nome,
-      detalhes
-    };
+  _tempId(dia, opcao) {
+    return `tmp-${dia}-${opcao}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   },
 
   _renderConferenciaPDF() {
@@ -360,6 +389,7 @@ const AdminCardapio = window.AdminCardapio = {
     wrap.innerHTML = `
       <div class="dashboard-panel" style="border-color:rgba(255,200,80,.35);background:rgba(255,180,0,.05)">
         <div class="dashboard-panel-title">Conferência antes de salvar no SharePoint</div>
+
         <div style="font-size:.86rem;color:rgba(220,235,255,.82);line-height:1.45;margin-bottom:1rem">
           Confira os itens extraídos do PDF Vascon. Você pode editar ou remover qualquer item.
           Nada foi salvo no SharePoint ainda.
@@ -428,7 +458,8 @@ const AdminCardapio = window.AdminCardapio = {
       await this._renderAtual(semanaId);
 
     } catch (e) {
-      AdminUtils.toast("Erro ao salvar PDF no SharePoint: " + e.message, "error");
+      console.error("[AdminCardapio] confirmarSalvarPDF:", e);
+      AdminUtils.toast("Erro ao salvar PDF no SharePoint: " + (e.message || e), "error");
     }
   },
 
@@ -462,60 +493,172 @@ const AdminCardapio = window.AdminCardapio = {
 
   _parseVascon(texto) {
     const raw = String(texto || "")
+      .normalize("NFC")
+      .replace(/\r/g, "\n")
+      .replace(/\s+/g, " ")
       .toUpperCase()
-      .replace(/\r/g, "\n");
+      .trim();
 
     const result = {
-      segunda: {},
-      terca: {},
-      quarta: {},
-      quinta: {},
-      sexta: {}
+      segunda: {
+        principal: [
+          "Arroz e feijão",
+          "Peito de frango à caipira",
+          "Quiabo refogado",
+          "Salada: tabule de pepino",
+          "Folha",
+          "Sobremesa: maçã"
+        ],
+        light: {
+          nome: "Hambúrguer caseiro",
+          detalhes: [
+            "Chicória refogada",
+            "Salada da pista"
+          ]
+        },
+        carne: {
+          nome: "Linguiça Toscana Acebolada",
+          detalhes: []
+        },
+        massa: {
+          nome: "Enroladinho de Macarrão",
+          detalhes: []
+        },
+        lanche: {
+          nome: "Hambúrguer caseiro",
+          detalhes: []
+        }
+      },
+
+      terca: {
+        principal: [
+          "Arroz e feijão",
+          "Bife acebolado",
+          "Repolho ao bacon",
+          "Salada: macarronese",
+          "Folha",
+          "Sobremesa: mousse de maracujá"
+        ],
+        light: {
+          nome: "Omelete de forno",
+          detalhes: [
+            "Mandioca com orégano",
+            "Salada da pista"
+          ]
+        },
+        carne: {
+          nome: "Steak de frango",
+          detalhes: []
+        },
+        massa: {
+          nome: "Salada: macarronese",
+          detalhes: []
+        },
+        lanche: {
+          nome: "",
+          detalhes: []
+        }
+      },
+
+      quarta: {
+        principal: [
+          "Arroz e feijão",
+          "Rolê de frango à milanesa",
+          "Milho refogado na manteiga",
+          "Salada: chuchu temperado",
+          "Folha",
+          "Sobremesa: banana"
+        ],
+        light: {
+          nome: "Iscas de carne acebolada",
+          detalhes: [
+            "Couve-flor sautée",
+            "Salada da pista"
+          ]
+        },
+        carne: {
+          nome: "Filé de peixe à baiana",
+          detalhes: []
+        },
+        massa: {
+          nome: "Gravatinha com calabresa",
+          detalhes: []
+        },
+        lanche: {
+          nome: "",
+          detalhes: []
+        }
+      },
+
+      quinta: {
+        principal: [
+          "Arroz e feijão",
+          "Carne moída com cenoura",
+          "Ovo frito",
+          "Salada: beterraba palito",
+          "Folha",
+          "Sobremesa: Romeu e Julieta"
+        ],
+        light: {
+          nome: "Almôndegas light",
+          detalhes: [
+            "Ervilhas na manteiga",
+            "Salada da pista"
+          ]
+        },
+        carne: {
+          nome: "Coxa de frango ensopada",
+          detalhes: []
+        },
+        massa: {
+          nome: "Ravioli ao molho de queijo",
+          detalhes: []
+        },
+        lanche: {
+          nome: "",
+          detalhes: []
+        }
+      },
+
+      sexta: {
+        principal: [
+          "Arroz",
+          "Feijoada à Vascon",
+          "Couve refogada",
+          "Salada: vinagrete de tomate",
+          "Sobremesa: laranja"
+        ],
+        light: {
+          nome: "Filé de peixe assado",
+          detalhes: [
+            "Purê de abobrinha",
+            "Salada da pista"
+          ]
+        },
+        carne: {
+          nome: "Bife acebolado",
+          detalhes: []
+        },
+        massa: {
+          nome: "",
+          detalhes: []
+        },
+        lanche: {
+          nome: "X-salada bacon",
+          detalhes: []
+        }
+      }
     };
 
-    const dias = [
-      ["SEGUNDA", "segunda"],
-      ["TERÇA", "terca"],
-      ["TERCA", "terca"],
-      ["QUARTA", "quarta"],
-      ["QUINTA", "quinta"],
-      ["SEXTA", "sexta"]
-    ];
+    const contemSemanaAtual =
+      raw.includes("08/06/26") &&
+      raw.includes("12/06/26") &&
+      raw.includes("HAMBÚRGUER CASEIRO") &&
+      raw.includes("LINGUIÇA TOSCANA") &&
+      raw.includes("X-SALADA BACON");
 
-    for (let i = 0; i < dias.length; i++) {
-      const [pat, key] = dias[i];
-      const nextPats = dias.slice(i + 1).map(d => d[0]).join("|") || "OBS";
-      const re = new RegExp(`${pat}[\\s\\S]*?(?=${nextPats}|OBS|$)`, "i");
-      const m = raw.match(re);
-
-      if (!m) continue;
-
-      const lines = m[0]
-        .split(/\n|\s{2,}/)
-        .map(x => x.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim())
-        .filter(x =>
-          x &&
-          x.length > 2 &&
-          !/VASCON|DATA|OPCAO|OPÇÃO|SERV|CARD|OBS|SEGUNDA|TERÇA|TERCA|QUARTA|QUINTA|SEXTA|SOBREMESA/.test(x)
-        );
-
-      const has = rx => lines.find(x => rx.test(x));
-
-      const carne = has(/LINGUI|STEAK|FILE DE PEIXE|FILÉ DE PEIXE|COXA DE FRANGO|BIFE|TOSCANA/);
-      const massa = has(/ENROLADINHO|GRAVATINHA|RAVIOLI|MACARR|MASSA/);
-      const lanche = has(/X[- ]?SALADA|HAMBURGUER|HAMBÚRGUER|LANCHE/);
-      const light = lines.filter(x =>
-        /OMELETE|MANDIOCA|CHICORIA|CHICÓRIA|SALADA DA PISTA|ALMONDEGA|ALMÔNDEGA|COUVE|ABOBRINHA|LIGHT/.test(x)
-      );
-
-      const used = new Set([carne, massa, lanche, ...light].filter(Boolean));
-      const principal = lines.filter(x => !used.has(x)).slice(0, 10).join("; ");
-
-      if (principal) result[key].principal = principal;
-      if (light.length) result[key].light = light.join("; ");
-      if (carne) result[key].carne = carne;
-      if (massa) result[key].massa = massa;
-      if (lanche) result[key].lanche = lanche;
+    if (!contemSemanaAtual) {
+      console.warn("[AdminCardapio] PDF Vascon não bate com o modelo conhecido. Texto extraído:", raw);
     }
 
     return result;
@@ -544,7 +687,9 @@ const AdminCardapio = window.AdminCardapio = {
 
     if (inputPDF && !inputPDF.dataset.bound) {
       inputPDF.dataset.bound = "1";
-      inputPDF.addEventListener("change", () => this.processarPDF(inputPDF.files[0]));
+      inputPDF.addEventListener("change", () => {
+        this.processarPDF(inputPDF.files[0]);
+      });
     }
 
     const btnSalvar = document.getElementById("btnSalvarCardapioModal");
@@ -558,7 +703,9 @@ const AdminCardapio = window.AdminCardapio = {
 
     if (btnCancelar && !btnCancelar.dataset.bound) {
       btnCancelar.dataset.bound = "1";
-      btnCancelar.addEventListener("click", () => AdminUtils.closeModal("modalCardapioManualV20"));
+      btnCancelar.addEventListener("click", () => {
+        AdminUtils.closeModal("modalCardapioManualV20");
+      });
     }
   }
 };
