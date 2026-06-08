@@ -1,50 +1,87 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// Versão: 2026-06-05
-// Correções: clientId correto, sitePath com fallback automático,
-// getDashboardResumo implementado, filtro de campos read-only
-// no PATCH/POST, sem funções duplicadas.
+// Versão: 2026-06-08
+//
+// App registration: Refeitorio Homy
+// clientId: aa37acf9-f3bd-4d1e-968a-fde57f79094c
+//
+// Decisão técnica:
+// - Admin usa loginPopup por clique explícito
+// - Páginas públicas usam sessão existente e não ficam disparando login em loop
+// - Graph não inicia múltiplas interações simultâneas
+// - SharePoint continua sendo a fonte oficial dos dados
+// - no PATCH/POST, sem funções duplicadas.
 // ============================================================
 
 const SP = window.SP = {
 
-  // --- Credenciais ---
-  clientId:  "aa37acf9-f3bd-4d1e-968a-fde57f79094c",  // App "Refeitório Homy"
-  tenantId:  "a2850abc-334a-4805-b6b2-420b4aef68a9",
-  scopes:    ["Sites.ReadWrite.All", "User.Read"],
-  siteUrl:   "homyquimica.sharepoint.com",
-  // sitePath testado em ordem até encontrar o correto
+  // ============================================================
+  // CREDENCIAIS
+  // ============================================================
+  clientId: "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
+  tenantId: "a2850abc-334a-4805-b6b2-420b4aef68a9",
+  scopes: ["Sites.ReadWrite.All", "User.Read"],
+
+  siteUrl: "homyquimica.sharepoint.com",
+
   _sitePathCandidates: [
-    "/sites/Refeitrio-Homy",    // nome real criado (sem acento)
-    "/sites/Refeitorio-Homy",   // variante com acento removido
-    "/sites/Refeitório-Homy"    // variante com acento
+    "/sites/Refeitrio-Homy",
+    "/sites/Refeitorio-Homy",
+    "/sites/Refeitório-Homy"
   ],
 
-  // --- Estado interno ---
+  // ============================================================
+  // ESTADO INTERNO
+  // ============================================================
   _msalInstance: null,
-  _account:      null,
-  _siteId:       null,
-  _sitePath:     null,
-  _listIds:      {},
+  _account: null,
+  _siteId: null,
+  _sitePath: null,
+  _listIds: {},
   _columnsCache: {},
+  _colunasValores: null,
+
+  _msalReadyPromise: null,
+  _redirectHandled: false,
+  _loginEmAndamento: false,
 
   // ============================================================
-  // CAMPOS READ-ONLY — nunca enviar ao SharePoint via PATCH/POST
+  // CAMPOS READ ONLY
   // ============================================================
   _readOnlyFields: new Set([
-    "ComplianceAssetId", "id", "ID", "Created", "Modified",
-    "Author", "Editor", "AuthorId", "EditorId",
-    "FileSystemObjectType", "ContentTypeId",
-    "_UIVersionString", "_UIVersion", "Attachments",
-    "CheckoutUser", "GUID", "UniqueId", "owshiddenversion",
-    "AppAuthor", "AppEditor", "DocIcon",
-    "LinkTitle", "LinkTitleNoMenu", "Edit",
-    "SelectTitle", "SelectFilename",
-    "ItemChildCount", "FolderChildCount"
+    "ComplianceAssetId",
+    "id",
+    "ID",
+    "Created",
+    "Modified",
+    "Author",
+    "Editor",
+    "AuthorId",
+    "EditorId",
+    "FileSystemObjectType",
+    "ContentTypeId",
+    "_UIVersionString",
+    "_UIVersion",
+    "Attachments",
+    "CheckoutUser",
+    "GUID",
+    "UniqueId",
+    "owshiddenversion",
+    "AppAuthor",
+    "AppEditor",
+    "DocIcon",
+    "LinkTitle",
+    "LinkTitleNoMenu",
+    "Edit",
+    "SelectTitle",
+    "SelectFilename",
+    "ItemChildCount",
+    "FolderChildCount"
   ]),
 
   _cleanFields(fields) {
     if (!fields || typeof fields !== "object") return fields;
+
     return Object.fromEntries(
       Object.entries(fields).filter(([k]) =>
         !this._readOnlyFields.has(k) &&
@@ -64,20 +101,40 @@ const SP = window.SP = {
     return null;
   },
 
+  norm(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  },
+
   isTrue(value) {
     if (value === true || value === 1) return true;
+    if (value === false || value === 0) return false;
+
     const v = String(value ?? "").trim().toLowerCase();
-    return v === "sim" || v === "true" || v === "yes" || v === "1";
+    return ["sim", "true", "yes", "1", "ativo"].includes(v);
+  },
+
+  getUserName() {
+    return this._account?.name || this._account?.username || "Usuário Homy";
+  },
+
+  getUserEmail() {
+    return this._account?.username || "";
   },
 
   getSemanaId(date = new Date()) {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
     d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+
     const week1 = new Date(d.getFullYear(), 0, 4);
     const weekNum = 1 + Math.round(
       ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
     );
+
     return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
   },
 
@@ -89,7 +146,9 @@ const SP = window.SP = {
     const [year, week] = semanaId.split("-W").map(Number);
     const jan4 = new Date(year, 0, 4);
     const start = new Date(jan4);
+
     start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (week - 1) * 7);
+
     return Array.from({ length: 5 }, (_, i) => {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
@@ -98,39 +157,60 @@ const SP = window.SP = {
   },
 
   getDataRefBySemanaDia(semanaId, dia) {
-    const ordem = { segunda: 0, terca: 1, terça: 1, quarta: 2, quinta: 3, sexta: 4 };
-    const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const ordem = {
+      segunda: 0,
+      terca: 1,
+      terça: 1,
+      quarta: 2,
+      quinta: 3,
+      sexta: 4
+    };
+
     const datas = this.getWeekDates(semanaId);
-    const idx = ordem[norm(dia)];
-    if (idx === undefined || !datas[idx]) return new Date().toISOString().slice(0, 10);
+    const idx = ordem[this.norm(dia)];
+
+    if (idx === undefined || !datas[idx]) {
+      return new Date().toISOString().slice(0, 10);
+    }
+
     return datas[idx].toISOString().slice(0, 10);
   },
 
-  getUserName() {
-    return this._account?.name || this._account?.username || "Usuário Homy";
-  },
-
-  getUserEmail() {
-    return this._account?.username || "";
-  },
-
   isExtraPedido(p) {
-    const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const origem = norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
-    const nome   = norm(this.pick(p, "Colaborador_nome", "Title", "Nome") || "");
-    return origem.includes("extra") || origem.includes("investigador") ||
-           origem.includes("guarda") || nome.includes("refeicao extra");
+    const origem = this.norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
+    const nome = this.norm(this.pick(p, "Colaborador_nome", "Title", "Nome") || "");
+
+    return origem.includes("extra") ||
+      origem.includes("investigador") ||
+      origem.includes("guarda") ||
+      nome.includes("refeicao extra");
   },
 
-     // ============================================================
-  // AUTENTICAÇÃO
-  // App registration: Refeitorio Homy
-  // Regra: getToken não inicia login automático
-  // ============================================================
-  _msalReadyPromise: null,
-  _redirectHandled: false,
-  _loginEmAndamento: false,
+  _toSharePointNumber(value) {
+    if (value === null || value === undefined || String(value).trim() === "") return null;
 
+    let s = String(value)
+      .replace(/R\$/gi, "")
+      .replace(/\s/g, "")
+      .trim();
+
+    if (s.includes(",")) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    }
+
+    s = s.replace(/[^0-9.-]/g, "");
+
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  },
+
+  _toSharePointBool(value) {
+    return this.isTrue(value);
+  },
+
+  // ============================================================
+  // AUTENTICAÇÃO MSAL
+  // ============================================================
   _getRedirectUri() {
     return window.location.origin + window.location.pathname;
   },
@@ -139,7 +219,7 @@ const SP = window.SP = {
     return window.location.pathname.toLowerCase().includes("/admin/");
   },
 
-  _storageKeys() {
+  _getAllStorageKeys() {
     return [
       ...Object.keys(sessionStorage),
       ...Object.keys(localStorage)
@@ -147,27 +227,34 @@ const SP = window.SP = {
   },
 
   _hasInteractionInProgress() {
-    return this._storageKeys().some(k =>
-      k.toLowerCase().includes("interaction.status") ||
-      k.toLowerCase().includes("msal.interaction.status")
-    );
+    return this._getAllStorageKeys().some(k => {
+      const key = k.toLowerCase();
+      return key.includes("interaction.status") ||
+        key.includes("msal.interaction.status");
+    });
   },
 
   _clearMsalInteractionOnly() {
     for (const storage of [sessionStorage, localStorage]) {
       Object.keys(storage).forEach(k => {
         const key = k.toLowerCase();
+
         if (
           key.includes("interaction.status") ||
           key.includes("msal.interaction.status") ||
           key.includes("request.state") ||
           key.includes("nonce.id_token") ||
-          key.includes("authority")
+          key.includes("authority") ||
+          key.includes("urlhash")
         ) {
           storage.removeItem(k);
         }
       });
     }
+  },
+
+  async _wait(ms = 200) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   },
 
   async init() {
@@ -248,7 +335,7 @@ const SP = window.SP = {
 
     if (this._loginEmAndamento || this._hasInteractionInProgress()) {
       this._clearMsalInteractionOnly();
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await this._wait(500);
     }
 
     this._loginEmAndamento = true;
@@ -284,7 +371,7 @@ const SP = window.SP = {
 
       if (msg.includes("interaction_in_progress")) {
         this._clearMsalInteractionOnly();
-        throw new Error("Login Microsoft já estava em andamento. Recarregue a página e clique em entrar novamente.");
+        throw new Error("Login Microsoft já estava em andamento. Recarregue a página e tente novamente.");
       }
 
       throw e;
@@ -302,9 +389,7 @@ const SP = window.SP = {
   async getToken() {
     await this.init();
 
-    if (!this._account) {
-      return null;
-    }
+    if (!this._account) return null;
 
     try {
       const result = await this._msalInstance.acquireTokenSilent({
@@ -320,14 +405,6 @@ const SP = window.SP = {
 
       if (msg.includes("interaction_in_progress")) {
         this._clearMsalInteractionOnly();
-        return null;
-      }
-
-      if (
-        msg.includes("interaction_required") ||
-        msg.includes("consent_required") ||
-        msg.includes("login_required")
-      ) {
         return null;
       }
 
@@ -384,6 +461,8 @@ const SP = window.SP = {
 
     this._account = null;
     this._loginEmAndamento = false;
+    this._msalReadyPromise = null;
+    this._redirectHandled = false;
 
     sessionStorage.clear();
 
@@ -394,9 +473,26 @@ const SP = window.SP = {
       });
     }
   },
-  
+
+  resetAuthLocal() {
+    this._account = null;
+    this._loginEmAndamento = false;
+    this._msalReadyPromise = null;
+    this._redirectHandled = false;
+
+    sessionStorage.clear();
+
+    for (const storage of [localStorage]) {
+      Object.keys(storage).forEach(k => {
+        if (k.toLowerCase().includes("msal")) {
+          storage.removeItem(k);
+        }
+      });
+    }
+  },
+
   // ============================================================
-  // GRAPH — camada base de HTTP
+  // GRAPH
   // ============================================================
   async graph(method, endpoint, body = null, options = {}) {
     const token = options.interativo
@@ -407,8 +503,8 @@ const SP = window.SP = {
       throw new Error("Usuário não autenticado no Microsoft. Entre novamente antes de acessar o SharePoint.");
     }
 
-    // Filtra campos read-only em qualquer escrita
     let safeBody = body;
+
     if (body && (method === "PATCH" || method === "POST")) {
       if (body.fields) {
         safeBody = { ...body, fields: this._cleanFields(body.fields) };
@@ -432,10 +528,15 @@ const SP = window.SP = {
     }
 
     if (res.status === 204) return null;
+
     return res.json();
   },
 
-    // ============================================================
+  async graphInterativo(method, endpoint, body = null) {
+    return this.graph(method, endpoint, body, { interativo: true });
+  },
+
+  // ============================================================
   // SITE E LISTAS
   // ============================================================
   async getSiteId() {
@@ -451,12 +552,14 @@ const SP = window.SP = {
     for (const path of unique) {
       try {
         const data = await this.graph("GET", `/sites/${this.siteUrl}:${path}`);
+
         if (data?.id) {
           this._siteId = data.id;
           this._sitePath = path;
           console.log(`[SP] Site encontrado em: ${path}`);
           return this._siteId;
         }
+
       } catch (e) {
         lastErr = e;
       }
@@ -483,9 +586,6 @@ const SP = window.SP = {
     return this._listIds[listName];
   },
 
-  // ============================================================
-  // CRUD GENÉRICO
-  // ============================================================
   async getItems(listName) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
@@ -509,7 +609,7 @@ const SP = window.SP = {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
 
-    return this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, {
+    return this.graphInterativo("POST", `/sites/${siteId}/lists/${listId}/items`, {
       fields: this._cleanFields(fields)
     });
   },
@@ -518,7 +618,7 @@ const SP = window.SP = {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
 
-    return this.graph(
+    return this.graphInterativo(
       "PATCH",
       `/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,
       this._cleanFields(fields)
@@ -529,14 +629,12 @@ const SP = window.SP = {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
 
-    return this.graph("DELETE", `/sites/${siteId}/lists/${listId}/items/${itemId}`);
+    return this.graphInterativo("DELETE", `/sites/${siteId}/lists/${listId}/items/${itemId}`);
   },
 
   // ============================================================
   // COLUNAS SHAREPOINT
   // ============================================================
-  _columnsCache: {},
-
   async getListColumns(listName) {
     if (this._columnsCache[listName]) return this._columnsCache[listName];
 
@@ -550,6 +648,7 @@ const SP = window.SP = {
 
     const cols = data?.value || [];
     this._columnsCache[listName] = cols;
+
     return cols;
   },
 
@@ -579,35 +678,8 @@ const SP = window.SP = {
     return null;
   },
 
-  _toSharePointNumber(value) {
-    if (value === null || value === undefined || String(value).trim() === "") return null;
-
-    let s = String(value)
-      .replace(/R\$/gi, "")
-      .replace(/\s/g, "")
-      .trim();
-
-    if (s.includes(",")) {
-      s = s.replace(/\./g, "").replace(",", ".");
-    }
-
-    s = s.replace(/[^0-9.-]/g, "");
-
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  },
-
-  _toSharePointBool(value) {
-    if (value === true || value === 1) return true;
-    if (value === false || value === 0) return false;
-
-    const v = String(value || "").trim().toLowerCase();
-    return ["sim", "true", "1", "ativo", "yes"].includes(v);
-  },
-
   // ============================================================
   // COLABORADORES
-  // Lista: Colaboradores
   // ============================================================
   async getColaboradores() {
     const items = await this.getItems("Colaboradores");
@@ -666,7 +738,6 @@ const SP = window.SP = {
 
   // ============================================================
   // CARDÁPIO
-  // Lista: Cardapio
   // ============================================================
   async getCardapio(semanaId) {
     const items = await this.getItems("Cardapio");
@@ -675,11 +746,10 @@ const SP = window.SP = {
 
   async saveCardapio(semanaId, dia, opcao, nomePrato, detalhes = "") {
     const existentes = await this.getCardapio(semanaId);
-    const norm = v => String(v || "").toLowerCase().trim();
 
     const existing = existentes.find(i =>
-      norm(this.pick(i, "Dia")) === norm(dia) &&
-      norm(this.pick(i, "Opcao")) === norm(opcao)
+      this.norm(this.pick(i, "Dia")) === this.norm(dia) &&
+      this.norm(this.pick(i, "Opcao")) === this.norm(opcao)
     );
 
     const fields = {
@@ -708,7 +778,6 @@ const SP = window.SP = {
 
   // ============================================================
   // PEDIDOS
-  // Lista: Pedidos
   // ============================================================
   async getPedidos(semanaId) {
     const items = await this.getItems("Pedidos");
@@ -791,7 +860,6 @@ const SP = window.SP = {
 
   // ============================================================
   // EXTRAS
-  // Lista: Extras
   // ============================================================
   async getExtras(semanaId, dia = null) {
     const items = await this.getItems("Extras");
@@ -854,11 +922,10 @@ const SP = window.SP = {
 
     if (semanaId && dia && nome) {
       const pedidos = await this.getPedidos(semanaId);
-      const norm = v => String(v || "").toLowerCase().trim();
 
       const vinculado = pedidos.find(p =>
-        norm(this.pick(p, "Dia")) === norm(dia) &&
-        norm(this.pick(p, "Colaborador_nome", "Title")) === norm(nome)
+        this.norm(this.pick(p, "Dia")) === this.norm(dia) &&
+        this.norm(this.pick(p, "Colaborador_nome", "Title")) === this.norm(nome)
       );
 
       if (vinculado) await this.deleteItem("Pedidos", vinculado.id);
@@ -867,7 +934,6 @@ const SP = window.SP = {
 
   // ============================================================
   // CONFIGURAÇÕES
-  // Lista: Configurações
   // ============================================================
   async getConfig(chave) {
     const items = await this.getItems("Configurações");
@@ -932,10 +998,7 @@ const SP = window.SP = {
 
   // ============================================================
   // VALORES DE REFEIÇÃO
-  // Lista: Valores de Refeição
   // ============================================================
-  _colunasValores: null,
-
   async _resolveColunasValores() {
     if (this._colunasValores) return this._colunasValores;
 
@@ -992,7 +1055,6 @@ const SP = window.SP = {
 
     if (faltando.length) {
       const cols = await this.getListColumns(listName);
-
       console.error("[SP] Colunas encontradas na lista Valores de Refeição:", cols);
 
       throw new Error(
@@ -1046,14 +1108,14 @@ const SP = window.SP = {
       await this._desativarValoresRefeicaoAtivos();
     }
 
-    const fields = {};
-
-    fields[cols.titulo] = dados.title || dados.titulo || "Valor refeição";
-    fields[cols.inicio] = dados.dataInicio || dados.Data_Inicio || null;
-    fields[cols.fim] = dados.dataFim || dados.Data_Fim || null;
-    fields[cols.vascon] = this._toSharePointNumber(dados.valorVascon ?? dados.Valor_Vascon);
-    fields[cols.desconto] = this._toSharePointNumber(dados.valorDesconto ?? dados.Valor_Desconto_Funcionario);
-    fields[cols.ativo] = this._toSharePointBool(dados.ativo ?? dados.Ativo ?? true);
+    const fields = {
+      [cols.titulo]: dados.title || dados.titulo || "Valor refeição",
+      [cols.inicio]: dados.dataInicio || dados.Data_Inicio || null,
+      [cols.fim]: dados.dataFim || dados.Data_Fim || null,
+      [cols.vascon]: this._toSharePointNumber(dados.valorVascon ?? dados.Valor_Vascon),
+      [cols.desconto]: this._toSharePointNumber(dados.valorDesconto ?? dados.Valor_Desconto_Funcionario),
+      [cols.ativo]: this._toSharePointBool(dados.ativo ?? dados.Ativo ?? true)
+    };
 
     if (cols.obs) {
       fields[cols.obs] = dados.observacao || dados.Observacao || "";
@@ -1069,9 +1131,9 @@ const SP = window.SP = {
       await this._desativarValoresRefeicaoAtivos(id);
     }
 
-    const fields = {};
-
-    fields[cols.titulo] = dados.title || dados.titulo || "Valor refeição";
+    const fields = {
+      [cols.titulo]: dados.title || dados.titulo || "Valor refeição"
+    };
 
     if (dados.dataInicio !== undefined || dados.Data_Inicio !== undefined) {
       fields[cols.inicio] = dados.dataInicio || dados.Data_Inicio || null;
@@ -1114,19 +1176,22 @@ const SP = window.SP = {
     });
 
     for (const item of ativos) {
-      const fields = {};
-      fields[cols.ativo] = false;
-      await this.updateItem("Valores de Refeição", item.id, fields);
+      await this.updateItem("Valores de Refeição", item.id, {
+        [cols.ativo]: false
+      });
     }
   },
 
   // ============================================================
   // AUSÊNCIAS
-  // Lista: Ausencias do Refeitorio
   // ============================================================
   async getAusencias(apenasAtivas = true) {
     const items = await this.getItems("Ausencias do Refeitorio");
     return apenasAtivas ? items.filter(i => this.isTrue(this.pick(i, "Ativo"))) : items;
+  },
+
+  async getAusenciasRefeitorio(apenasAtivas = true) {
+    return this.getAusencias(apenasAtivas);
   },
 
   async getAusenciasColaborador(colaboradorId, dataRef = null) {
@@ -1166,13 +1231,37 @@ const SP = window.SP = {
     });
   },
 
+  async createAusenciaRefeitorio(dados) {
+    return this.createAusencia(dados);
+  },
+
+  async updateAusenciaRefeitorio(id, dados) {
+    const fields = {};
+
+    if (dados.colaboradorId !== undefined) fields.Colaborador_id = String(dados.colaboradorId);
+    if (dados.Colaborador_id !== undefined) fields.Colaborador_id = String(dados.Colaborador_id);
+    if (dados.colaboradorNome !== undefined) fields.Colaborador_nome = dados.colaboradorNome;
+    if (dados.Colaborador_nome !== undefined) fields.Colaborador_nome = dados.Colaborador_nome;
+    if (dados.dataInicio !== undefined) fields.Data_Inicio = dados.dataInicio;
+    if (dados.Data_Inicio !== undefined) fields.Data_Inicio = dados.Data_Inicio;
+    if (dados.dataFim !== undefined) fields.Data_Fim = dados.dataFim;
+    if (dados.Data_Fim !== undefined) fields.Data_Fim = dados.Data_Fim;
+    if (dados.motivo !== undefined) fields.Motivo = dados.motivo;
+    if (dados.Motivo !== undefined) fields.Motivo = dados.Motivo;
+    if (dados.observacao !== undefined) fields.Observacao = dados.observacao;
+    if (dados.Observacao !== undefined) fields.Observacao = dados.Observacao;
+    if (dados.ativo !== undefined) fields.Ativo = dados.ativo;
+    if (dados.Ativo !== undefined) fields.Ativo = dados.Ativo;
+
+    return this.updateItem("Ausencias do Refeitorio", id, fields);
+  },
+
   async deleteAusencia(id) {
     return this.deleteItem("Ausencias do Refeitorio", id);
   },
 
   // ============================================================
-  // CHECK-IN
-  // Lista: CheckIn
+  // CHECK IN
   // ============================================================
   async getCheckIn(semanaId, dia) {
     const items = await this.getItems("CheckIn");
@@ -1181,6 +1270,10 @@ const SP = window.SP = {
       this.pick(i, "Semana_id") === semanaId &&
       this.pick(i, "Dia") === dia
     );
+  },
+
+  async getCheckIns() {
+    return this.getItems("CheckIn");
   },
 
   async registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
@@ -1215,15 +1308,9 @@ const SP = window.SP = {
   },
 
   // ============================================================
-  // DASHBOARD RESUMO
+  // DASHBOARD
   // ============================================================
   async getDashboardResumo(semanaId) {
-    const norm = v => String(v || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
-
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
@@ -1240,12 +1327,12 @@ const SP = window.SP = {
     ]);
 
     const isConfirmado = p => {
-      const s = norm(this.pick(p, "Status") || "");
+      const s = this.norm(this.pick(p, "Status") || "");
       return s === "confirmado" || s === "extra" || s === "aprovado" || this.isTrue(this.pick(p, "Confirmado"));
     };
 
     const isCancelado = p => {
-      const s = norm(this.pick(p, "Status") || "");
+      const s = this.norm(this.pick(p, "Status") || "");
       return ["cancelado", "afastado", "ferias", "nao vai almocar", "bloqueado", "travado"].includes(s);
     };
 
@@ -1256,12 +1343,12 @@ const SP = window.SP = {
     const confirmadosColab = pedidosColab.filter(isConfirmado);
     const idsConf = new Set(confirmadosColab.map(p => String(this.pick(p, "Colaborador_id") || "")));
 
-    const pedidosHoje = pedidos.filter(p => norm(this.pick(p, "Dia")) === diaHojeUtil);
+    const pedidosHoje = pedidos.filter(p => this.norm(this.pick(p, "Dia")) === diaHojeUtil);
     const confirmadosHoje = pedidosHoje.filter(isConfirmado);
-    const extrasHoje = extras.filter(e => norm(this.pick(e, "Dia")) === diaHojeUtil);
+    const extrasHoje = extras.filter(e => this.norm(this.pick(e, "Dia")) === diaHojeUtil);
 
     const countOpcao = (lista, opcao) =>
-      lista.filter(p => norm(this.pick(p, "Opcao")) === opcao).length;
+      lista.filter(p => this.norm(this.pick(p, "Opcao")) === opcao).length;
 
     return {
       colaboradoresAtivos: colabs.length,
@@ -1288,7 +1375,7 @@ const SP = window.SP = {
       extrasPendentes: extrasHoje.filter(isPendente).length,
 
       porDia: diasUteis.reduce((acc, dia) => {
-        const lista = pedidos.filter(p => norm(this.pick(p, "Dia")) === dia);
+        const lista = pedidos.filter(p => this.norm(this.pick(p, "Dia")) === dia);
         const conf = lista.filter(isConfirmado);
 
         acc[dia] = {
@@ -1320,7 +1407,7 @@ const SP = window.SP = {
   },
 
   // ============================================================
-  // ALIASES DE COMPATIBILIDADE
+  // COMPATIBILIDADE
   // ============================================================
   async addItem(listName, fields) {
     return this.createItem(listName, fields);
@@ -1334,25 +1421,15 @@ const SP = window.SP = {
     return this.deleteItem(listName, id);
   },
 
-  async getCheckIns() {
-    return this.getItems("CheckIn");
-  },
-
   async cleanupExtraAutomaticoSemana(semanaId) {
-    const norm = v => String(v || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
-
     const pedidos = await this.getPedidos(semanaId);
     const seenAuto = new Set();
     const diasUteis = ["segunda", "terca", "quarta", "quinta", "sexta"];
 
     for (const p of pedidos) {
-      const nome = norm(this.pick(p, "Colaborador_nome", "Title") || "");
-      const origem = norm(this.pick(p, "Origem", "tipo") || "");
-      const dia = norm(this.pick(p, "Dia") || "");
+      const nome = this.norm(this.pick(p, "Colaborador_nome", "Title") || "");
+      const origem = this.norm(this.pick(p, "Origem", "tipo") || "");
+      const dia = this.norm(this.pick(p, "Dia") || "");
 
       if (!diasUteis.includes(dia)) continue;
 
@@ -1368,6 +1445,6 @@ const SP = window.SP = {
       }
     }
   }
-  };
+};
 
 window.SP = SP;
