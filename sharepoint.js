@@ -122,85 +122,228 @@ const SP = window.SP = {
            origem.includes("guarda") || nome.includes("refeicao extra");
   },
 
+    // ============================================================
+  // AUTENTICAÇÃO
+  // App registration: Refeitorio Homy
+  // Padrão: redirect nas páginas públicas e popup no admin
   // ============================================================
-  // AUTENTICAÇÃO (padrão Ramais Homy — redirect + silent)
-  // ============================================================
+  _msalReadyPromise: null,
+  _redirectHandled: false,
+  _loginEmAndamento: false,
+
+  _getRedirectUri() {
+    return window.location.origin + window.location.pathname;
+  },
+
+  _isAdminPage() {
+    return window.location.pathname.toLowerCase().includes("/admin/");
+  },
+
+  _msalInteractionInProgress() {
+    const keys = Object.keys(sessionStorage);
+    return keys.some(k =>
+      k.includes("interaction.status") ||
+      k.includes("msal.interaction.status")
+    );
+  },
+
+  async _waitInteractionClear(timeoutMs = 8000) {
+    const started = Date.now();
+
+    while (this._msalInteractionInProgress()) {
+      if (Date.now() - started > timeoutMs) {
+        sessionStorage.clear();
+        break;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+  },
+
   async init() {
-    if (this._msalInstance) return !!this._account;
+    if (this._msalReadyPromise) return this._msalReadyPromise;
 
-    if (!window.msal) {
-      throw new Error("MSAL não carregou. Verifique se msal-browser.min.js está antes de sharepoint.js.");
-    }
+    this._msalReadyPromise = (async () => {
+      if (!window.msal) {
+        throw new Error("MSAL não carregou. Verifique se msal-browser.min.js está antes de sharepoint.js.");
+      }
 
-    this._msalInstance = new msal.PublicClientApplication({
-      auth: {
-        clientId: this.clientId,
-        authority: `https://login.microsoftonline.com/${this.tenantId}`,
-        redirectUri: window.location.origin + window.location.pathname,
-        navigateToLoginRequestUrl: false
-      },
-      cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: true }
-    });
+      if (!this._msalInstance) {
+        this._msalInstance = new msal.PublicClientApplication({
+          auth: {
+            clientId: this.clientId,
+            authority: `https://login.microsoftonline.com/${this.tenantId}`,
+            redirectUri: this._getRedirectUri(),
+            navigateToLoginRequestUrl: false
+          },
+          cache: {
+            cacheLocation: "sessionStorage",
+            storeAuthStateInCookie: true
+          },
+          system: {
+            allowNativeBroker: false
+          }
+        });
 
-    await this._msalInstance.initialize();
+        await this._msalInstance.initialize();
+      }
 
-    // Trata retorno do redirect
-    const redirectResult = await this._msalInstance.handleRedirectPromise();
-    if (redirectResult?.account) {
-      this._account = redirectResult.account;
-      this._msalInstance.setActiveAccount(this._account);
-      return true;
-    }
+      if (!this._redirectHandled) {
+        this._redirectHandled = true;
 
-    // Reaproveita sessão existente
-    const active = this._msalInstance.getActiveAccount();
-    if (active) { this._account = active; return true; }
+        try {
+          const redirectResult = await this._msalInstance.handleRedirectPromise();
 
-    const accounts = this._msalInstance.getAllAccounts();
-    if (accounts.length > 0) {
-      this._account = accounts[0];
-      this._msalInstance.setActiveAccount(this._account);
-      return true;
-    }
+          if (redirectResult?.account) {
+            this._account = redirectResult.account;
+            this._msalInstance.setActiveAccount(this._account);
+            this._loginEmAndamento = false;
+            return true;
+          }
+        } catch (e) {
+          console.warn("[SP] handleRedirectPromise:", e);
 
-    return false;
+          if (String(e?.errorCode || e?.message || "").includes("interaction_in_progress")) {
+            await this._waitInteractionClear();
+          }
+        }
+      }
+
+      const active = this._msalInstance.getActiveAccount();
+      if (active) {
+        this._account = active;
+        return true;
+      }
+
+      const accounts = this._msalInstance.getAllAccounts();
+      if (accounts.length > 0) {
+        this._account = accounts[0];
+        this._msalInstance.setActiveAccount(this._account);
+        return true;
+      }
+
+      return false;
+    })();
+
+    return this._msalReadyPromise;
   },
 
   async login() {
     await this.init();
-    await this._msalInstance.loginRedirect({ scopes: this.scopes });
-    return false;
+
+    if (this._account) return true;
+    if (this._loginEmAndamento) return false;
+
+    this._loginEmAndamento = true;
+
+    const request = {
+      scopes: this.scopes,
+      prompt: "select_account"
+    };
+
+    try {
+      if (this._isAdminPage()) {
+        await this._waitInteractionClear();
+
+        const result = await this._msalInstance.loginPopup(request);
+
+        if (result?.account) {
+          this._account = result.account;
+          this._msalInstance.setActiveAccount(this._account);
+          this._loginEmAndamento = false;
+          return true;
+        }
+
+        this._loginEmAndamento = false;
+        return false;
+      }
+
+      await this._waitInteractionClear();
+      await this._msalInstance.loginRedirect(request);
+      return false;
+
+    } catch (e) {
+      this._loginEmAndamento = false;
+
+      const msg = String(e?.errorCode || e?.message || e || "");
+
+      if (msg.includes("interaction_in_progress")) {
+        await this._waitInteractionClear();
+        return false;
+      }
+
+      throw e;
+    }
   },
 
   async ensureLogin() {
-    await this.init();
-    if (!this._account) { await this.login(); return false; }
-    return true;
+    const logado = await this.init();
+
+    if (logado && this._account) return true;
+
+    return this.login();
   },
 
   async logout() {
     await this.init();
+
     const account = this._account;
     this._account = null;
-    if (account) await this._msalInstance.logoutRedirect({ account });
+    this._loginEmAndamento = false;
+
+    sessionStorage.clear();
+
+    if (account) {
+      await this._msalInstance.logoutRedirect({
+        account,
+        postLogoutRedirectUri: this._getRedirectUri()
+      });
+    }
   },
 
   async getToken() {
     await this.init();
-    if (!this._account) { await this.login(); return null; }
+
+    if (!this._account) {
+      await this.login();
+      return null;
+    }
+
+    const request = {
+      scopes: this.scopes,
+      account: this._account
+    };
 
     try {
-      const r = await this._msalInstance.acquireTokenSilent({
-        scopes: this.scopes,
-        account: this._account
-      });
-      return r.accessToken;
+      const result = await this._msalInstance.acquireTokenSilent(request);
+      return result.accessToken;
+
     } catch (e) {
-      console.warn("[SP] Token silencioso falhou; redirecionando.", e);
+      const msg = String(e?.errorCode || e?.message || e || "");
+
+      console.warn("[SP] acquireTokenSilent falhou:", e);
+
+      if (msg.includes("interaction_in_progress")) {
+        await this._waitInteractionClear();
+        return null;
+      }
+
+      if (this._isAdminPage()) {
+        const result = await this._msalInstance.acquireTokenPopup({
+          scopes: this.scopes,
+          account: this._account
+        });
+
+        return result.accessToken;
+      }
+
+      await this._waitInteractionClear();
+
       await this._msalInstance.acquireTokenRedirect({
         scopes: this.scopes,
         account: this._account
       });
+
       return null;
     }
   },
