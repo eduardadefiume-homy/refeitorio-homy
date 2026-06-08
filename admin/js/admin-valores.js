@@ -1,18 +1,13 @@
+// ============================================================
 // admin-valores.js — Valores de Refeição do Admin Homy
-// Nome interno real da coluna de desconto: Valor_Desconto_Funcionário (com acento)
+// Responsabilidade: tela e interação do módulo Valores
+// A resolução dos nomes internos do SharePoint fica no sharepoint.js
+// ============================================================
 
 const AdminValores = window.AdminValores = {
 
   _lista: [],
   _editandoId: null,
-
-  // Nome interno exato no SharePoint (confirmado nas Configurações da lista)
-  COL_DESCONTO: "Valor_Desconto_Funcionário",
-  COL_VASCON:   "Valor_Vascon",
-  COL_INICIO:   "Data_Inicio",
-  COL_FIM:      "Data_Fim",
-  COL_OBS:      "Observacao",
-  COL_ATIVO:    "Ativo",
 
   async load() {
     await this._carregar();
@@ -22,12 +17,15 @@ const AdminValores = window.AdminValores = {
   async _carregar() {
     const tbody = document.getElementById("valoresTable");
     if (!tbody) return;
+
     tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Carregando...</td></tr>`;
+
     try {
       await SP.init();
       this._lista = await SP.getValoresRefeicao(false);
       this._render();
     } catch (e) {
+      console.error("[AdminValores] carregar:", e);
       tbody.innerHTML = `<tr><td colspan="7" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
     }
   },
@@ -42,123 +40,168 @@ const AdminValores = window.AdminValores = {
     }
 
     tbody.innerHTML = this._lista.map(v => {
-      const id      = AdminUtils.esc(v.id || "");
-      const titulo  = AdminUtils.esc(SP.pick(v, "Title", "Titulo") || "—");
-      const inicio  = (SP.pick(v, this.COL_INICIO) || "").slice(0, 10);
-      const fim     = (SP.pick(v, this.COL_FIM)    || "").slice(0, 10);
-      // Usa o nome interno correto com acento
-      const vascon  = Number(SP.pick(v, this.COL_VASCON)   || 0).toFixed(2);
-      const desc    = Number(SP.pick(v, this.COL_DESCONTO) || 0).toFixed(2);
-      const ativo   = SP.isTrue(SP.pick(v, this.COL_ATIVO));
+      const id = AdminUtils.esc(v.id || "");
+      const titulo = AdminUtils.esc(SP.pick(v, "Title", "Titulo") || "Valor refeição");
+
+      const inicio = String(v.ValorDataInicio || "").slice(0, 10);
+      const fim = String(v.ValorDataFim || "").slice(0, 10);
+
+      const vascon = this._formatMoney(v.ValorVascon);
+      const desconto = this._formatMoney(v.ValorDescontoFuncionario);
+
+      const ativo = SP.isTrue(v.ValorAtivo);
+
       return `<tr>
         <td>${titulo}</td>
-        <td>${inicio || "—"}</td>
-        <td>${fim    || "—"}</td>
-        <td>R$ ${vascon}</td>
-        <td>R$ ${desc}</td>
+        <td>${inicio || ""}</td>
+        <td>${fim || ""}</td>
+        <td>${vascon}</td>
+        <td>${desconto}</td>
         <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${ativo ? "Ativo" : "Inativo"}</span></td>
-        <td><div class="table-actions">
-          <button class="btn-icon" title="Editar"  onclick="AdminValores.abrirEdicao('${id}')">✏️</button>
-          <button class="btn-icon danger" title="Excluir" onclick="AdminValores.excluir('${id}')">🗑️</button>
-        </div></td>
+        <td>
+          <div class="table-actions">
+            <button class="btn-icon" title="Editar" onclick="AdminValores.abrirEdicao('${id}')">✏️</button>
+            <button class="btn-icon danger" title="Excluir" onclick="AdminValores.excluir('${id}')">🗑️</button>
+          </div>
+        </td>
       </tr>`;
     }).join("");
   },
 
-  // ── Modal ────────────────────────────────────────────────────
+  _formatMoney(value) {
+    const n = Number(value || 0);
+    return n.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL"
+    });
+  },
+
   abrirNovo() {
     this._editandoId = null;
     this._limparModal();
-    const t = document.querySelector("#modalValorRefeicao .modal-title");
-    if (t) t.textContent = "Novo valor de refeição";
+
+    const titulo = document.querySelector("#modalValorRefeicao .modal-title");
+    if (titulo) titulo.textContent = "Novo valor de refeição";
+
     AdminUtils.openModal("modalValorRefeicao");
   },
 
   abrirEdicao(id) {
     this._editandoId = id;
-    const v = this._lista.find(x => String(x.id) === String(id));
-    if (!v) { AdminUtils.toast("Valor não encontrado.", "error"); return; }
 
-    AdminUtils.setVal("valorTitulo",      SP.pick(v, "Title", "Titulo")     || "");
-    AdminUtils.setVal("valorDataInicio",  (SP.pick(v, this.COL_INICIO) || "").slice(0, 10));
-    AdminUtils.setVal("valorDataFim",     (SP.pick(v, this.COL_FIM)    || "").slice(0, 10));
-    AdminUtils.setVal("valorVascon",      SP.pick(v, this.COL_VASCON)   || "");
-    AdminUtils.setVal("valorDesconto",    SP.pick(v, this.COL_DESCONTO) || "");
-    AdminUtils.setVal("valorObs",         SP.pick(v, this.COL_OBS)      || "");
-    AdminUtils.setVal("valorAtivo",       SP.isTrue(SP.pick(v, this.COL_ATIVO)) ? "sim" : "nao");
+    const item = this._lista.find(x => String(x.id) === String(id));
+    if (!item) {
+      AdminUtils.toast("Valor não encontrado.", "error");
+      return;
+    }
 
-    const t = document.querySelector("#modalValorRefeicao .modal-title");
-    if (t) t.textContent = "Editar valor de refeição";
+    AdminUtils.setVal("valorTitulo", SP.pick(item, "Title", "Titulo") || "Valor refeição");
+    AdminUtils.setVal("valorDataInicio", String(item.ValorDataInicio || "").slice(0, 10));
+    AdminUtils.setVal("valorDataFim", String(item.ValorDataFim || "").slice(0, 10));
+    AdminUtils.setVal("valorVascon", item.ValorVascon ?? "");
+    AdminUtils.setVal("valorDesconto", item.ValorDescontoFuncionario ?? "");
+    AdminUtils.setVal("valorObs", item.ValorObservacao || "");
+    AdminUtils.setVal("valorAtivo", SP.isTrue(item.ValorAtivo) ? "sim" : "nao");
+
+    const titulo = document.querySelector("#modalValorRefeicao .modal-title");
+    if (titulo) titulo.textContent = "Editar valor de refeição";
+
     AdminUtils.openModal("modalValorRefeicao");
   },
 
   _limparModal() {
-    ["valorTitulo", "valorDataInicio", "valorDataFim", "valorVascon", "valorDesconto", "valorObs"]
-      .forEach(id => AdminUtils.setVal(id, ""));
+    [
+      "valorTitulo",
+      "valorDataInicio",
+      "valorDataFim",
+      "valorVascon",
+      "valorDesconto",
+      "valorObs"
+    ].forEach(id => AdminUtils.setVal(id, ""));
+
     AdminUtils.setVal("valorAtivo", "sim");
   },
 
   async salvar() {
-    const titulo   = AdminUtils.getVal("valorTitulo")     || "Valor refeição";
-    const inicio   = AdminUtils.getVal("valorDataInicio");
-    const fim      = AdminUtils.getVal("valorDataFim");
-    const vascon   = AdminUtils.moeda(AdminUtils.getVal("valorVascon"));
-    const desconto = AdminUtils.moeda(AdminUtils.getVal("valorDesconto"));
-    const obs      = AdminUtils.getVal("valorObs");
-    const ativo    = AdminUtils.getVal("valorAtivo") !== "nao";
-
-    if (!inicio || !fim)   { AdminUtils.toast("Informe data início e fim.",               "error"); return; }
-    if (vascon === null)    { AdminUtils.toast("Informe o valor Vascon.",                  "error"); return; }
-    if (desconto === null)  { AdminUtils.toast("Informe o desconto do funcionário.",       "error"); return; }
-
-    // Monta fields usando os nomes internos EXATOS do SharePoint
-    const fields = {
-      Title:                        titulo,
-      [this.COL_INICIO]:            inicio,
-      [this.COL_FIM]:               fim,
-      [this.COL_VASCON]:            vascon,
-      [this.COL_DESCONTO]:          desconto,   // "Valor_Desconto_Funcionário" — com acento
-      [this.COL_OBS]:               obs,
-      [this.COL_ATIVO]:             ativo
+    const dados = {
+      titulo: AdminUtils.getVal("valorTitulo") || "Valor refeição",
+      dataInicio: AdminUtils.getVal("valorDataInicio"),
+      dataFim: AdminUtils.getVal("valorDataFim"),
+      valorVascon: AdminUtils.getVal("valorVascon"),
+      valorDesconto: AdminUtils.getVal("valorDesconto"),
+      observacao: AdminUtils.getVal("valorObs"),
+      ativo: AdminUtils.getVal("valorAtivo") || "sim"
     };
+
+    if (!dados.dataInicio) {
+      AdminUtils.toast("Informe a data de início.", "error");
+      return;
+    }
+
+    if (!dados.dataFim) {
+      AdminUtils.toast("Informe a data fim.", "error");
+      return;
+    }
+
+    if (AdminUtils.moeda(dados.valorVascon) === null) {
+      AdminUtils.toast("Informe o valor Vascon corretamente.", "error");
+      return;
+    }
+
+    if (AdminUtils.moeda(dados.valorDesconto) === null) {
+      AdminUtils.toast("Informe o desconto do funcionário corretamente.", "error");
+      return;
+    }
 
     try {
       await SP.init();
+
       if (this._editandoId) {
-        await SP.updateItem("Valores de Refeição", this._editandoId, fields);
-        AdminUtils.toast("Valor atualizado.", "success");
+        await SP.updateValorRefeicao(this._editandoId, dados);
+        AdminUtils.toast("Valor atualizado com sucesso.", "success");
       } else {
-        await SP.createItem("Valores de Refeição", fields);
-        AdminUtils.toast("Valor criado.", "success");
+        await SP.createValorRefeicao(dados);
+        AdminUtils.toast("Valor cadastrado com sucesso.", "success");
       }
+
       AdminUtils.closeModal("modalValorRefeicao");
       this._editandoId = null;
       await this._carregar();
+
     } catch (e) {
+      console.error("[AdminValores] salvar:", e);
       AdminUtils.toast("Erro ao salvar: " + e.message, "error");
     }
   },
 
   async excluir(id) {
-    if (!confirm("Excluir este valor?")) return;
+    if (!id) return;
+
+    const confirmar = confirm("Deseja excluir este valor de refeição?");
+    if (!confirmar) return;
+
     try {
       await SP.init();
-      await SP.deleteItem("Valores de Refeição", id);
-      this._lista = this._lista.filter(v => String(v.id) !== String(id));
-      this._render();
-      AdminUtils.toast("Valor excluído.", "success");
+      await SP.deleteValorRefeicao(id);
+      AdminUtils.toast("Valor excluído com sucesso.", "success");
+      await this._carregar();
     } catch (e) {
+      console.error("[AdminValores] excluir:", e);
       AdminUtils.toast("Erro ao excluir: " + e.message, "error");
     }
   },
 
   _bindBotoes() {
-    const bind = (id, fn) => {
-      const el = document.getElementById(id);
-      if (el && !el.dataset.boundVal) { el.dataset.boundVal = "1"; el.addEventListener("click", fn); }
-    };
-    bind("btnNovoValor",          () => this.abrirNovo());
-    bind("salvarValorRefeicao",   () => this.salvar());
-    bind("cancelarValorRefeicao", () => AdminUtils.closeModal("modalValorRefeicao"));
+    const btnNovo = document.getElementById("btnNovoValor");
+    if (btnNovo && !btnNovo.dataset.boundValores) {
+      btnNovo.dataset.boundValores = "1";
+      btnNovo.addEventListener("click", () => this.abrirNovo());
+    }
+
+    const btnSalvar = document.getElementById("btnSalvarValor");
+    if (btnSalvar && !btnSalvar.dataset.boundValores) {
+      btnSalvar.dataset.boundValores = "1";
+      btnSalvar.addEventListener("click", () => this.salvar());
+    }
   }
 };
