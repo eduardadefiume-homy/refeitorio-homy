@@ -372,21 +372,13 @@ function normalizarItem(item){
     detalhes = [];
   }
 
-  // Adiciona observação Vascon fixa para a opção (vai aparecer só no modal)
-  const obsTexto = OBS_VASCON[tag];
-  if(obsTexto){
-    detalhes = [
-      ...detalhes,
-      ...obsTexto.split("\n").map(x => x.trim()).filter(Boolean)
-    ];
-  }
-
   return {
     tag,
     tagLabel: TAG_LABEL[tag] || tag,
     tagClass: TAG_CLASS[tag]  || "tag-principal",
     nome,
-    detalhes
+    detalhes,                           // só detalhes reais do prato
+    aviso: OBS_VASCON[tag] || null      // observação separada — só no modal
   };
 }
 
@@ -425,20 +417,22 @@ function abrirModal(op){
   document.getElementById("modalTag").className     = "modal-tag "+op.tagClass;
   document.getElementById("modalTitle").textContent = op.nome;
 
-  const body   = document.getElementById("modalBody");
-  const normais = (op.detalhes||[]).filter(x => !ehObsVascon(x));
-  const obs     = (op.detalhes||[]).filter(ehObsVascon);
+  const body = document.getElementById("modalBody");
+  // detalhes são sempre limpos (sem obs Vascon)
+  const dets = (op.detalhes||[]);
+  // aviso vem do campo separado, não dos detalhes
+  const aviso = op.aviso || null;
 
   let html = "";
-  if(normais.length){
-    html += normais.map(d =>
+  if(dets.length){
+    html += dets.map(d =>
       '<div class="modal-detail"><span class="modal-detail-text">'+esc(d)+'</span></div>'
     ).join("");
   } else {
     html += '<div class="modal-empty">Sem detalhes adicionais cadastrados.</div>';
   }
-  if(obs.length){
-    html += '<div class="modal-note">'+obs.map(esc).join("<br>")+'</div>';
+  if(aviso){
+    html += '<div class="modal-note">'+esc(aviso)+'</div>';
   }
   body.innerHTML = html;
 
@@ -466,10 +460,9 @@ document.addEventListener("keydown", function(e){
 
 // ── Card ─────────────────────────────────────────────────────────────────────
 function makeCard(op){
-  // Preview: só detalhes limpos, sem obs Vascon, máximo 5 linhas
-  const preview = (op.detalhes||[])
-    .filter(x => !ehObsVascon(x))
-    .slice(0, 5);
+  // Preview: detalhes reais do prato, máximo 5 linhas
+  // op.aviso NÃO aparece aqui — só no modal
+  const preview = (op.detalhes||[]).slice(0, 5);
 
   const card = document.createElement("div");
   card.className = "option-card";
@@ -485,7 +478,6 @@ function makeCard(op){
       : '') +
     '<div class="option-hint">Toque para ver detalhes</div>';
 
-  // Click abre modal — não faz scroll nem nada mais
   card.addEventListener("click", function(e){
     e.preventDefault();
     e.stopPropagation();
