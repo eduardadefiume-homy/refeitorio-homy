@@ -292,13 +292,14 @@ function ehDetalheSujo(texto){
 function ehObsVascon(texto){
   const n = norm(texto);
   return n.includes("cardapio acima esta sujeito") ||
+         n.includes("sujeito a alteracoes") ||
          n.includes("opcoes carne e massa substituem") ||
-         n.includes("opcoes light e lanche substituem") ||
          n.includes("opcao carne substitui") ||
          n.includes("opcao massa substitui") ||
+         n.includes("opcoes light e lanche substituem") ||
          n.includes("opcao light substitui") ||
          n.includes("opcao lanche substitui") ||
-         n.includes("sujeito a alteracoes");
+         n.includes("esta opcao substitui");
 }
 
 function splitDetalhes(v){
@@ -335,7 +336,8 @@ function normalizarItem(item){
   const detRaw  = String(pick(item,"Detalhes","detalhes")||"").trim();
 
   let nome     = nomeRaw;
-  let detalhes = splitDetalhes(detRaw);
+  // Remove detalhes sujos E observações Vascon que já vieram do SharePoint
+  let detalhes = splitDetalhes(detRaw).filter(x => !ehObsVascon(x));
 
   // Caso 1: nome contém múltiplos itens separados por ; ou ·
   // (PDF Vascon importado assim) — primeiro item = nome, resto = detalhes
@@ -344,7 +346,7 @@ function normalizarItem(item){
     if(partes.length > 1){
       nome = partes[0];
       if(detalhes.length === 0){
-        detalhes = partes.slice(1).filter(x => !ehDetalheSujo(x));
+        detalhes = partes.slice(1).filter(x => !ehDetalheSujo(x) && !ehObsVascon(x));
       }
     }
   }
