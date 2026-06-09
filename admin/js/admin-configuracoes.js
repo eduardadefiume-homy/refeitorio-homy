@@ -13,20 +13,23 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
     await this._garantirExtrasSeAtivo();
   },
 
-  // Cria extras faltantes se toggle já estava ativo (sem feedback visual)
+  // Cria extras faltantes se toggle já estava ativo (sem feedback visual excessivo)
   async _garantirExtrasSeAtivo() {
     try {
       await SP.init();
       const ativo = SP.isTrue(await SP.getConfig("refeicao_extra_automatica"));
       if (!ativo) return;
       const semanaId = AdminState.getSemanaId();
+      console.log("[extras auto] verificando semana", semanaId);
       const criados = await this._criarExtrasAutomaticos(semanaId);
       if (criados > 0) {
-        console.log(`[extras auto] ${criados} extras criados para semana ${semanaId}`);
-        AdminUtils.toast(`✅ ${criados} refeições extras automáticas criadas para esta semana.`, "success");
+        AdminUtils.toast(`✅ ${criados} refeição(ões) extra automática(s) criada(s) para esta semana.`, "success");
+      } else {
+        console.log("[extras auto] já existiam extras para esta semana");
       }
     } catch (e) {
-      console.warn("[extras auto] _garantirExtrasSeAtivo:", e);
+      console.error("[extras auto] _garantirExtrasSeAtivo:", e);
+      AdminUtils.toast("⚠️ Extras automáticos: " + (e.message || e), "error");
     }
   },
 
@@ -87,8 +90,10 @@ const AdminConfiguracoes = window.AdminConfiguracoes = {
           user
         );
         criados++;
+        console.log("[extras auto] criado para", dia);
       } catch (e) {
-        console.warn("[extra auto] falha em " + dia + ":", e);
+        console.error("[extras auto] falha em " + dia + ":", e.message || e);
+        throw new Error("Falha ao criar extra em " + dia + ": " + (e.message || e));
       }
     }
 
