@@ -512,7 +512,6 @@ const AdminRelatorios = window.AdminRelatorios = {
       AdminUtils.toast("Erro ao gerar Excel: " + e.message, "error");
     }
   },
-  },
 
   _bindFeito: false,
 
