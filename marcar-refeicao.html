@@ -495,13 +495,12 @@ function atualizarBadgesPrazo(txt){
   });
 }
 
-// Verifica se prazo passou e bloqueia a tela se necessário
+// Verifica se marcação está liberada (apenas pelo toggle do admin)
 async function verificarBloqueioMarcacao(){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
 
-    // 1. Verifica flag de liberação (toggle do admin)
     const liberado = await SP.isCardapioLiberado().catch(()=>true);
     if(!liberado){
       mostrarBloqueio("🔒 Marcação encerrada",
@@ -510,26 +509,14 @@ async function verificarBloqueioMarcacao(){
       return false;
     }
 
-    // 2. Verifica prazo de data/hora
+    // Atualiza badge do prazo (só informativo — não bloqueia)
     const prazo = await SP.getPrazoMarcacao().catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
-
-    if(prazo){
-      const dt = new Date(prazo);
-      if(!isNaN(dt) && new Date() > dt){
-        mostrarBloqueio("⏰ Prazo encerrado",
-          "O prazo para marcar refeições desta semana expirou em " +
-          dt.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"}) +
-          " às " + dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) + ".",
-          true);
-        return false;
-      }
-    }
 
     return true;
   } catch(e){
     console.warn("[prazo]",e);
-    return true; // em caso de erro, não bloqueia
+    return true;
   }
 }
 
