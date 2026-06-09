@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 
 <!-- Camada de dados (sempre primeiro) -->
-<script src="../sharepoint.js?v=homy-msal-20260608-2"></script>
+<script src="../sharepoint.js"></script>
 
 <!-- Módulos admin (ordem importa) -->
 <script src="js/admin-utils.js"></script>
@@ -27,6 +27,7 @@
 <script src="js/admin-extras.js"></script>
 <script src="js/admin-valores.js"></script>
 <script src="js/admin-relatorios.js"></script>
+<script src="js/admin-ausencias.js"></script>
 <script src="js/admin-configuracoes.js"></script>
 
 <style>
@@ -265,6 +266,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="nav-item" data-module="operacao">            <span class="nav-icon">👨‍🍳</span><span class="nav-label">Operação do Dia</span></div>
       <div class="nav-item" data-module="colaboradores">       <span class="nav-icon">👥</span><span class="nav-label">Colaboradores</span></div>
       <div class="nav-item" data-module="extras">              <span class="nav-icon">➕</span><span class="nav-label">Extras</span></div>
+      <div class="nav-item" data-module="ausencias">            <span class="nav-icon">🚫</span><span class="nav-label">Ausências</span></div>
       <div class="nav-item" data-module="valores">             <span class="nav-icon">💰</span><span class="nav-label">Valores</span></div>
       <div class="nav-item" data-module="relatorios">          <span class="nav-icon">📈</span><span class="nav-label">Relatórios</span></div>
       <div class="nav-item" data-module="configuracoes">       <span class="nav-icon">⚙️</span><span class="nav-label">Configurações</span></div>
@@ -544,6 +546,36 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <table class="table">
             <thead><tr><th>Nome</th><th>Tipo</th><th>Dia</th><th>Opção</th><th>Centro Custo</th><th>Observação</th><th>Ações</th></tr></thead>
             <tbody id="extrasTable"><tr><td colspan="6" class="empty-cell">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <!-- ══ AUSÊNCIAS ══ -->
+      <div class="module" id="mod-ausencias">
+        <div class="section-header">
+          <div class="section-title">🚫 Ausências</div>
+          <button class="btn-primary" id="btnAdicionarAusencia">+ Nova ausência</button>
+        </div>
+        <div class="homy-filter-box">
+          <div class="form-group"><label class="form-label">Pesquisar</label><input class="form-input" id="fAusenciaTexto" placeholder="Nome ou motivo"></div>
+          <div class="form-group"><label class="form-label">Status</label>
+            <select class="form-select" id="fAusenciaStatus">
+              <option value="">Todos</option>
+              <option value="ativa">Ativa (hoje)</option>
+              <option value="futura">Futura</option>
+              <option value="encerrada">Encerrada</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:flex-end">
+            <button class="btn-secondary" id="btnLimparAusencias">Limpar</button>
+          </div>
+        </div>
+        <div class="alert alert-info">ℹ️ Ausências ativas travam a refeição do colaborador na cozinha durante o período cadastrado.</div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Colaborador</th><th>Início</th><th>Fim</th><th>Motivo</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="ausenciasTable"><tr><td colspan="6" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -876,6 +908,55 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 </div>
 
 <div id="toast"></div>
+
+
+<!-- Modal Ausência -->
+<div class="modal-overlay" id="modalAusencia">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Nova Ausência</div>
+      <div class="modal-close" id="closeModalAusencia">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Colaborador <span style="color:rgba(192,40,28,.9)">*</span></label>
+          <select class="form-select" id="ausenciaColaborador">
+            <option value="">Selecione o colaborador...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Motivo</label>
+          <select class="form-select" id="ausenciaMotivo">
+            <option value="ferias">Férias</option>
+            <option value="atestado">Atestado médico</option>
+            <option value="falta">Falta</option>
+            <option value="licenca">Licença</option>
+            <option value="afastamento">Afastamento</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+        <div class="form-group"><!-- spacer --></div>
+        <div class="form-group">
+          <label class="form-label">Data início <span style="color:rgba(192,40,28,.9)">*</span></label>
+          <input type="date" class="form-input" id="ausenciaInicio">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Data fim <span style="color:rgba(192,40,28,.9)">*</span></label>
+          <input type="date" class="form-input" id="ausenciaFim">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Observação</label>
+          <textarea class="form-textarea" id="ausenciaObs" placeholder="Informações adicionais..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="cancelModalAusencia">Cancelar</button>
+      <button class="btn-primary"   id="salvarAusencia">💾 Salvar</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
