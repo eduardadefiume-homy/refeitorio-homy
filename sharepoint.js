@@ -588,14 +588,14 @@ const SP = window.SP = {
       nome,
       dia,
       opcao,
-      "",
+      nome,
       {
         confirmado:  true,
         status:      "Confirmado",
         origem:      tipo,
         observacao:  observacao || nome,
         centroCusto: cc,
-        dataRef:     this.getDataRefBySemanaDia(semanaId, dia),
+        dataHora:    new Date().toISOString(),
         alteradoPor: user
       }
     );
@@ -736,9 +736,12 @@ const SP = window.SP = {
   },
 
   async getValoresRefeicao(apenasAtivos = true) {
+    const cols  = await this._resolveColunasValores();
     const items = await this.getItems("Valores de Refeição");
     if (!apenasAtivos) return items;
-    return items.filter(i => this.isTrue(this.pick(i, "Ativo")));
+    // Usa o nome real do campo Ativo detectado dinamicamente
+    const campoAtivo = cols.ativo || "Ativo";
+    return items.filter(i => this.isTrue(this.pick(i, campoAtivo, "Ativo")));
   },
 
   async getValorRefeicaoVigente(dataRef = new Date()) {
