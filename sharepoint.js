@@ -113,74 +113,6 @@ const SP = window.SP = {
     return this._account?.username || "";
   },
 
-  getAuthRedirectUri() {
-    const path = window.location.pathname;
-    const marker = "/refeitorio-homy/";
-    const appRoot = path.includes(marker)
-      ? path.slice(0, path.indexOf(marker) + marker.length)
-      : "/";
-
-    return window.location.origin + appRoot + "index.html";
-  },
-
-  _authReturnUrlKey: "homy_auth_return_url",
-
-  _normalizeUrlForCompare(url) {
-    try {
-      const u = new URL(url, window.location.href);
-      return (u.origin + u.pathname)
-        .replace(/\/index\.html$/i, "")
-        .replace(/\/$/, "");
-    } catch (_) {
-      return "";
-    }
-  },
-
-  _rememberAuthReturnUrl() {
-    const current = window.location.href;
-    if (this._normalizeUrlForCompare(current) === this._normalizeUrlForCompare(this.getAuthRedirectUri())) {
-      return;
-    }
-    sessionStorage.setItem(this._authReturnUrlKey, current);
-  },
-
-  _restoreAuthReturnUrl() {
-    const target = sessionStorage.getItem(this._authReturnUrlKey);
-    if (!target) return false;
-
-    let targetUrl;
-    try {
-      targetUrl = new URL(target, window.location.href);
-    } catch (_) {
-      sessionStorage.removeItem(this._authReturnUrlKey);
-      return false;
-    }
-
-    const currentIsAuthRoot =
-      this._normalizeUrlForCompare(window.location.href) === this._normalizeUrlForCompare(this.getAuthRedirectUri());
-    const targetIsAuthRoot =
-      this._normalizeUrlForCompare(targetUrl.href) === this._normalizeUrlForCompare(this.getAuthRedirectUri());
-
-    if (targetUrl.origin !== window.location.origin || targetIsAuthRoot || !currentIsAuthRoot) {
-      return false;
-    }
-
-    sessionStorage.removeItem(this._authReturnUrlKey);
-    window.location.replace(targetUrl.href);
-    return true;
-  },
-
-  _clearAuthResponseFromUrl() {
-    const hash = window.location.hash || "";
-    if (!/(^#|&)(code|error|client_info|session_state|state)=/.test(hash)) {
-      return;
-    }
-    const cleanPath = this._normalizeUrlForCompare(window.location.href) === this._normalizeUrlForCompare(this.getAuthRedirectUri())
-      ? new URL(this.getAuthRedirectUri()).pathname
-      : window.location.pathname;
-    window.history.replaceState(null, document.title, cleanPath + window.location.search);
-  },
-
   isExtraPedido(p) {
     const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const origem = norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
@@ -203,7 +135,16 @@ const SP = window.SP = {
       auth: {
         clientId: this.clientId,
         authority: `https://login.microsoftonline.com/${this.tenantId}`,
-        redirectUri: this.getAuthRedirectUri(),
+        // redirectUri DEVE ser a raiz do app (index.html) — único URI registrado no Azure AD.
+        // Nunca usar window.location.pathname pois muda conforme a página.
+        redirectUri: (function(){
+          const p = window.location.pathname;
+          const marker = "/refeitorio-homy/";
+          const base = p.includes(marker)
+            ? window.location.origin + p.slice(0, p.indexOf(marker) + marker.length) + "index.html"
+            : window.location.origin + "/refeitorio-homy/index.html";
+          return base;
+        })(),
         navigateToLoginRequestUrl: false
       },
       cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: true }
@@ -216,25 +157,17 @@ const SP = window.SP = {
     if (redirectResult?.account) {
       this._account = redirectResult.account;
       this._msalInstance.setActiveAccount(this._account);
-      if (!this._restoreAuthReturnUrl()) this._clearAuthResponseFromUrl();
       return true;
     }
 
     // Reaproveita sessão existente
-    this._clearAuthResponseFromUrl();
-
     const active = this._msalInstance.getActiveAccount();
-    if (active) {
-      this._account = active;
-      this._restoreAuthReturnUrl();
-      return true;
-    }
+    if (active) { this._account = active; return true; }
 
     const accounts = this._msalInstance.getAllAccounts();
     if (accounts.length > 0) {
       this._account = accounts[0];
       this._msalInstance.setActiveAccount(this._account);
-      this._restoreAuthReturnUrl();
       return true;
     }
 
@@ -243,7 +176,6 @@ const SP = window.SP = {
 
   async login() {
     await this.init();
-    this._rememberAuthReturnUrl();
     await this._msalInstance.loginRedirect({ scopes: this.scopes });
     return false;
   },
@@ -273,7 +205,6 @@ const SP = window.SP = {
       return r.accessToken;
     } catch (e) {
       console.warn("[SP] Token silencioso falhou; redirecionando.", e);
-      this._rememberAuthReturnUrl();
       await this._msalInstance.acquireTokenRedirect({
         scopes: this.scopes,
         account: this._account
@@ -1020,11 +951,11 @@ const SP = window.SP = {
   // ============================================================
   // ALIASES DE COMPATIBILIDADE com código legado
   // ============================================================
-  async addItem(listName, fields)              { return this.createItem(listName, fields); },
-  async patchListItem(listName, id, fields)    { return this.updateItem(listName, id, fields); },
-  async removeItem(listName, id)               { return this.deleteItem(listName, id); },
-  async deleteExtra(id)                        { return this.removeExtra(id); },
-  async getCheckIns()                          { return this.getItems("CheckIn"); },
+  async addItem(listName, fields)           { return this.createItem(listName, fields); },
+  async patchListItem(listName, id, fields) { return this.updateItem(listName, id, fields); },
+  async removeItem(listName, id)            { return this.deleteItem(listName, id); },
+  async getCheckIns()                       { return this.getItems("CheckIn"); },
+  // NOTA: deleteExtra e setConfig NÃO são aliases — têm implementação própria acima.
 
   // cleanupExtraAutomaticoSemana: remove duplicatas de "Refeição Extra automática" por dia
   async cleanupExtraAutomaticoSemana(semanaId) {
