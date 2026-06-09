@@ -60,6 +60,7 @@ const AdminValores = window.AdminValores = {
       await this._getCols();
       this._lista = await SP.getValoresRefeicao(false);
       this._render();
+      await this._carregarNFInline();
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="7" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
     }
@@ -201,6 +202,30 @@ const AdminValores = window.AdminValores = {
   },
 
   // ── NF Vascon ─────────────────────────────────────────────────
+  async _carregarNFInline() {
+    // Preenche a seção inline de NF com o valor ativo atual
+    try {
+      const ativo = this._lista.find(v => {
+        const r = this._ler(v,"ativo");
+        return r === null || r === undefined ? true : SP.isTrue(r);
+      });
+      if (!ativo) return;
+
+      const id  = ativo.id;
+      const vu  = Number(this._ler(ativo,"vascon") || 0);
+      const ini = (this._ler(ativo,"inicio") || "").toString().slice(0,10);
+      const fim = (this._ler(ativo,"fim")    || "").toString().slice(0,10);
+
+      // Preenche campos inline
+      AdminUtils.setVal("nfValorId", id);
+      AdminUtils.setVal("nfInicio",  ini);
+      AdminUtils.setVal("nfFim",     fim);
+      AdminUtils.setTxt("nfVasconUnit", `R$ ${vu.toFixed(2)} / refeição`);
+    } catch (e) {
+      console.warn("[NF inline]", e);
+    }
+  },
+
   _bindNF() {
     const bind = (id, fn) => {
       const el = document.getElementById(id);
@@ -219,27 +244,31 @@ const AdminValores = window.AdminValores = {
   async _uploadNF(file) {
     if (!file) return;
     const valorId = AdminUtils.getVal("nfValorId");
-    if (!valorId) { AdminUtils.toast("Selecione o período da NF antes de fazer upload.", "error"); return; }
+    if (!valorId) { AdminUtils.toast("Nenhum período ativo encontrado.", "error"); return; }
     try {
       await SP.init();
       const token  = await SP.getToken();
       const siteId = await SP.getSiteId();
       const url    = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/NF-Vascon/${file.name}:/content`;
-      AdminUtils.toast("Fazendo upload do PDF...", "info");
+      AdminUtils.toast("⏳ Enviando PDF...", "info");
       const res = await fetch(url, {
         method: "PUT",
         headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/pdf" },
         body: file
       });
       if (!res.ok) throw new Error(`Upload falhou: ${res.status}`);
-      const data = await res.json();
+      const data  = await res.json();
       const cols  = await this._getCols();
+      const total = AdminUtils.getVal("nfTotalDigitado") || "";
+      const obsNF = `NF: ${file.name}${total ? " | Total: R$ " + total : ""}${data.webUrl ? " | " + data.webUrl : ""}`;
       if (cols.obs) {
-        await SP.updateItem("Valores de Refeição", valorId, {
-          [cols.obs]: `NF: ${file.name} | ${data.webUrl || ""}`
-        });
+        await SP.updateItem("Valores de Refeição", valorId, { [cols.obs]: obsNF });
       }
-      AdminUtils.toast("✅ NF enviada.", "success");
+      AdminUtils.toast("✅ NF enviada e vinculada ao período.", "success");
+      // Atualiza observação na lista local
+      const idx = this._lista.findIndex(v => String(v.id) === String(valorId));
+      if (idx >= 0 && cols.obs) this._lista[idx][cols.obs] = obsNF;
+      this._render();
     } catch (e) {
       AdminUtils.toast("Erro no upload: " + e.message, "error");
     }
