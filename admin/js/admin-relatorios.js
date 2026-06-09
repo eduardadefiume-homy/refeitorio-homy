@@ -20,35 +20,58 @@ const AdminRelatorios = window.AdminRelatorios = {
   async _buscar(ini, fim) {
     this._periodo = { ini, fim };
     const wrap = document.getElementById("relConteudo");
-    if (wrap) wrap.innerHTML = `<div class="alert alert-info">Carregando...</div>`;
+    if (wrap) wrap.innerHTML = `<div class="alert alert-info">⏳ Carregando pedidos...</div>`;
 
     try {
       await SP.init();
       const todos = await SP.getItems("Pedidos");
 
-      // Descobre quais semanas estão no período
+      if (!todos.length) {
+        if (wrap) wrap.innerHTML = `<div class="alert alert-warning">⚠️ Nenhum pedido encontrado na lista Pedidos.</div>`;
+        this._pedidos = [];
+        this._renderCards();
+        return;
+      }
+
+      // Calcula semanas no período
       const semanasNoPeriodo = new Set();
-      const d = new Date(ini + "T12:00:00");
-      const fimDate = new Date(fim + "T12:00:00");
-      while (d <= fimDate) {
-        semanasNoPeriodo.add(SP.getSemanaId(d));
-        d.setDate(d.getDate() + 1);
+      try {
+        const d = new Date(ini + "T12:00:00");
+        const fimDate = new Date(fim + "T12:00:00");
+        while (d <= fimDate) {
+          semanasNoPeriodo.add(SP.getSemanaId(d));
+          d.setDate(d.getDate() + 7); // avança semana a semana (mais rápido)
+        }
+      } catch(e) {
+        console.warn("[relatorios] getSemanaId falhou:", e);
       }
 
       this._pedidos = todos.filter(p => {
-        const dh = (SP.pick(p, "Data_Hora") || "").slice(0, 10);
-        // Aceita pelo Data_Hora no período
+        const dh  = (SP.pick(p, "Data_Hora") || "").slice(0, 10);
+        // 1. Data_Hora dentro do período
         if (dh && dh >= ini && dh <= fim) return true;
-        // Fallback: aceita pela Semana_id que esteja no período
+        // 2. Semana_id que cobre o período
         const sid = SP.pick(p, "Semana_id") || "";
-        return sid && semanasNoPeriodo.has(sid);
+        if (sid && semanasNoPeriodo.has(sid)) return true;
+        // 3. Fallback: aceita qualquer pedido cujo Dia+Semana_id seja da semana no período
+        // (pedidos automáticos sem Data_Hora correta)
+        if (sid) {
+          // Verifica se semana_id começa com o ano do período
+          const anoIni = ini.slice(0, 4);
+          if (sid.startsWith(anoIni)) return true;
+        }
+        return false;
       });
 
+      console.log(`[relatorios] ${this._pedidos.length} pedidos carregados para ${ini} → ${fim}`);
       this._renderCards();
       this._renderTipo();
     } catch (e) {
-      const wrap = document.getElementById("relConteudo");
-      if (wrap) wrap.innerHTML = `<div class="alert" style="background:rgba(220,50,50,.1);color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</div>`;
+      console.error("[relatorios] _buscar:", e);
+      if (wrap) wrap.innerHTML = `<div class="alert" style="background:rgba(220,50,50,.1);color:#ff8080">
+        ❌ Erro ao carregar: ${AdminUtils.esc(e.message)}<br>
+        <small style="opacity:.7">Verifique o console (F12) para detalhes.</small>
+      </div>`;
     }
   },
 
@@ -77,6 +100,14 @@ const AdminRelatorios = window.AdminRelatorios = {
     if (!wrap) return;
 
     const conf = this._pedidos.filter(p => this._isConf(p));
+
+    if (!conf.length) {
+      wrap.innerHTML = `<div class="alert alert-warning">
+        ⚠️ Nenhum pedido confirmado encontrado para o período <strong>${this._periodo.ini}</strong> a <strong>${this._periodo.fim}</strong>.<br>
+        <small style="opacity:.7">Total bruto carregado: ${this._pedidos.length} pedidos (incluindo não confirmados).</small>
+      </div>`;
+      return;
+    }
 
     if (tipo === "dia")         this._renderPorDia(conf, wrap);
     else if (tipo === "cc")     this._renderPorCC(conf, wrap);
