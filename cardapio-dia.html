@@ -533,6 +533,150 @@ carregarDadosReais();
   instalar();
 })();
 </script>
+  <!-- ========================================================
+  1. Trata nome genérico "Prato Principal" → "Cardápio do Dia"
+  2. Remove observações Vascon dos detalhes (aparecem como aviso)
+  3. Adiciona aviso amarelo específico por opção no card
+  4. Modal continua como popup (já funciona no original)
+======================================================== -->
+<script>
+(function fixCardapioDia(){
+
+  const OBS_POR_OPCAO = {
+    principal: "O cardápio acima está sujeito a alterações.",
+    light:     "Esta opção substitui o prato principal completo. Sujeito a alterações.",
+    lanche:    "Esta opção substitui o prato principal completo. Sujeito a alterações.",
+    carne:     "Esta opção substitui a carne do prato principal. Sujeito a alterações.",
+    massa:     "Esta opção substitui a carne do prato principal. Sujeito a alterações."
+  };
+
+  const NOMES_GENERICOS = [
+    "prato principal","principal","light","carne","massa","lanche",
+    "cardapio","prato","sem nome",""
+  ];
+
+  function norm(v){
+    return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  }
+
+  function ehGenerico(v){ return NOMES_GENERICOS.includes(norm(v)); }
+
+  function ehObsSuja(texto){
+    const n = norm(texto);
+    return n.includes("cardapio acima esta sujeito") ||
+           n.includes("sujeito a alteracoes") ||
+           n.includes("opcoes carne e massa substituem") ||
+           n.includes("opcao carne substitui") ||
+           n.includes("opcao massa substitui") ||
+           n.includes("opcoes light e lanche substituem") ||
+           n.includes("opcao light substitui") ||
+           n.includes("opcao lanche substitui") ||
+           n.includes("esta opcao substitui") ||
+           n.includes("extraido automaticamente") ||
+           n.includes("pdf vascon") ||
+           n.length < 2;
+  }
+
+  function splitDetalhes(v){
+    return String(v||"").replace(/\r/g,"\n")
+      .split(/\n|;/).map(x => x.replace(/^[-•·\s]+/,"").trim())
+      .filter(x => x.length > 1 && !ehObsSuja(x));
+  }
+
+  function processarItem(item){
+    const tag     = String(item.tag||"principal").toLowerCase();
+    let   nome    = String(item.nome||"").trim();
+    let   detalhes = (item.detalhes||[]).filter(x => !ehObsSuja(x));
+
+    // Nome genérico + detalhes → ajusta
+    if(ehGenerico(nome) && detalhes.length > 0){
+      if(tag === "principal"){
+        nome = "Cardápio do Dia";
+      } else {
+        nome     = detalhes[0];
+        detalhes = detalhes.slice(1);
+      }
+    }
+    if(ehGenerico(nome)){
+      nome = "Cardápio não cadastrado";
+      detalhes = [];
+    }
+
+    // Aviso específico por opção
+    const aviso = OBS_POR_OPCAO[tag] || null;
+
+    return Object.assign({}, item, { nome, detalhes, aviso });
+  }
+
+  // Aguarda normalizarItemCardapio e renderCardapio estarem disponíveis
+  function patch(){
+    // Patch normalizarItemCardapio
+    if(typeof window.normalizarItemCardapio === "function"){
+      const orig = window.normalizarItemCardapio;
+      window.normalizarItemCardapio = function(item){
+        const base = orig(item);
+        // Reprocessa detalhes removendo obs suja
+        base.detalhes = (base.detalhes||[]).filter(x => !ehObsSuja(x));
+        return processarItem(base);
+      };
+    }
+
+    // Patch renderCardapio para adicionar aviso no card
+    if(typeof window.renderCardapio === "function"){
+      const orig = window.renderCardapio;
+      window.renderCardapio = function(){
+        orig();
+        // Após renderizar, adiciona avisos nos cards
+        const cards = document.querySelectorAll("#cardapioGrid .option-card");
+        cards.forEach(card => {
+          // Já tem aviso? Ignora
+          if(card.querySelector(".option-aviso")) return;
+          const tagEl = card.querySelector(".option-tag");
+          if(!tagEl) return;
+          const tag = norm(tagEl.textContent);
+          const obs = OBS_POR_OPCAO[tag] || null;
+          if(!obs) return;
+          // Insere antes do hint
+          const hint = card.querySelector(".option-hint");
+          const div  = document.createElement("div");
+          div.className = "option-aviso";
+          div.textContent = "ℹ️ " + obs;
+          if(hint) card.insertBefore(div, hint);
+          else card.appendChild(div);
+        });
+      };
+    }
+
+    // CSS do aviso se não existir
+    if(!document.getElementById("fixCardapioDiaCSS")){
+      const s = document.createElement("style");
+      s.id = "fixCardapioDiaCSS";
+      s.textContent = `
+        .option-aviso{
+          margin:0 1rem 0.6rem;
+          padding:0.45rem 0.7rem;
+          border-radius:8px;
+          background:rgba(255,180,0,.07);
+          border:1px solid rgba(255,180,0,.18);
+          font-size:0.72rem;
+          color:rgba(255,210,120,.85);
+          line-height:1.45;
+        }
+      `;
+      document.head.appendChild(s);
+    }
+
+    return typeof window.renderCardapio === "function";
+  }
+
+  let t = 0;
+  const iv = setInterval(function(){
+    if(patch()){ clearInterval(iv); console.log("[fix-cardapio-dia] aplicado"); }
+    if(++t > 50) clearInterval(iv);
+  }, 100);
+
+})();
+</script>
 
 </body>
 </html>
