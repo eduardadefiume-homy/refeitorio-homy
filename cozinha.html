@@ -934,5 +934,124 @@ iniciarCozinha();
 
 })();
 </script>
+  <!-- ========================================================
+  Mostra colaboradores ausentes travados na lista do dia
+======================================================== -->
+<script>
+(function fixCozinhaAusencias(){
+
+  // Aguarda sincronizar() estar disponível e intercepta
+  let ausenciasCache = [];
+
+  // Carrega ausências ativas hoje
+  async function carregarAusenciasHoje(){
+    try{
+      if(!window.SP) return [];
+      await SP.init();
+      const hoje = new Date(); hoje.setHours(0,0,0,0);
+      const todas = await SP.getAusencias(true).catch(()=>[]);
+      return todas.filter(a => {
+        const ini = new Date(SP.pick(a,"Data_Inicio")||0);
+        const fim = new Date(SP.pick(a,"Data_Fim")||0);
+        ini.setHours(0,0,0,0); fim.setHours(23,59,59,999);
+        return hoje >= ini && hoje <= fim;
+      });
+    } catch(e){
+      console.warn("[ausencias cozinha]",e);
+      return [];
+    }
+  }
+
+  function estaAusente(colaboradorId){
+    return ausenciasCache.some(a =>
+      String(SP.pick(a,"Colaborador_id")||"") === String(colaboradorId)
+    );
+  }
+
+  function getAusencia(colaboradorId){
+    return ausenciasCache.find(a =>
+      String(SP.pick(a,"Colaborador_id")||"") === String(colaboradorId)
+    );
+  }
+
+  function fmtData(v){
+    if(!v) return "";
+    const d = new Date(v);
+    return isNaN(d) ? v : d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+  }
+
+  // Sobrescreve renderLista para incluir ausentes
+  function patchRenderLista(){
+    if(typeof window.renderLista !== "function") return false;
+    const original = window.renderLista;
+    window.renderLista = function(){
+      original();
+
+      // Após renderizar a lista normal, adiciona linha de ausentes
+      if(!ausenciasCache.length) return;
+
+      const lista = document.getElementById("lista");
+      if(!lista) return;
+
+      // Encontra colaboradores da semana que estão ausentes hoje
+      // mas que NÃO têm pedido (pedido cancelado ou sem pedido)
+      const idsComPedido = new Set(
+        pedidosHoje.map(p => String(itemValor(p,"Colaborador_id","colaborador_id")||""))
+      );
+
+      ausenciasCache.forEach(a => {
+        const cid   = String(SP.pick(a,"Colaborador_id")||"");
+        const cnome = String(SP.pick(a,"Colaborador_nome")||"");
+        const motivo = String(SP.pick(a,"Motivo")||"ausência").replace("ferias","férias");
+        const ini   = fmtData(SP.pick(a,"Data_Inicio"));
+        const fim   = fmtData(SP.pick(a,"Data_Fim"));
+
+        // Se já aparece como pedido cancelado, não duplica
+        if(idsComPedido.has(cid)) return;
+
+        const article = document.createElement("article");
+        article.className = "item done"; // trava visual igual entregue
+        article.style.cssText = "background:rgba(192,40,28,.10);border-color:rgba(192,40,28,.28);cursor:default";
+        article.innerHTML = `
+          <div class="avatar" style="background:rgba(100,100,100,.3);border-color:rgba(150,150,150,.3);color:rgba(200,200,200,.7)">🚫</div>
+          <div class="info">
+            <div class="name">${cnome}</div>
+            <div class="desc">${motivo} · ${ini}${fim&&fim!==ini?" – "+fim:""}</div>
+          </div>
+          <div class="badge" style="background:rgba(192,40,28,.18);color:rgba(255,120,100,.9)">Ausente</div>
+        `;
+        lista.appendChild(article);
+      });
+    };
+    return true;
+  }
+
+  // Sobrescreve sincronizar para carregar ausências junto
+  function patchSincronizar(){
+    if(typeof window.sincronizar !== "function") return false;
+    const original = window.sincronizar;
+    window.sincronizar = async function(){
+      // Carrega ausências em paralelo com sincronizar original
+      const [, aus] = await Promise.all([
+        original(),
+        carregarAusenciasHoje()
+      ]);
+      ausenciasCache = aus;
+      // Re-renderiza lista com ausentes
+      if(typeof window.renderLista === "function") window.renderLista();
+    };
+    return true;
+  }
+
+  let t = 0;
+  const iv = setInterval(function(){
+    const ok1 = patchRenderLista();
+    const ok2 = patchSincronizar();
+    if(ok1 && ok2){ clearInterval(iv); console.log("[fix-ausencias] patches aplicados"); }
+    if(++t > 50) clearInterval(iv);
+  }, 100);
+
+})();
+</script>
 </body>
 </html>
