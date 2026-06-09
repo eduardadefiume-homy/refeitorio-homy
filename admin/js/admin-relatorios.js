@@ -514,25 +514,32 @@ const AdminRelatorios = window.AdminRelatorios = {
   },
   },
 
+  _bindFeito: false,
+
   _bindControles() {
-    // Remove listeners antigos clonando os elementos
-    const rebind = (id, ev, fn) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const novo = el.cloneNode(true);
-      el.parentNode.replaceChild(novo, el);
-      novo.addEventListener(ev, fn);
-    };
+    if (this._bindFeito) return;
+    this._bindFeito = true;
 
-    rebind("btnBuscarRelatorio", "click", async () => {
-      const ini = AdminUtils.getVal("relDataIni");
-      const fim = AdminUtils.getVal("relDataFim");
-      if (!ini || !fim) { AdminUtils.toast("Informe o período.", "error"); return; }
-      if (ini > fim)    { AdminUtils.toast("Data início maior que fim.", "error"); return; }
-      await AdminRelatorios._buscar(ini, fim);
-    });
+    const btnBuscar = document.getElementById("btnBuscarRelatorio");
+    const btnExport = document.getElementById("btnExportarRelatorio");
+    const selTipo   = document.getElementById("relTipo");
 
-    rebind("relTipo",              "change", () => AdminRelatorios._renderTipo());
-    rebind("btnExportarRelatorio", "click",  () => AdminRelatorios._exportar());
+    if (btnBuscar) {
+      btnBuscar.addEventListener("click", async () => {
+        const ini = (document.getElementById("relDataIni")?.value || "").trim();
+        const fim = (document.getElementById("relDataFim")?.value || "").trim();
+        if (!ini || !fim) { AdminUtils.toast("Informe o período.", "error"); return; }
+        if (ini > fim)    { AdminUtils.toast("Data início maior que fim.", "error"); return; }
+        await AdminRelatorios._buscar(ini, fim);
+      });
+    }
+
+    if (selTipo) {
+      selTipo.addEventListener("change", () => AdminRelatorios._renderTipo());
+    }
+
+    if (btnExport) {
+      btnExport.addEventListener("click", () => AdminRelatorios._exportar());
+    }
   }
 };
