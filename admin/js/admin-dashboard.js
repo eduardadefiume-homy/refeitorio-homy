@@ -75,20 +75,14 @@ const AdminDashboard = window.AdminDashboard = {
   async _carregarPrazo(semanaId, resumo) {
     const prazo = await SP.getPrazoMarcacao().catch(() => null);
 
-    // Preenche campos de prazo
     if (prazo) {
       const dt = new Date(prazo);
       AdminUtils.setVal("prazoData", dt.toISOString().slice(0, 10));
       AdminUtils.setVal("prazoHora", dt.toTimeString().slice(0, 5));
     }
 
-    // Atualiza painel de status do prazo
     this._atualizarPainelPrazo(prazo, resumo?.pendentesColaboradores ?? 0);
 
-    // Inicia timer de auto-travamento
-    this._iniciarTimerPrazo(prazo, semanaId);
-
-    // Bind botões (uma vez)
     const btnSalvar = document.getElementById("btnSalvarPrazo");
     if (btnSalvar && !btnSalvar.dataset.bound) {
       btnSalvar.dataset.bound = "1";
@@ -101,7 +95,6 @@ const AdminDashboard = window.AdminDashboard = {
         AdminUtils.toast("✅ Prazo salvo.", "success");
         const r = await SP.getDashboardResumo(AdminState.getSemanaId()).catch(() => ({}));
         this._atualizarPainelPrazo(valor, r.pendentesColaboradores ?? 0);
-        this._iniciarTimerPrazo(valor, AdminState.getSemanaId());
       });
     }
 
@@ -206,48 +199,6 @@ const AdminDashboard = window.AdminDashboard = {
     } catch (e) {
       AdminUtils.toast("Erro ao travar: " + (e.message || e), "error");
       if (btn) { btn.disabled = false; btn.textContent = "🔒 Travar pendentes como Principal"; }
-    }
-  },
-
-  // ── Timer de auto-travamento ──────────────────────────────────
-  _iniciarTimerPrazo(prazoISO, semanaId) {
-    // Cancela timer anterior
-    if (this._prazoTimer) { clearTimeout(this._prazoTimer); this._prazoTimer = null; }
-    if (!prazoISO) return;
-
-    const dt    = new Date(prazoISO);
-    const agora = new Date();
-    const ms    = dt - agora;
-
-    if (ms <= 0) {
-      // Prazo já venceu — verifica se precisa travar (silencioso)
-      this._autoTravarSeNecessario(semanaId);
-      return;
-    }
-
-    // Agenda travamento automático
-    this._prazoTimer = setTimeout(async () => {
-      console.log("[Dashboard] Prazo atingido — iniciando auto-travamento");
-      AdminUtils.toast("⏰ Prazo atingido! Travando pendentes automaticamente...", "info");
-      await this._autoTravarSeNecessario(semanaId);
-    }, ms);
-
-    console.log(`[Dashboard] Auto-travamento agendado em ${Math.round(ms/60000)} min`);
-  },
-
-  async _autoTravarSeNecessario(semanaId) {
-    try {
-      const resultado = await SP.travarPendentesComoPrincipal(semanaId);
-      if (resultado.travados > 0) {
-        await SP.setMarcacaoLiberada(false);
-        AdminUtils.toast(
-          `🔒 ${resultado.travados} colaboradores travados automaticamente como Principal.`,
-          "success"
-        );
-        await AdminDashboard.load(semanaId);
-      }
-    } catch (e) {
-      console.error("[Dashboard] auto-travamento:", e);
     }
   },
 
