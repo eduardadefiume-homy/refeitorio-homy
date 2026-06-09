@@ -39,7 +39,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 .back-btn{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.3rem;text-decoration:none;flex-shrink:0;transition:background .15s}
 .back-btn:hover,.back-btn-view:hover{background:rgba(255,255,255,0.1)}
 .back-btn-view{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.3rem;flex-shrink:0;transition:background .15s}
-.header-logo{display:block;width:32px;height:32px;object-fit:contain;flex-shrink:0;border-radius:50%;background:rgba(255,255,255,.04)}
+.header-logo{display:block;width:32px;height:32px;object-fit:contain;flex-shrink:0;image-rendering:auto}
 .header-titles{flex:1}
 .header-title{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;line-height:1}
 .header-sub{font-size:0.7rem;color:rgba(143,170,210,0.55);letter-spacing:0.14em;text-transform:uppercase;margin-top:2px}
@@ -630,6 +630,7 @@ async function carregarDadosSharePoint(){
       id:         String(c.id||""),
       nome:       String(SP.pick(c,"Nome","Title")||"Sem nome"),
       dept:       String(SP.pick(c,"Departamento","")||""),
+      cc:         String(SP.pick(c,"Centro_Custo")||""),
       confirmado: idsConfirmados.has(String(c.id||""))
     })).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
 
@@ -785,7 +786,14 @@ document.getElementById("btnConfirmar").addEventListener("click",async()=>{
     for(const key of selecionados){
       const diaInfo=DIAS_SEMANA.find(d=>d.key===key);
       const pedido=pedidos[key];
-      await SP.savePedido(SEMANA_ID,funcSelecionado.id,funcSelecionado.nome,diaInfo.dia,pedido.tag,pedido.nome);
+      await SP.savePedido(SEMANA_ID,funcSelecionado.id,funcSelecionado.nome,diaInfo.dia,pedido.tag,pedido.nome,{
+        confirmado:  true,
+        status:      "Confirmado",
+        origem:      "Refeitório",
+        centroCusto: funcSelecionado.cc || "",
+        dataHora:    new Date().toISOString(),
+        alteradoPor: SP.getUserName ? SP.getUserName() : ""
+      });
     }
     const nomeFirst=funcSelecionado.nome.split(" ")[0];
     document.getElementById("modalText").textContent=nomeFirst+", seu pedido da semana foi confirmado! Qualquer alteração deverá ser solicitada à Luana.";
