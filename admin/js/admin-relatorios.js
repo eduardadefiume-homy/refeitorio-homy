@@ -251,142 +251,236 @@ const AdminRelatorios = window.AdminRelatorios = {
   },
 
   // ── Exportação Excel ─────────────────────────────────────────
-  _exportar() {
-    if (typeof XLSX === "undefined") { AdminUtils.toast("Biblioteca XLSX não carregou.", "error"); return; }
+  // ── Exportação Excel com padrão visual Homy ──────────────────
+  async _exportar() {
     const tipo = AdminUtils.getVal("relTipo") || "dia";
     const conf = this._pedidos.filter(p => this._isConf(p));
+    if (!conf.length) { AdminUtils.toast("Nenhum dado para exportar.", "info"); return; }
 
-    let linhas = [];
-    let nomeAba = "Relatorio";
+    if (typeof ExcelJS === "undefined") {
+      AdminUtils.toast("Biblioteca ExcelJS não carregou. Verifique conexão.", "error");
+      return;
+    }
 
+    const wb  = new ExcelJS.Workbook();
+    wb.creator  = "Refeitório Homy Química";
+    wb.created  = new Date();
+
+    // ── Cores padrão Homy ──────────────────────────────────────
+    const COR_AZUL   = "FF0A1E3D";   // azul escuro (header)
+    const COR_VERM   = "FFC0281C";   // vermelho Homy (sub-header)
+    const COR_BEGE   = "FFF5F5F5";   // linhas pares
+    const COR_BRANCO = "FFFFFFFF";
+
+    const estTitulo = {
+      font:      { bold: true, color: { argb: COR_BRANCO }, size: 13, name: "Calibri" },
+      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_AZUL } },
+      alignment: { horizontal: "center", vertical: "middle" }
+    };
+    const estPeriodo = {
+      font:      { bold: true, color: { argb: COR_BRANCO }, size: 11, name: "Calibri" },
+      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_VERM } },
+      alignment: { horizontal: "center", vertical: "middle" }
+    };
+    const estCabecalho = {
+      font:      { bold: true, color: { argb: COR_BRANCO }, size: 10, name: "Calibri" },
+      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_AZUL } },
+      alignment: { horizontal: "center", vertical: "middle" },
+      border: {
+        bottom: { style: "thin", color: { argb: COR_VERM } }
+      }
+    };
+    const estDado = (par) => ({
+      font:      { size: 10, name: "Calibri" },
+      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: par ? COR_BEGE : COR_BRANCO } },
+      alignment: { horizontal: "center", vertical: "middle" },
+      border: {
+        bottom: { style: "hair", color: { argb: "FFE0E0E0" } }
+      }
+    });
+    const estDadoEsq = (par) => ({
+      ...estDado(par),
+      alignment: { horizontal: "left", vertical: "middle" }
+    });
+    const estTotal = {
+      font:      { bold: true, size: 10, name: "Calibri", color: { argb: COR_BRANCO } },
+      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_AZUL } },
+      alignment: { horizontal: "center", vertical: "middle" }
+    };
+
+    function aplicarEstilo(cell, est) {
+      if (!est) return;
+      if (est.font)      cell.font      = est.font;
+      if (est.fill)      cell.fill      = est.fill;
+      if (est.alignment) cell.alignment = est.alignment;
+      if (est.border)    cell.border    = est.border;
+    }
+
+    function mesclar(ws, inicio, fim) {
+      ws.mergeCells(`${inicio}:${fim}`);
+    }
+
+    function fmtData(v) {
+      if (!v) return v;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        const [y,m,d] = v.split("-");
+        return `${d}/${m}/${y}`;
+      }
+      return v;
+    }
+
+    // ── Por Dia ────────────────────────────────────────────────
     if (tipo === "dia") {
-      nomeAba = "Por Dia";
+      const ws = wb.addWorksheet("Por Dia");
+      ws.columns = [
+        { width: 18 }, { width: 13 }, { width: 10 },
+        { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }
+      ];
+
+      // Linha 1 — Título
+      ws.addRow(["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR DIA"]);
+      mesclar(ws, "A1", "G1");
+      ws.getRow(1).height = 24;
+      aplicarEstilo(ws.getCell("A1"), estTitulo);
+
+      // Linha 2 — Período
+      ws.addRow([`Período: ${fmtData(this._periodo.ini)} a ${fmtData(this._periodo.fim)}`]);
+      mesclar(ws, "A2", "G2");
+      ws.getRow(2).height = 20;
+      aplicarEstilo(ws.getCell("A2"), estPeriodo);
+
+      // Linha 3 — vazia
+      ws.addRow([]);
+
+      // Linha 4 — Total
+      ws.addRow(["Total de refeições", conf.length]);
+      ws.getCell("A4").font = { bold: true, size: 10 };
+      ws.getCell("B4").font = { bold: true, size: 10 };
+
+      // Linha 5 — vazia
+      ws.addRow([]);
+
+      // Linha 6 — Cabeçalhos
+      const cabRow = ws.addRow(["Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"]);
+      ws.getRow(6).height = 20;
+      cabRow.eachCell(cell => aplicarEstilo(cell, estCabecalho));
+
+      // Dados por dia
       const diaParaData = this._getDiaParaData();
       const ORDEM_DIAS  = ["segunda","terca","quarta","quinta","sexta"];
-      const mapasDia = {};
-      const mapaData = {};
+      const mapasDia = {}; const mapaData = {};
       conf.forEach(p => {
-        const diaNorm = AdminUtils.norm(SP.pick(p,"Dia")||"");
-        const dtPed   = (SP.pick(p,"Data_Hora")||"").slice(0,10);
-        if(ORDEM_DIAS.includes(diaNorm)){
-          if(!mapasDia[diaNorm]) mapasDia[diaNorm]=[];
-          mapasDia[diaNorm].push(p);
-        } else if(dtPed){
-          if(!mapaData[dtPed]) mapaData[dtPed]=[];
-          mapaData[dtPed].push(p);
-        }
+        const dn = AdminUtils.norm(SP.pick(p,"Dia")||"");
+        const dt = (SP.pick(p,"Data_Hora")||"").slice(0,10);
+        if (ORDEM_DIAS.includes(dn)) { if(!mapasDia[dn]) mapasDia[dn]=[]; mapasDia[dn].push(p); }
+        else if (dt) { if(!mapaData[dt]) mapaData[dt]=[]; mapaData[dt].push(p); }
       });
       const linhas2 = [];
-      ORDEM_DIAS.forEach(dia=>{
-        if(!mapasDia[dia]) return;
-        const lista=mapasDia[dia];
-        const data=diaParaData[dia]||dia;
-        linhas2.push({label:data,lista});
-        if(mapaData[data]) delete mapaData[data];
+      ORDEM_DIAS.forEach(dia => {
+        if (!mapasDia[dia]) return;
+        const data = diaParaData[dia] || dia;
+        linhas2.push({ label: data, lista: mapasDia[dia] });
+        if (mapaData[data]) delete mapaData[data];
       });
       Object.entries(mapaData).sort(([a],[b])=>a.localeCompare(b)).forEach(([data,lista])=>linhas2.push({label:data,lista}));
       linhas2.sort((a,b)=>a.label.localeCompare(b.label));
-      linhas = [
-        { Data: `RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR DIA` },
-        { Data: `Período: ${this._periodo.ini} a ${this._periodo.fim}` },
-        {},
-        { Data: "Total de refeições", Principal: conf.length },
-        {},
-        ...linhas2.map(({label,lista})=>({
-          Data:      label,
-          Principal: this._countOp(lista,"principal"),
-          Light:     this._countOp(lista,"light"),
-          Carne:     this._countOp(lista,"carne"),
-          Massa:     this._countOp(lista,"massa"),
-          Lanche:    this._countOp(lista,"lanche"),
-          Total:     lista.length
-        }))
-      ];
+
+      linhas2.forEach(({label, lista}, i) => {
+        const par = i % 2 === 0;
+        const r = ws.addRow([
+          fmtData(label),
+          this._countOp(lista,"principal"),
+          this._countOp(lista,"light"),
+          this._countOp(lista,"carne"),
+          this._countOp(lista,"massa"),
+          this._countOp(lista,"lanche"),
+          lista.length
+        ]);
+        r.getCell(1).alignment = { horizontal: "left" };
+        r.eachCell((cell, col) => aplicarEstilo(cell, col === 1 ? estDadoEsq(par) : estDado(par)));
+      });
+
+      // Linha total final
+      const totalRow = ws.addRow([
+        "TOTAL",
+        this._countOp(conf,"principal"),
+        this._countOp(conf,"light"),
+        this._countOp(conf,"carne"),
+        this._countOp(conf,"massa"),
+        this._countOp(conf,"lanche"),
+        conf.length
+      ]);
+      totalRow.eachCell(cell => aplicarEstilo(cell, estTotal));
+
+      // Filtro automático na linha 6
+      ws.autoFilter = { from: "A6", to: "G6" };
+
+    // ── Por CC ─────────────────────────────────────────────────
     } else if (tipo === "cc") {
-      nomeAba = "Por CC";
+      const ws = wb.addWorksheet("Por CC");
+      ws.columns = [{width:42},{width:13},{width:10},{width:10},{width:10},{width:10},{width:10}];
+      ws.addRow(["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR CENTRO DE CUSTO"]);
+      mesclar(ws, "A1", "G1"); ws.getRow(1).height = 24;
+      aplicarEstilo(ws.getCell("A1"), estTitulo);
+      ws.addRow([`Período: ${fmtData(this._periodo.ini)} a ${fmtData(this._periodo.fim)}`]);
+      mesclar(ws, "A2", "G2"); ws.getRow(2).height = 20;
+      aplicarEstilo(ws.getCell("A2"), estPeriodo);
+      ws.addRow([]);
+      const cab = ws.addRow(["Centro de Custo","Principal","Light","Carne","Massa","Lanche","Total"]);
+      ws.getRow(4).height = 20;
+      cab.eachCell(cell => aplicarEstilo(cell, estCabecalho));
       const mapa = {};
-      conf.forEach(p => {
-        const cc = SP.pick(p, "Centro_Custo") || "Sem CC";
-        if (!mapa[cc]) mapa[cc] = [];
-        mapa[cc].push(p);
+      conf.forEach(p => { const cc = SP.pick(p,"Centro_Custo")||"Sem CC"; if(!mapa[cc])mapa[cc]=[]; mapa[cc].push(p); });
+      Object.entries(mapa).sort((a,b)=>b[1].length-a[1].length).forEach(([cc,lista],i) => {
+        const par = i%2===0;
+        const r = ws.addRow([cc,this._countOp(lista,"principal"),this._countOp(lista,"light"),this._countOp(lista,"carne"),this._countOp(lista,"massa"),this._countOp(lista,"lanche"),lista.length]);
+        r.getCell(1).alignment={horizontal:"left"};
+        r.eachCell((cell,col)=>aplicarEstilo(cell,col===1?estDadoEsq(par):estDado(par)));
       });
-      linhas = Object.entries(mapa).sort((a, b) => b[1].length - a[1].length).map(([cc, lista]) => ({
-        Centro_Custo: cc,
-        Principal:    this._countOp(lista, "principal"),
-        Light:        this._countOp(lista, "light"),
-        Carne:        this._countOp(lista, "carne"),
-        Massa:        this._countOp(lista, "massa"),
-        Lanche:       this._countOp(lista, "lanche"),
-        Total:        lista.length
-      }));
+      const tr = ws.addRow(["TOTAL",this._countOp(conf,"principal"),this._countOp(conf,"light"),this._countOp(conf,"carne"),this._countOp(conf,"massa"),this._countOp(conf,"lanche"),conf.length]);
+      tr.eachCell(cell=>aplicarEstilo(cell,estTotal));
+      ws.autoFilter = { from:"A4", to:"G4" };
+
+    // ── Por CC + Funcionário ───────────────────────────────────
     } else if (tipo === "ccfunc") {
-      nomeAba = "Por CC e Funcionario";
-      const mapa = {};
-      conf.forEach(p => {
-        const cc   = SP.pick(p, "Centro_Custo")             || "Sem CC";
-        const nome = SP.pick(p, "Colaborador_nome", "Title") || "Desconhecido";
-        const key  = `${cc}||${nome}`;
-        if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
-        mapa[key].lista.push(p);
+      const ws = wb.addWorksheet("Por CC e Funcionario");
+      ws.columns = [{width:42},{width:32},{width:16},{width:14},{width:14}];
+      ws.addRow(["RELATÓRIO REFEITÓRIO HOMY  POR CC E FUNCIONÁRIO"]);
+      mesclar(ws,"A1","E1"); ws.getRow(1).height=24;
+      aplicarEstilo(ws.getCell("A1"),estTitulo);
+      ws.addRow([`Período: ${fmtData(this._periodo.ini)} a ${fmtData(this._periodo.fim)}`]);
+      mesclar(ws,"A2","E2"); ws.getRow(2).height=20;
+      aplicarEstilo(ws.getCell("A2"),estPeriodo);
+      ws.addRow([]);
+      const cab=ws.addRow(["Centro de Custo","Colaborador","Total Refeições","Período Início","Período Fim"]);
+      ws.getRow(4).height=20;
+      cab.eachCell(cell=>aplicarEstilo(cell,estCabecalho));
+      const mapa={};
+      conf.forEach(p=>{const cc=SP.pick(p,"Centro_Custo")||"Sem CC";const nome=SP.pick(p,"Colaborador_nome","Title")||"Desconhecido";const key=`${cc}||${nome}`;if(!mapa[key])mapa[key]={cc,nome,lista:[]};mapa[key].lista.push(p);});
+      Object.values(mapa).sort((a,b)=>a.cc.localeCompare(b.cc)||b.lista.length-a.lista.length).forEach(({cc,nome,lista},i)=>{
+        const par=i%2===0;
+        const r=ws.addRow([cc,nome,lista.length,fmtData(this._periodo.ini),fmtData(this._periodo.fim)]);
+        r.getCell(1).alignment={horizontal:"left"}; r.getCell(2).alignment={horizontal:"left"};
+        r.eachCell((cell,col)=>aplicarEstilo(cell,col<=2?estDadoEsq(par):estDado(par)));
       });
-      linhas = Object.values(mapa)
-        .sort((a, b) => a.cc.localeCompare(b.cc) || b.lista.length - a.lista.length)
-        .map(({ cc, nome, lista }) => ({
-          Centro_Custo:     cc,
-          Colaborador:      nome,
-          Total_Refeicoes:  lista.length,
-          Periodo_Ini:      this._periodo.ini,
-          Periodo_Fim:      this._periodo.fim
-        }));
+      ws.autoFilter={from:"A4",to:"E4"};
     }
 
-    if (!linhas.length) { AdminUtils.toast("Nenhum dado para exportar.", "info"); return; }
-
-    // Gera Excel com aoa_to_sheet para controle total do layout
-    let aoa = [];
-
-    if (tipo === "dia") {
-      const diaLinhas = linhas.slice(5); // pula os 5 rows de cabeçalho
-      aoa = [
-        ["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR DIA"],
-        [`Período: ${this._periodo.ini} a ${this._periodo.fim}`],
-        [],
-        ["Total de refeições", this._pedidos.filter(p => this._isConf(p)).length],
-        [],
-        ["Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
-        ...diaLinhas.map(r => [r.Data, r.Principal, r.Light, r.Carne, r.Massa, r.Lanche, r.Total])
-      ];
-    } else if (tipo === "cc") {
-      aoa = [
-        ["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR CENTRO DE CUSTO"],
-        [`Período: ${this._periodo.ini} a ${this._periodo.fim}`],
-        [],
-        ["Centro de Custo", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
-        ...linhas.map(r => [r.Centro_Custo, r.Principal, r.Light, r.Carne, r.Massa, r.Lanche, r.Total])
-      ];
-    } else if (tipo === "ccfunc") {
-      aoa = [
-        ["RELATÓRIO REFEITÓRIO HOMY  POR CC E FUNCIONÁRIO"],
-        [`Período: ${this._periodo.ini} a ${this._periodo.fim}`],
-        [],
-        ["Centro de Custo", "Colaborador", "Total Refeições", "Período Início", "Período Fim"],
-        ...linhas.map(r => [r.Centro_Custo, r.Colaborador, r.Total_Refeicoes, r.Periodo_Ini, r.Periodo_Fim])
-      ];
-    } else {
-      aoa = [Object.keys(linhas[0]), ...linhas.map(r => Object.values(r))];
+    // ── Download ───────────────────────────────────────────────
+    try {
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob   = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url    = URL.createObjectURL(blob);
+      const a      = document.createElement("a");
+      a.href       = url;
+      a.download   = `relatorio-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      AdminUtils.toast("✅ Excel exportado com padrão Homy.", "success");
+    } catch (e) {
+      AdminUtils.toast("Erro ao gerar Excel: " + e.message, "error");
     }
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    // Largura das colunas
-    ws["!cols"] = [
-      {wch:18},{wch:12},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10}
-    ];
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, nomeAba);
-    XLSX.writeFile(wb, `relatorio-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`);
-    AdminUtils.toast("Excel exportado.", "success");
+  },
   },
 
   _bindControles() {
