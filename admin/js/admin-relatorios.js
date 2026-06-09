@@ -515,20 +515,24 @@ const AdminRelatorios = window.AdminRelatorios = {
   },
 
   _bindControles() {
-    const bind = (id, ev, fn) => {
+    // Remove listeners antigos clonando os elementos
+    const rebind = (id, ev, fn) => {
       const el = document.getElementById(id);
-      if (el && !el.dataset.boundRel) { el.dataset.boundRel = "1"; el.addEventListener(ev, fn); }
+      if (!el) return;
+      const novo = el.cloneNode(true);
+      el.parentNode.replaceChild(novo, el);
+      novo.addEventListener(ev, fn);
     };
 
-    bind("btnBuscarRelatorio",    "click",  async () => {
+    rebind("btnBuscarRelatorio", "click", async () => {
       const ini = AdminUtils.getVal("relDataIni");
       const fim = AdminUtils.getVal("relDataFim");
       if (!ini || !fim) { AdminUtils.toast("Informe o período.", "error"); return; }
       if (ini > fim)    { AdminUtils.toast("Data início maior que fim.", "error"); return; }
-      await this._buscar(ini, fim);
+      await AdminRelatorios._buscar(ini, fim);
     });
 
-    bind("relTipo", "change", () => this._renderTipo());
-    bind("btnExportarRelatorio", "click", () => this._exportar());
+    rebind("relTipo",              "change", () => AdminRelatorios._renderTipo());
+    rebind("btnExportarRelatorio", "click",  () => AdminRelatorios._exportar());
   }
 };
