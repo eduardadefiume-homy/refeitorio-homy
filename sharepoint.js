@@ -1003,6 +1003,81 @@ const SP = window.SP = {
   async getCheckIns()                       { return this.getItems("CheckIn"); },
   // NOTA: deleteExtra e setConfig NÃO são aliases — têm implementação própria acima.
 
+  // ============================================================
+  // TRAVAMENTO DE PENDENTES COMO PRINCIPAL
+  // Marca todos os colaboradores que não fizeram pedido na semana
+  // como Principal em todos os dias úteis, com observação de auditoria.
+  // ============================================================
+  async travarPendentesComoPrincipal(semanaId) {
+    const norm = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const diasUteis = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    const obs = "Marcado automaticamente — prazo de marcação encerrado";
+    const user = this.getUserName();
+
+    // Carrega colaboradores ativos e pedidos existentes
+    const [colabs, pedidos] = await Promise.all([
+      this.getColaboradores(),
+      this.getPedidos(semanaId)
+    ]);
+
+    // IDs que já têm pelo menos 1 pedido confirmado na semana
+    const idsComPedido = new Set(
+      pedidos
+        .filter(p => {
+          const s = norm(this.pick(p, "Status") || "");
+          return s === "confirmado" || this.isTrue(this.pick(p, "Confirmado"));
+        })
+        .map(p => String(this.pick(p, "Colaborador_id") || ""))
+    );
+
+    // Colaboradores sem pedido
+    const pendentes = colabs.filter(c => !idsComPedido.has(String(c.id || "")));
+    let travados = 0;
+
+    for (const colab of pendentes) {
+      const nome = this.pick(colab, "Nome", "Title") || "";
+      const cc   = this.pick(colab, "Centro_Custo") || "";
+
+      for (const dia of diasUteis) {
+        // Verifica se já existe pedido para esse colaborador nesse dia
+        const jaExiste = pedidos.some(p =>
+          String(this.pick(p, "Colaborador_id") || "") === String(colab.id) &&
+          norm(this.pick(p, "Dia") || "") === dia
+        );
+        if (jaExiste) continue;
+
+        try {
+          await this.savePedido(
+            semanaId,
+            colab.id,
+            nome,
+            dia,
+            "principal",
+            "Cardápio do Dia",
+            {
+              confirmado:  true,
+              status:      "Confirmado",
+              origem:      "Automático",
+              observacao:  obs,
+              centroCusto: cc,
+              dataHora:    new Date().toISOString(),
+              alteradoPor: user
+            }
+          );
+        } catch (e) {
+          console.warn(`[travarPendentes] erro em ${nome} / ${dia}:`, e.message);
+        }
+      }
+      travados++;
+    }
+
+    // Salva registro de auditoria na config
+    await this.setConfig("ultimo_travamento", new Date().toISOString()).catch(() => {});
+    await this.setConfig("ultimo_travamento_qtd", String(travados)).catch(() => {});
+
+    return { travados, total: colabs.length, pendentes: pendentes.length };
+  },
+
   // cleanupExtraAutomaticoSemana: remove duplicatas de "Refeição Extra automática" por dia
   async cleanupExtraAutomaticoSemana(semanaId) {
     const norm = v => String(v || "").normalize("NFD")
