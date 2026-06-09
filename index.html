@@ -251,7 +251,7 @@ body::after{
 
   // Tenta carregar sharepoint.js para verificar status de marcação
   loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js", function(){
-    loadScript("sharepoint.js?v=" + Date.now(), async function(){
+    loadScript("sharepoint.js", async function(){
       try {
         if (!window.SP) return;
         // Só init silencioso — sem popup
