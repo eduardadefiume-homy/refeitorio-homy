@@ -3,13 +3,31 @@
 const AdminConfiguracoes = window.AdminConfiguracoes = {
 
   async load() {
-    // Remove bindings anteriores para re-vincular corretamente
     ["toggleEmail", "toggleExtra"].forEach(id => {
       const el = document.getElementById(id);
       if (el) delete el.dataset.boundCfg;
     });
     await this._carregarToggles();
     this._bindBotoes();
+    // Se extra automático já está ativo, garante que a semana atual tem os extras
+    await this._garantirExtrasSeAtivo();
+  },
+
+  // Cria extras faltantes se toggle já estava ativo (sem feedback visual)
+  async _garantirExtrasSeAtivo() {
+    try {
+      await SP.init();
+      const ativo = SP.isTrue(await SP.getConfig("refeicao_extra_automatica"));
+      if (!ativo) return;
+      const semanaId = AdminState.getSemanaId();
+      const criados = await this._criarExtrasAutomaticos(semanaId);
+      if (criados > 0) {
+        console.log(`[extras auto] ${criados} extras criados para semana ${semanaId}`);
+        AdminUtils.toast(`✅ ${criados} refeições extras automáticas criadas para esta semana.`, "success");
+      }
+    } catch (e) {
+      console.warn("[extras auto] _garantirExtrasSeAtivo:", e);
+    }
   },
 
   async _carregarToggles() {
