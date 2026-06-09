@@ -41,7 +41,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 .login-circle{width:200px;height:200px;border-radius:50%;background:radial-gradient(circle at 40% 35%,rgba(40,80,200,.32) 0%,rgba(20,50,140,.2) 55%,transparent 100%);border:1.5px solid rgba(60,140,255,.28);display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 0 50px rgba(40,100,255,.16);animation:logo-float 3.6s ease-in-out infinite}
 .login-circle::before{content:"";position:absolute;inset:-10px;border-radius:50%;border:1.5px solid transparent;border-top-color:rgba(60,160,255,.75);animation:spin 4s linear infinite}
 .login-circle::after{content:"";position:absolute;inset:-20px;border-radius:50%;border:1px solid transparent;border-bottom-color:rgba(192,40,28,.55);animation:spin 7s linear infinite reverse}
-.login-circle img{width:150px;height:150px;object-fit:contain}
+.login-circle img{width:160px;height:160px;object-fit:contain;image-rendering:auto}
 @keyframes logo-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-20px)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 .login-text-block{display:flex;flex-direction:column;align-items:center;margin-top:1.6rem}
@@ -61,7 +61,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 /* SIDEBAR */
 .sidebar{width:220px;min-height:100vh;background:rgba(5,12,28,.98);border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:50}
 .sidebar-header{padding:1.2rem 1rem 1rem;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:.7rem}
-.sidebar-logo{width:28px;height:28px;object-fit:contain}
+.sidebar-logo{width:28px;height:28px;object-fit:contain;image-rendering:auto;border-radius:4px}
 .sidebar-title{font-family:"Barlow Condensed",sans-serif;font-size:.95rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;line-height:1}
 .sidebar-sub{font-size:.58rem;color:rgba(143,170,210,.45);letter-spacing:.1em;text-transform:uppercase}
 .sidebar-nav{flex:1;padding:.8rem .6rem;display:flex;flex-direction:column;gap:.2rem}
@@ -177,6 +177,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 /* ALERT */
 .alert{padding:.8rem 1rem;border-radius:10px;font-size:.82rem;line-height:1.5;margin-bottom:1rem;display:flex;gap:.6rem;align-items:flex-start}
 .alert-info{background:rgba(26,58,110,.3);border:1px solid rgba(60,140,255,.2);color:rgba(140,200,255,.85)}
+.alert-red{background:rgba(192,40,28,.15);border:1px solid rgba(192,40,28,.35);color:rgba(255,160,140,.9)}
 .alert-success{background:rgba(64,208,144,.1);border:1px solid rgba(64,208,144,.25);color:rgba(80,220,160,.9)}
 .alert-warning{background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:rgba(255,200,80,.85)}
 
@@ -324,6 +325,8 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
             <div class="form-group"><label class="form-label">Horário</label><input type="time" class="form-input" id="prazoHora" value="10:00"></div>
             <button class="btn-primary" id="btnSalvarPrazo">💾 Salvar prazo</button>
           </div>
+          <!-- Painel de status e travamento — preenchido pelo JS -->
+          <div id="dashPainelPrazo" style="margin-top:.75rem"></div>
         </div>
 
         <div class="alert alert-info">Semana: <strong id="semanaLabel">—</strong></div>
