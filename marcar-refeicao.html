@@ -495,11 +495,67 @@ function atualizarBadgesPrazo(txt){
   });
 }
 
+// Verifica se prazo passou e bloqueia a tela se necessário
+async function verificarBloqueioMarcacao(){
+  try{
+    await window.HOMY_SP_READY;
+    await SP.init();
+
+    // 1. Verifica flag de liberação (toggle do admin)
+    const liberado = await SP.isCardapioLiberado().catch(()=>true);
+    if(!liberado){
+      mostrarBloqueio("🔒 Marcação encerrada",
+        "A marcação de refeições está bloqueada pelo administrador.",
+        false);
+      return false;
+    }
+
+    // 2. Verifica prazo de data/hora
+    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
+    atualizarBadgesPrazo(formatarPrazo(prazo));
+
+    if(prazo){
+      const dt = new Date(prazo);
+      if(!isNaN(dt) && new Date() > dt){
+        mostrarBloqueio("⏰ Prazo encerrado",
+          "O prazo para marcar refeições desta semana expirou em " +
+          dt.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"}) +
+          " às " + dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) + ".",
+          true);
+        return false;
+      }
+    }
+
+    return true;
+  } catch(e){
+    console.warn("[prazo]",e);
+    return true; // em caso de erro, não bloqueia
+  }
+}
+
+function mostrarBloqueio(titulo, mensagem, prazoVencido){
+  // Bloqueia view1 (seleção de colaborador)
+  const grid = document.getElementById("funcGrid");
+  const count = document.getElementById("searchCount");
+  if(count) count.textContent = "";
+  if(grid){
+    grid.innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;text-align:center">' +
+        '<div style="font-size:2.5rem">'+(prazoVencido?"⏰":"🔒")+'</div>' +
+        '<div style="font-size:1.1rem;font-weight:700;color:#fff">'+titulo+'</div>' +
+        '<div style="font-size:.88rem;color:rgba(143,170,210,.75);max-width:380px;line-height:1.6">'+mensagem+'</div>' +
+        (prazoVencido
+          ? '<div style="font-size:.78rem;color:rgba(255,160,100,.75);margin-top:.5rem">Fale com a Luana para verificar sua refeição.</div>'
+          : '') +
+      '</div>';
+  }
+}
+
 async function carregarPrazo(){
   try{
     await window.HOMY_SP_READY;
-    await SP.init(); // Só init — não chama ensureLogin para não disparar redirect
-    const prazo=await SP.getPrazoMarcacao();
+    await SP.init();
+    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
   } catch(e){
     console.warn("[prazo]",e);
@@ -543,6 +599,10 @@ async function carregarDadosSharePoint(){
       });
       return;
     }
+
+    // Verifica se marcação está liberada (flag admin + prazo)
+    const podeMarcar = await verificarBloqueioMarcacao();
+    if(!podeMarcar) return;
 
     // Logado — carrega dados normalmente
     SEMANA_ID = getSemanaAtual();
