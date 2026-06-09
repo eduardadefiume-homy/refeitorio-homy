@@ -116,33 +116,48 @@ const AdminDashboard = window.AdminDashboard = {
     const el = document.getElementById("dashPainelPrazo");
     if (!el) return;
 
-    if (!prazoISO) {
-      el.innerHTML = `<div class="alert alert-warning">⚠️ Nenhum prazo definido para esta semana.</div>`;
-      return;
+    const agora  = new Date();
+    const dt     = prazoISO ? new Date(prazoISO) : null;
+    const vencido = dt && !isNaN(dt) && agora > dt;
+
+    const fmtDt = dt && !isNaN(dt)
+      ? dt.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" }) +
+        " às " + dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+      : null;
+
+    let alertClass = "alert-info";
+    let icone      = "⏱️";
+    let statusTxt  = "";
+
+    if (!dt) {
+      statusTxt = "Nenhum prazo definido para esta semana.";
+      alertClass = "alert-warning";
+      icone = "⚠️";
+    } else if (vencido) {
+      alertClass = "alert-red";
+      icone = "🔒";
+      statusTxt = pendentes > 0
+        ? `Prazo encerrado em ${fmtDt}. ${pendentes} colaborador(es) não marcaram.`
+        : `Prazo encerrado em ${fmtDt}. ✅ Todos marcaram.`;
+    } else {
+      const msRestante = dt - agora;
+      const horas = Math.floor(msRestante / 3600000);
+      const minutos = Math.floor((msRestante % 3600000) / 60000);
+      const tempoTxt = horas > 0 ? `${horas}h ${minutos}min restantes` : `${minutos} min restantes`;
+      statusTxt = `Prazo: ${fmtDt} (${tempoTxt}). ${pendentes} colaborador(es) ainda não marcaram.`;
     }
 
-    const dt    = new Date(prazoISO);
-    const agora = new Date();
-    const vencido = agora > dt;
-
-    const fmtDt = dt.toLocaleDateString("pt-BR", {
-      weekday: "long", day: "2-digit", month: "2-digit"
-    }) + " às " + dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-
-    const alertClass = vencido ? "alert-red" : "alert-info";
-    const icone      = vencido ? "🔒" : "⏱️";
-    const statusTxt  = vencido
-      ? `Prazo encerrado. ${pendentes > 0 ? pendentes + " colaboradores não marcaram." : "Todos marcaram."}`
-      : `Prazo: ${fmtDt}. ${pendentes} colaboradores ainda não marcaram.`;
-
-    const btnVisivel = vencido && pendentes > 0;
+    // Botão de travamento manual — disponível sempre que há pendentes
+    const btnHtml = pendentes > 0
+      ? `<button id="btnTravarPendentes" class="btn-primary" style="flex-shrink:0;font-size:.82rem;padding:.5rem 1rem;margin-top:.5rem">
+           🔒 Travar ${pendentes} pendente(s) como Principal
+         </button>`
+      : "";
 
     el.innerHTML = `
-      <div class="alert ${alertClass}" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+      <div class="alert ${alertClass}" style="display:flex;flex-direction:column;gap:.5rem">
         <span>${icone} ${AdminUtils.esc(statusTxt)}</span>
-        ${btnVisivel ? `<button id="btnTravarPendentes" class="btn-primary" style="flex-shrink:0;font-size:.82rem;padding:.5rem 1rem">
-          🔒 Travar ${pendentes} pendente(s) como Principal
-        </button>` : ""}
+        ${btnHtml}
       </div>
     `;
 
@@ -360,15 +375,50 @@ const AdminDashboard = window.AdminDashboard = {
       </div>`).join("");
   },
 
+  // Mapa código → nome (mesmo do admin-extras.js)
+  _CC_MAPA: {
+    "110101":"DIRETORIA PRESIDENCIAL","110201":"DIRETORIA ADMINISTRATIVA",
+    "110202":"DIRETORIA DE PRODUTOS","120101":"ADM GERAL","120102":"CUSTOS",
+    "120103":"LEGALIZAÇÃO","120201":"CONTABILIDADE","120202":"FISCAL",
+    "120301":"FINANCEIRO","120401":"RECURSOS HUMANOS","120402":"DEPARTAMENTO PESSOAL",
+    "120501":"TI","120601":"RECEPÇÃO","120602":"PORTARIA",
+    "120603":"ASSEIO E CONSERVAÇÃO","120604":"JARDINAGEM","150101":"SUPRIMENTOS",
+    "160101":"CONTROLADORIA E COMPLIANCE","160102":"ADM CONTRATOS","170101":"SGI",
+    "180101":"P&D","190101":"PATIO EXTERNO","220101":"ADM VENDAS",
+    "220201":"COML INTERNO - SUPORTE","220202":"COML INTERNO - ATIVO",
+    "220301":"COML EXTERNO - CLT","220302":"COML EXTERNO - REPRESENTANTE",
+    "230101":"SUPORTE TECNICO INDUSTRIAL","230102":"SUPORTE TECNICO OBRAS/INFRA",
+    "240101":"MARKETING","250101":"FATURAMENTO","250102":"LOGISTICA",
+    "250103":"EXPEDIÇÃO","320101":"PRODUÇÃO","320201":"ENVASE MANUAL",
+    "320202":"ENVASE AUTOMATICO","320301":"LABORATORIO E CONTROLE QUALIDADE",
+    "360101":"APOIO A PRODUÇÃO","360102":"PCP","360201":"MANUTENÇÃO",
+    "360301":"ALMOXARIFADO DE INSUMOS"
+  },
+
+  _formatarCC(valor) {
+    if (!valor) return "Sem setor";
+    const v = String(valor).trim();
+    // Já está no formato "NOME - CÓDIGO" ou "CÓDIGO - NOME"
+    if (v.includes(" - ")) return v;
+    // É só o código numérico — busca o nome
+    if (/^\d+$/.test(v)) {
+      const nome = this._CC_MAPA[v];
+      return nome ? `${v} - ${nome}` : v;
+    }
+    return v;
+  },
+
   _renderSetores(r) {
     const el = document.getElementById("dashSetoresList");
     if (!el) return;
     const arr = r.setoresHoje || [];
     el.innerHTML = arr.length
-      ? arr.slice(0,6).map(([s,t]) => `
+      ? arr.slice(0, 8).map(([s, t]) => `
           <div class="dashboard-list-item">
-            <div><div class="dashboard-list-main">${AdminUtils.esc(s)}</div>
-            <div class="dashboard-list-sub">${t} refeições hoje</div></div>
+            <div>
+              <div class="dashboard-list-main">${AdminUtils.esc(this._formatarCC(s))}</div>
+              <div class="dashboard-list-sub">${t} refeições hoje</div>
+            </div>
             <span class="badge badge-blue">${t}</span>
           </div>`).join("")
       : `<div class="dashboard-list-item"><div class="dashboard-list-main">Sem dados hoje</div></div>`;
