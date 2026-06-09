@@ -58,8 +58,10 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 .search-count{font-size:0.72rem;color:rgba(143,170,210,0.45);margin-bottom:0.7rem;padding-left:2px}
 
 /* FUNC GRID */
-.func-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.65rem}
-.func-card{border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);padding:1rem 1.1rem;cursor:pointer;display:flex;align-items:center;gap:0.85rem;transition:all .18s}
+.func-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0.65rem}
+@media(max-width:700px){.func-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:420px){.func-grid{grid-template-columns:1fr}}
+.func-card{border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);padding:1rem 1.1rem;cursor:pointer;display:flex;align-items:center;gap:0.85rem;transition:all .18s;min-height:76px}
 .func-card:hover{background:rgba(26,58,110,0.3);border-color:rgba(60,140,255,0.3);transform:translateY(-2px)}
 .func-card:active{transform:scale(0.98)}
 .func-card.confirmado{opacity:0.4;pointer-events:none;filter:grayscale(0.5)}
@@ -140,9 +142,9 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 .modal-btn{width:100%;padding:0.9rem;border-radius:12px;font-family:"Barlow",sans-serif;font-size:1rem;font-weight:600;cursor:pointer;border:none;background:rgba(64,208,144,0.8);color:#fff;transition:all .18s}
 .modal-btn:hover{background:rgba(64,208,144,1)}
 
-@media(max-width:480px){.opcoes-grid{grid-template-columns:1fr}.func-grid{grid-template-columns:1fr}}
-@media(min-width:768px) and (orientation:landscape){.opcoes-grid{grid-template-columns:repeat(4,1fr)}.func-grid{grid-template-columns:repeat(3,1fr)}}
-@media(min-width:1024px){.opcoes-grid{grid-template-columns:repeat(4,1fr)}.func-grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:480px){.opcoes-grid{grid-template-columns:1fr}}
+@media(min-width:768px) and (orientation:landscape){.opcoes-grid{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:1024px){.opcoes-grid{grid-template-columns:repeat(4,1fr)}}
 </style>
 </head>
 <body>
@@ -507,22 +509,46 @@ async function carregarPrazo(){
 
 // ── Carregamento principal do SharePoint ─────────────────────────────────────
 async function carregarDadosSharePoint(){
-  const grid=document.getElementById("funcGrid");
-  const count=document.getElementById("searchCount");
-  grid.innerHTML='<div style="color:rgba(143,170,210,.6);font-size:.88rem;padding:1rem">Carregando colaboradores...</div>';
-  count.textContent="";
+  const grid  = document.getElementById("funcGrid");
+  const count = document.getElementById("searchCount");
+  grid.innerHTML  = '<div style="color:rgba(143,170,210,.6);font-size:.88rem;padding:1rem">Carregando...</div>';
+  count.textContent = "";
 
   try{
     await window.HOMY_SP_READY;
-    await SP.ensureLogin();
 
+    // Tenta sessão silenciosa — NÃO abre popup automático
+    const logado = await SP.init();
+
+    if(!logado){
+      // Sem sessão: mostra botão de login (popup só funciona com clique do usuário)
+      grid.innerHTML =
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;color:rgba(143,170,210,.75);text-align:center">' +
+          '<div style="font-size:2rem">🔐</div>' +
+          '<div style="font-size:.95rem;font-weight:600;color:#fff">Login necessário</div>' +
+          '<div style="font-size:.82rem">Conecte com sua conta Microsoft para acessar o refeitório.</div>' +
+          '<button id="btnLoginRefeitorio" style="margin-top:.5rem;padding:.8rem 1.8rem;border-radius:12px;border:none;background:rgba(192,40,28,.8);color:#fff;font-family:Barlow,sans-serif;font-size:.95rem;font-weight:700;cursor:pointer">Entrar com Microsoft</button>' +
+        '</div>';
+      document.getElementById("btnLoginRefeitorio").addEventListener("click", async function(){
+        this.disabled = true;
+        this.textContent = "⏳ Abrindo...";
+        try{
+          await SP.login();
+          await carregarDadosSharePoint();
+        } catch(e){
+          this.disabled = false;
+          this.textContent = "Entrar com Microsoft";
+          grid.innerHTML = '<div style="color:rgba(255,120,100,.8);font-size:.88rem;padding:1rem">Erro ao entrar: ' + (e.message||e) + '</div>';
+        }
+      });
+      return;
+    }
+
+    // Logado — carrega dados normalmente
     SEMANA_ID = getSemanaAtual();
     const datas = getWeekDatesLocal(SEMANA_ID);
+    DIAS_SEMANA.forEach((d,i)=>{ d.data = formatDataCurta(datas[i]); });
 
-    // Preenche datas nos DIAS_SEMANA
-    DIAS_SEMANA.forEach((d,i)=>{ d.data=formatDataCurta(datas[i]); });
-
-    // Carrega em paralelo
     const [colabs, itensCardapio, pedidosExistentes] = await Promise.all([
       SP.getColaboradores().catch(()=>[]),
       SP.getCardapio(SEMANA_ID).catch(()=>[]),
@@ -531,17 +557,19 @@ async function carregarDadosSharePoint(){
 
     CARDAPIO = mapCardapio(itensCardapio);
 
-    // Marca quem já pediu
-    const idsConfirmados=new Set(
+    const idsConfirmados = new Set(
       pedidosExistentes
-        .filter(p=>String(pick(p,"Status","status")||"").toLowerCase()==="confirmado" || SP.isTrue(pick(p,"Confirmado","confirmado")))
-        .map(p=>String(pick(p,"Colaborador_id","colaboradorId")||""))
+        .filter(p => {
+          const s = String(SP.pick(p,"Status","status")||"").toLowerCase();
+          return s === "confirmado" || SP.isTrue(SP.pick(p,"Confirmado","confirmado"));
+        })
+        .map(p => String(SP.pick(p,"Colaborador_id","colaboradorId")||""))
     );
 
-    FUNCIONARIOS=colabs.map(c=>({
-      id: String(c.id||""),
-      nome: String(pick(c,"Nome","Title")||"Sem nome"),
-      dept: String(pick(c,"Departamento","")||""),
+    FUNCIONARIOS = colabs.map(c=>({
+      id:         String(c.id||""),
+      nome:       String(SP.pick(c,"Nome","Title")||"Sem nome"),
+      dept:       String(SP.pick(c,"Departamento","")||""),
       confirmado: idsConfirmados.has(String(c.id||""))
     })).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
 
@@ -550,7 +578,7 @@ async function carregarDadosSharePoint(){
 
   } catch(e){
     console.error("[carregarDados]",e);
-    grid.innerHTML='<div style="color:rgba(255,120,100,.8);font-size:.88rem;padding:1rem">Erro ao carregar: '+esc(e.message)+'</div>';
+    grid.innerHTML = '<div style="color:rgba(255,120,100,.8);font-size:.88rem;padding:1rem">Erro ao carregar: ' + esc(e.message||e) + '</div>';
   }
 }
 
