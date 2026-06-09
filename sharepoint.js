@@ -556,17 +556,34 @@ const SP = window.SP = {
   },
 
   async addExtra(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor, centroCusto) {
-    return this.createItem("Extras", {
+    const fieldsBase = {
       Title:          `${semanaId}-${dia}-${nome}`,
       Semana_id:      semanaId,
       Dia:            dia,
       Nome:           nome,
       tipo:           tipo,
       Opcao:          opcao,
-      Observacao:     observacao || "",
-      Adicionado_Por: adicionadoPor || this.getUserName(),
-      Centro_Custo:   centroCusto  || ""
-    });
+      Observacao:     observacao     || "",
+      Adicionado_Por: adicionadoPor  || this.getUserName()
+    };
+
+    // Tenta primeiro com Centro_Custo; se o campo não existir no SP (erro 400),
+    // tenta sem ele — evita quebrar quando a coluna ainda não foi criada
+    if (centroCusto) {
+      try {
+        return await this.createItem("Extras", {
+          ...fieldsBase,
+          Centro_Custo: centroCusto
+        });
+      } catch (e) {
+        const msg = String(e.message || "").toLowerCase();
+        // Só ignora se for erro de campo inválido
+        if (!msg.includes("400") && !msg.includes("invalid") && !msg.includes("centro")) throw e;
+        console.warn("[SP] Centro_Custo não existe na lista Extras — criando sem o campo.");
+      }
+    }
+
+    return this.createItem("Extras", fieldsBase);
   },
 
   // addExtraPedido: grava em Extras E cria um Pedido correspondente
