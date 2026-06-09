@@ -122,7 +122,7 @@ const SP = window.SP = {
   },
 
   // ============================================================
-  // AUTENTICAÇÃO (padrão Ramais Homy — redirect + silent)
+  // AUTENTICAÇÃO — usa loginPopup (sem redirect loop)
   // ============================================================
   async init() {
     if (this._msalInstance) return !!this._account;
@@ -131,20 +131,14 @@ const SP = window.SP = {
       throw new Error("MSAL não carregou. Verifique se msal-browser.min.js está antes de sharepoint.js.");
     }
 
+    // redirectUri fixo para index.html — necessário mesmo usando popup
+    const redirectUri = window.location.origin + "/refeitorio-homy/index.html";
+
     this._msalInstance = new msal.PublicClientApplication({
       auth: {
         clientId: this.clientId,
         authority: `https://login.microsoftonline.com/${this.tenantId}`,
-        // redirectUri DEVE ser a raiz do app (index.html) — único URI registrado no Azure AD.
-        // Nunca usar window.location.pathname pois muda conforme a página.
-        redirectUri: (function(){
-          const p = window.location.pathname;
-          const marker = "/refeitorio-homy/";
-          const base = p.includes(marker)
-            ? window.location.origin + p.slice(0, p.indexOf(marker) + marker.length) + "index.html"
-            : window.location.origin + "/refeitorio-homy/index.html";
-          return base;
-        })(),
+        redirectUri,
         navigateToLoginRequestUrl: false
       },
       cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: true }
@@ -152,15 +146,17 @@ const SP = window.SP = {
 
     await this._msalInstance.initialize();
 
-    // Trata retorno do redirect
-    const redirectResult = await this._msalInstance.handleRedirectPromise();
-    if (redirectResult?.account) {
-      this._account = redirectResult.account;
-      this._msalInstance.setActiveAccount(this._account);
-      return true;
-    }
+    // Processa retorno de redirect (caso index.html receba o code)
+    try {
+      const redirectResult = await this._msalInstance.handleRedirectPromise();
+      if (redirectResult?.account) {
+        this._account = redirectResult.account;
+        this._msalInstance.setActiveAccount(this._account);
+        return true;
+      }
+    } catch (_) { /* ignora erro de redirect em páginas filhas */ }
 
-    // Reaproveita sessão existente
+    // Reaproveita sessão existente (sessionStorage)
     const active = this._msalInstance.getActiveAccount();
     if (active) { this._account = active; return true; }
 
@@ -174,28 +170,52 @@ const SP = window.SP = {
     return false;
   },
 
+  // Login via POPUP — não redireciona a página, abre janela Microsoft
   async login() {
     await this.init();
-    await this._msalInstance.loginRedirect({ scopes: this.scopes });
+    try {
+      const result = await this._msalInstance.loginPopup({
+        scopes: this.scopes,
+        prompt: "select_account"
+      });
+      if (result?.account) {
+        this._account = result.account;
+        this._msalInstance.setActiveAccount(this._account);
+        return true;
+      }
+    } catch (e) {
+      console.error("[SP] loginPopup falhou:", e);
+      throw e;
+    }
     return false;
   },
 
   async ensureLogin() {
     await this.init();
-    if (!this._account) { await this.login(); return false; }
-    return true;
+    if (!this._account) {
+      await this.login();
+    }
+    return !!this._account;
   },
 
   async logout() {
     await this.init();
     const account = this._account;
     this._account = null;
-    if (account) await this._msalInstance.logoutRedirect({ account });
+    this._msalInstance.setActiveAccount(null);
+    if (account) {
+      try {
+        await this._msalInstance.logoutPopup({ account });
+      } catch (_) {
+        await this._msalInstance.logoutRedirect({ account });
+      }
+    }
   },
 
   async getToken() {
     await this.init();
-    if (!this._account) { await this.login(); return null; }
+    if (!this._account) { await this.login(); }
+    if (!this._account) return null;
 
     try {
       const r = await this._msalInstance.acquireTokenSilent({
@@ -204,12 +224,18 @@ const SP = window.SP = {
       });
       return r.accessToken;
     } catch (e) {
-      console.warn("[SP] Token silencioso falhou; redirecionando.", e);
-      await this._msalInstance.acquireTokenRedirect({
-        scopes: this.scopes,
-        account: this._account
-      });
-      return null;
+      // Token silencioso falhou — tenta popup (não redirect)
+      console.warn("[SP] Token silencioso falhou, tentando popup.", e);
+      try {
+        const r = await this._msalInstance.acquireTokenPopup({
+          scopes: this.scopes,
+          account: this._account
+        });
+        return r.accessToken;
+      } catch (e2) {
+        console.error("[SP] acquireTokenPopup falhou:", e2);
+        throw e2;
+      }
     }
   },
 
