@@ -26,11 +26,22 @@ const AdminRelatorios = window.AdminRelatorios = {
       await SP.init();
       const todos = await SP.getItems("Pedidos");
 
+      // Descobre quais semanas estão no período
+      const semanasNoPeriodo = new Set();
+      const d = new Date(ini + "T12:00:00");
+      const fimDate = new Date(fim + "T12:00:00");
+      while (d <= fimDate) {
+        semanasNoPeriodo.add(SP.getSemanaId(d));
+        d.setDate(d.getDate() + 1);
+      }
+
       this._pedidos = todos.filter(p => {
-        // Filtra por Data_Hora ou tenta Semana_id como fallback
-        const dh   = (SP.pick(p, "Data_Hora") || "").slice(0, 10);
-        const ok   = dh && dh >= ini && dh <= fim;
-        return ok;
+        const dh = (SP.pick(p, "Data_Hora") || "").slice(0, 10);
+        // Aceita pelo Data_Hora no período
+        if (dh && dh >= ini && dh <= fim) return true;
+        // Fallback: aceita pela Semana_id que esteja no período
+        const sid = SP.pick(p, "Semana_id") || "";
+        return sid && semanasNoPeriodo.has(sid);
       });
 
       this._renderCards();
@@ -331,7 +342,47 @@ const AdminRelatorios = window.AdminRelatorios = {
 
     if (!linhas.length) { AdminUtils.toast("Nenhum dado para exportar.", "info"); return; }
 
-    const ws = XLSX.utils.json_to_sheet(linhas);
+    // Gera Excel com aoa_to_sheet para controle total do layout
+    let aoa = [];
+
+    if (tipo === "dia") {
+      const diaLinhas = linhas.slice(5); // pula os 5 rows de cabeçalho
+      aoa = [
+        ["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR DIA"],
+        [`Período: ${this._periodo.ini} a ${this._periodo.fim}`],
+        [],
+        ["Total de refeições", this._pedidos.filter(p => this._isConf(p)).length],
+        [],
+        ["Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
+        ...diaLinhas.map(r => [r.Data, r.Principal, r.Light, r.Carne, r.Massa, r.Lanche, r.Total])
+      ];
+    } else if (tipo === "cc") {
+      aoa = [
+        ["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR CENTRO DE CUSTO"],
+        [`Período: ${this._periodo.ini} a ${this._periodo.fim}`],
+        [],
+        ["Centro de Custo", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
+        ...linhas.map(r => [r.Centro_Custo, r.Principal, r.Light, r.Carne, r.Massa, r.Lanche, r.Total])
+      ];
+    } else if (tipo === "ccfunc") {
+      aoa = [
+        ["RELATÓRIO REFEITÓRIO HOMY  POR CC E FUNCIONÁRIO"],
+        [`Período: ${this._periodo.ini} a ${this._periodo.fim}`],
+        [],
+        ["Centro de Custo", "Colaborador", "Total Refeições", "Período Início", "Período Fim"],
+        ...linhas.map(r => [r.Centro_Custo, r.Colaborador, r.Total_Refeicoes, r.Periodo_Ini, r.Periodo_Fim])
+      ];
+    } else {
+      aoa = [Object.keys(linhas[0]), ...linhas.map(r => Object.values(r))];
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Largura das colunas
+    ws["!cols"] = [
+      {wch:18},{wch:12},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10}
+    ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, nomeAba);
     XLSX.writeFile(wb, `relatorio-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`);
