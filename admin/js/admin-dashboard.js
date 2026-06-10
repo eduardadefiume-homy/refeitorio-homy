@@ -312,19 +312,38 @@ const AdminDashboard = window.AdminDashboard = {
     }).join("");
   },
 
-  _renderGerencial(r) {
-    const el = document.getElementById("dashGerencialList");
-    if (!el) return;
-    el.innerHTML = [
-      ["Consumo da semana",    `${r.totalPedidosSemana} refeições`],
-      ["Pendências da semana", `${r.pendentesColaboradores} registros`],
-      ["Extras confirmados",   `${r.extrasConfirmados} extras`],
-      ["Ausências hoje",       `${r.ausenciasHoje} registros`]
-    ].map(([a,b]) => `
-      <div class="dashboard-list-item">
-        <div><div class="dashboard-list-main">${a}</div><div class="dashboard-list-sub">${b}</div></div>
-      </div>`).join("");
-  },
+_renderGerencial(r) {
+  const el = document.getElementById("dashGerencialList");
+  if (!el) return;
+
+  const itens = [
+    {
+      titulo: "Consumo da semana",
+      valor: `${r.totalPedidosSemana || 0} refeições`
+    },
+    {
+      titulo: "Pendências da semana",
+      valor: `${r.pendentesColaboradores || 0} registros`
+    },
+    {
+      titulo: "Extras confirmados",
+      valor: `${r.extrasConfirmados || 0} extras`
+    },
+    {
+      titulo: "Ausências hoje",
+      valor: `${r.ausenciasHoje || 0} registros`
+    }
+  ];
+
+  el.innerHTML = itens.map(item => `
+    <div class="dashboard-list-item">
+      <div>
+        <div class="dashboard-list-main">${AdminUtils.esc(item.titulo)}</div>
+        <div class="dashboard-list-sub">${AdminUtils.esc(item.valor)}</div>
+      </div>
+    </div>
+  `).join("");
+},
 
   // Mapa código → nome (mesmo do admin-extras.js)
   _CC_MAPA: {
