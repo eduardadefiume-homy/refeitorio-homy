@@ -1023,7 +1023,6 @@ function criarCardPedido(info) {
 
   return div;
 }
-
 function renderPedidosBusca() {
   const busca = normalizarTexto(document.getElementById("buscaColaborador").value);
   const grid = document.getElementById("funcGrid");
@@ -1031,23 +1030,30 @@ function renderPedidosBusca() {
 
   grid.innerHTML = "";
 
-  if (!busca) {
-    count.textContent = `${PEDIDOS_VISIVEIS.length} pedidos visíveis hoje`;
-    return;
-  }
-
   const dados = PEDIDOS_VISIVEIS
-    .filter(info => normalizarTexto(info.nome).includes(busca))
-    .slice(0, 80);
+    .filter(info => {
+      if (!busca) return true;
 
-  count.textContent = `${dados.length} resultado(s) encontrado(s)`;
+      return normalizarTexto(info.nome).includes(busca) ||
+        normalizarTexto(info.prato).includes(busca) ||
+        normalizarTexto(info.opcaoLabel).includes(busca) ||
+        normalizarTexto(info.centroCusto).includes(busca);
+    })
+    .slice(0, 120);
+
+  count.textContent = busca
+    ? `${dados.length} resultado(s) encontrado(s)`
+    : `${PEDIDOS_VISIVEIS.length} pedidos visíveis hoje`;
 
   if (!dados.length) {
-    grid.innerHTML = `<div class="empty-box">Nenhum pedido encontrado para esse nome.</div>`;
+    grid.innerHTML = busca
+      ? `<div class="empty-box">Nenhum pedido encontrado para esse nome.</div>`
+      : `<div class="empty-box">Nenhum pedido visível para hoje.</div>`;
     return;
   }
 
   dados.forEach(info => grid.appendChild(criarCardPedido(info)));
+
 }
 
 function diaHojeKey() {
