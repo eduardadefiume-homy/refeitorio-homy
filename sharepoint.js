@@ -849,12 +849,21 @@ const SP = {
   // ============================================================
   // DASHBOARD
   // ============================================================
-  async getDashboardResumo(semanaId) {
-    const [colabs, pedidos, extras] = await Promise.all([
-      this.getColaboradoresAtivos().catch(() => []),
-      this.getPedidos(semanaId).catch(() => []),
-      this.getExtras(semanaId).catch(() => [])
-    ]);
+const [colabs, pedidos, extras, checkIns, ausencias] = await Promise.all([
+  this.getColaboradores().catch(() => []),
+  this.getPedidos(semanaId).catch(() => []),
+  this.getExtras(semanaId).catch(() => []),
+  this.getCheckIn(semanaId, diaHojeUtil).catch(() => []),
+  this.getAusencias(true).catch(() => [])
+]);
+
+const hojeStr = hoje.toISOString().slice(0, 10);
+const ausenciasAtivasHoje = ausencias.filter(a => {
+  const ini = this.pick(a, "Data_Inicio");
+  const fim = this.pick(a, "Data_Fim");
+  if (!ini || !fim) return false;
+  return hojeStr >= ini.slice(0, 10) && hojeStr <= fim.slice(0, 10);
+}).length;
 
     const diaHoje = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"][new Date().getDay()] || "segunda";
     const isProd = p => {
@@ -895,7 +904,7 @@ const SP = {
       extrasConfirmados: extras.filter(e => this.norm(this.pick(e, "Status")) === "confirmado").length,
       extrasPendentes: extras.filter(e => this.norm(this.pick(e, "Status")) === "pendente").length,
       totalPedidosHoje: confirmadosHoje.length,
-      ausenciasHoje: pedidosHoje.filter(p => this.isAusenciaPedido(p)).length,
+      ausenciasHoje: Math.max(pedidosHoje.filter(isCancelado).length, ausenciasAtivasHoje),
       totalPedidosSemana: confirmados.length,
       principalHoje: confirmadosHoje.filter(p => this.norm(this.pick(p, "Opcao")) === "principal").length,
       lightHoje: confirmadosHoje.filter(p => this.norm(this.pick(p, "Opcao")) === "light").length,
