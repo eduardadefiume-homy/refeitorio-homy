@@ -1,544 +1,897 @@
-// admin-relatorios.js — Relatórios inteligentes do Admin Homy
-// Filtro por período, por dia, por CC, por CC+funcionário, exportação Excel
+// ============================================================
+// admin-relatorios.js
+// Versão: 2026-06-10
+// Melhorias:
+//  - CC exibido como "120501 - TI" (busca Departamento do colaborador)
+//  - Coluna Conta_Contabil no relatório de CC (vem da lista Colaboradores)
+//  - Desconto por colaborador calculado sobre qtd real de refeições
+//  - Aba Rateio Vascon no Excel no padrão enviado pela Luana
+//  - Exportação com duas abas: Relatório Principal + Rateio Vascon
+// ============================================================
 
-const AdminRelatorios = window.AdminRelatorios = {
+(function () {
 
-  _pedidos: [],
-  _periodo: { ini: "", fim: "" },
+  // ── Mapa completo CC → { descricao, conta } ─────────────────────────────────
+  // Fonte: modelo de rateio fornecido pela Luana. Conta_Contabil vem do SharePoint
+  // se preenchida; caso não esteja, usamos este fallback.
+  const CC_MAP = {
+    "110101": { descricao: "DIRETORIA PRESIDENCIAL",                  conta: "51101015" },
+    "110201": { descricao: "DIRETORIA ADMINISTRATIVA",                conta: "51101015" },
+    "110202": { descricao: "DIRETORIA DE PRODUTOS",                   conta: "51101015" },
+    "120101": { descricao: "ADM GERAL",                               conta: "51101015" },
+    "120102": { descricao: "CUSTOS",                                  conta: "51101015" },
+    "120103": { descricao: "LEGALIZAÇÃO",                             conta: "51101015" },
+    "120201": { descricao: "CONTABILIDADE",                           conta: "51101015" },
+    "120202": { descricao: "FISCAL",                                  conta: "51101015" },
+    "120301": { descricao: "FINANCEIRO",                              conta: "51101015" },
+    "120401": { descricao: "RECURSOS HUMANOS",                        conta: "51101015" },
+    "120402": { descricao: "DEPARTAMENTO PESSOAL",                    conta: "51101015" },
+    "120501": { descricao: "TI",                                      conta: "51101015" },
+    "120601": { descricao: "RECEPÇÃO",                                conta: "51101015" },
+    "120602": { descricao: "PORTARIA",                                conta: "51101015" },
+    "120603": { descricao: "ASSEIO E CONSERVAÇÃO",                    conta: "51101015" },
+    "120604": { descricao: "JARDINAGEM",                              conta: "51101015" },
+    "150101": { descricao: "SUPRIMENTOS",                             conta: "51101015" },
+    "160101": { descricao: "CONTROLADORIA E COMPLIANCE",              conta: "51101015" },
+    "160102": { descricao: "ADM CONTRATOS",                           conta: "51101015" },
+    "170101": { descricao: "SGI",                                     conta: "51101015" },
+    "180101": { descricao: "P&D",                                     conta: "51101015" },
+    "190101": { descricao: "PATIO EXTERNO",                           conta: "51101015" },
+    "220101": { descricao: "ADM VENDAS",                              conta: "51101015" },
+    "220201": { descricao: "COML INTERNO - SUPORTE",                  conta: "51101015" },
+    "220202": { descricao: "COML INTERNO - ATIVO",                    conta: "51101015" },
+    "220301": { descricao: "COML EXTERNO - CLT",                      conta: "51101015" },
+    "220302": { descricao: "COML EXTERNO - REPRESENTANTE",            conta: "51101015" },
+    "230101": { descricao: "SUPORTE TECNICO INDUSTRIAL",              conta: "51101015" },
+    "230102": { descricao: "SUPORTE TECNICO OBRAS/INFRA",             conta: "51101015" },
+    "240101": { descricao: "MARKETING",                               conta: "51101015" },
+    "250101": { descricao: "FATURAMENTO",                             conta: "51101015" },
+    "250102": { descricao: "LOGISTICA",                               conta: "51101015" },
+    "250103": { descricao: "EXPEDIÇÃO",                               conta: "51101015" },
+    "320101": { descricao: "PRODUÇÃO",                                conta: "42101015" },
+    "320201": { descricao: "ENVASE MANUAL",                           conta: "42101015" },
+    "320202": { descricao: "ENVASE AUTOMATICO",                       conta: "42101015" },
+    "320301": { descricao: "LABORATORIO E CONTROLE QUALIDADE",        conta: "42101015" },
+    "360101": { descricao: "APOIO A PRODUÇÃO",                        conta: "42101015" },
+    "360102": { descricao: "PCP",                                     conta: "42101015" },
+    "360201": { descricao: "MANUTENÇÃO",                              conta: "42101015" },
+    "360301": { descricao: "ALMOXARIFADO DE INSUMOS",                 conta: "42101015" }
+  };
 
-  async load(semanaId) {
-    // Preenche período padrão com a semana atual
-    const datas = SP.getWeekDates(semanaId);
-    const ini   = datas[0].toISOString().slice(0, 10);
-    const fim   = datas[4].toISOString().slice(0, 10);
-    AdminUtils.setVal("relDataIni", ini);
-    AdminUtils.setVal("relDataFim", fim);
-    this._bindControles();
-    await this._buscar(ini, fim);
-  },
+  // Retorna "120501 - TI" ou só "120501" se não encontrado
+  function ccComNome(cc, colaboradorData) {
+    const cod = String(cc || "").trim();
+    if (!cod) return "Sem CC";
 
-  async _buscar(ini, fim) {
-    this._periodo = { ini, fim };
-    const wrap = document.getElementById("relConteudo");
-    if (wrap) wrap.innerHTML = `<div class="alert alert-info">⏳ Carregando pedidos...</div>`;
-
-    try {
-      await SP.init();
-      const todos = await SP.getItems("Pedidos");
-
-      if (!todos.length) {
-        if (wrap) wrap.innerHTML = `<div class="alert alert-warning">⚠️ Nenhum pedido encontrado na lista Pedidos.</div>`;
-        this._pedidos = [];
-        this._renderCards();
-        return;
-      }
-
-      // Calcula semanas no período
-      const semanasNoPeriodo = new Set();
-      try {
-        const d = new Date(ini + "T12:00:00");
-        const fimDate = new Date(fim + "T12:00:00");
-        while (d <= fimDate) {
-          semanasNoPeriodo.add(SP.getSemanaId(d));
-          d.setDate(d.getDate() + 7); // avança semana a semana (mais rápido)
-        }
-      } catch(e) {
-        console.warn("[relatorios] getSemanaId falhou:", e);
-      }
-
-      this._pedidos = todos.filter(p => {
-        const dh  = (SP.pick(p, "Data_Hora") || "").slice(0, 10);
-        // 1. Data_Hora dentro do período
-        if (dh && dh >= ini && dh <= fim) return true;
-        // 2. Semana_id que cobre o período
-        const sid = SP.pick(p, "Semana_id") || "";
-        if (sid && semanasNoPeriodo.has(sid)) return true;
-        // 3. Fallback: aceita qualquer pedido cujo Dia+Semana_id seja da semana no período
-        // (pedidos automáticos sem Data_Hora correta)
-        if (sid) {
-          // Verifica se semana_id começa com o ano do período
-          const anoIni = ini.slice(0, 4);
-          if (sid.startsWith(anoIni)) return true;
-        }
-        return false;
-      });
-
-      console.log(`[relatorios] ${this._pedidos.length} pedidos carregados para ${ini} → ${fim}`);
-      this._renderCards();
-      this._renderTipo();
-    } catch (e) {
-      console.error("[relatorios] _buscar:", e);
-      if (wrap) wrap.innerHTML = `<div class="alert" style="background:rgba(220,50,50,.1);color:#ff8080">
-        ❌ Erro ao carregar: ${AdminUtils.esc(e.message)}<br>
-        <small style="opacity:.7">Verifique o console (F12) para detalhes.</small>
-      </div>`;
-    }
-  },
-
-  _isConf(p) {
-    const s = AdminUtils.norm(SP.pick(p, "Status") || "");
-    return s === "confirmado" || s === "extra" || SP.isTrue(SP.pick(p, "Confirmado"));
-  },
-
-  _countOp(lista, op) {
-    return lista.filter(p => AdminUtils.norm(SP.pick(p, "Opcao")) === op).length;
-  },
-
-  _renderCards() {
-    const conf = this._pedidos.filter(p => this._isConf(p));
-    AdminUtils.setTxt("rel-principal", this._countOp(conf, "principal"));
-    AdminUtils.setTxt("rel-light",     this._countOp(conf, "light"));
-    AdminUtils.setTxt("rel-carne",     this._countOp(conf, "carne"));
-    AdminUtils.setTxt("rel-massa",     this._countOp(conf, "massa"));
-    AdminUtils.setTxt("rel-lanche",    this._countOp(conf, "lanche"));
-    AdminUtils.setTxt("rel-total",     conf.length);
-  },
-
-  _renderTipo() {
-    const tipo = AdminUtils.getVal("relTipo") || "dia";
-    const wrap = document.getElementById("relConteudo");
-    if (!wrap) return;
-
-    const conf = this._pedidos.filter(p => this._isConf(p));
-
-    if (!conf.length) {
-      wrap.innerHTML = `<div class="alert alert-warning">
-        ⚠️ Nenhum pedido confirmado encontrado para o período <strong>${this._periodo.ini}</strong> a <strong>${this._periodo.fim}</strong>.<br>
-        <small style="opacity:.7">Total bruto carregado: ${this._pedidos.length} pedidos (incluindo não confirmados).</small>
-      </div>`;
-      return;
+    // Tenta pegar departamento do colaborador (mais preciso)
+    if (colaboradorData) {
+      const dept = colaboradorData.Departamento || colaboradorData.departamento || "";
+      if (dept) return `${cod} - ${dept.toUpperCase()}`;
     }
 
-    if (tipo === "dia")         this._renderPorDia(conf, wrap);
-    else if (tipo === "cc")     this._renderPorCC(conf, wrap);
-    else if (tipo === "ccfunc") this._renderPorCCFunc(conf, wrap);
-  },
+    // Fallback no mapa
+    const info = CC_MAP[cod];
+    return info ? `${cod} - ${info.descricao}` : cod;
+  }
 
-  // Mapa dia → data real baseado no período selecionado
-  _getDiaParaData() {
-    // Retorna mapa { "segunda": "2026-06-08", "terca": "2026-06-09", ... }
-    // baseado no período buscado (usa a semana que contém a data de início)
-    const ini = this._periodo.ini;
-    if (!ini) return {};
-    // Encontra a segunda-feira da semana do início
-    const d = new Date(ini + "T12:00:00");
-    const dow = d.getDay(); // 0=dom, 1=seg...
-    const seg = new Date(d);
-    seg.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
-    const DIAS = ["segunda","terca","quarta","quinta","sexta"];
-    const mapa = {};
-    DIAS.forEach((dia, i) => {
-      const dt = new Date(seg);
-      dt.setDate(seg.getDate() + i);
-      mapa[dia] = dt.toISOString().slice(0, 10);
+  function contaContabil(cc, colaboradorData) {
+    const cod = String(cc || "").trim();
+    // Tenta pegar Conta_Contabil do colaborador
+    if (colaboradorData) {
+      const conta = colaboradorData.Conta_Contabil || colaboradorData.conta_contabil || "";
+      if (conta) return String(conta).trim();
+    }
+    const info = CC_MAP[cod];
+    return info ? info.conta : "51101015";
+  }
+
+  const DIA_LABEL = {
+    segunda: "Segunda-feira",
+    terca:   "Terça-feira",
+    quarta:  "Quarta-feira",
+    quinta:  "Quinta-feira",
+    sexta:   "Sexta-feira",
+    sabado:  "Sábado",
+    domingo: "Domingo"
+  };
+
+  const TIPOS = {
+    "resumo-dia":   "Resumo por dia",
+    "centro-custo": "Valor total por centro de custo",
+    "colaborador":  "Quantidade por colaborador"
+  };
+
+  const COLUNAS_TIPO = {
+    "resumo-dia":   ["Dia", "Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
+    "centro-custo": ["Centro de custo", "Descrição", "Quantidade", "Valor Vascon", "Desconto funcionários", "Rateio NF"],
+    "colaborador":  ["Colaborador", "Centro de custo", "Quantidade", "Valor unitário desconto", "Total desconto em folha", "Valor Vascon estimado"]
+  };
+
+  const state = {
+    pedidos:       [],
+    colaboradores: [],
+    valores:       [],
+    resultado:     null
+  };
+
+  // ── Cache de colaboradores por id e por nome ──────────────────────────────
+  let _colabById   = {};
+  let _colabByNome = {};
+
+  function buildColabCache() {
+    _colabById   = {};
+    _colabByNome = {};
+    (state.colaboradores || []).forEach(c => {
+      const id   = String(c.id || c.ID || "");
+      const nome = normalizar(c.Nome || c.Title || "");
+      if (id)   _colabById[id]   = c;
+      if (nome) _colabByNome[nome] = c;
     });
-    return mapa;
-  },
+  }
 
-  _renderPorDia(conf, wrap) {
-    // Agrupa por campo Dia (nome do dia da semana) e mostra data real
-    const diaParaData = this._getDiaParaData();
-    const ORDEM_DIAS = ["segunda","terca","quarta","quinta","sexta"];
+  function getColabData(pedido) {
+    const id   = String(pedido.Colaborador_id || pedido.colaborador_id || "");
+    const nome = normalizar(pedido.Colaborador_nome || pedido.colaborador_nome || "");
+    return _colabById[id] || _colabByNome[nome] || null;
+  }
 
-    // Também aceita pedidos agrupados por Data_Hora para compatibilidade
-    const mapasDia   = {};  // { "segunda": [pedidos] }
-    const mapaData   = {};  // { "2026-06-09": [pedidos] }
+  function $(id) { return document.getElementById(id); }
 
-    conf.forEach(p => {
-      const diaNorm = AdminUtils.norm(SP.pick(p,"Dia") || "");
-      const dtPed   = (SP.pick(p,"Data_Hora") || "").slice(0,10);
+  function normalizar(valor) {
+    return String(valor || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  }
 
-      if (ORDEM_DIAS.includes(diaNorm)) {
-        if (!mapasDia[diaNorm]) mapasDia[diaNorm] = [];
-        mapasDia[diaNorm].push(p);
-      } else if (dtPed) {
-        if (!mapaData[dtPed]) mapaData[dtPed] = [];
-        mapaData[dtPed].push(p);
+  function moeda(valor) {
+    return Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function dataBR(data) {
+    if (!data) return "";
+    if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      const [ano, mes, dia] = data.split("-");
+      return `${dia}/${mes}/${ano}`;
+    }
+    const d = new Date(data);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("pt-BR");
+  }
+
+  function toInputDate(data) {
+    const d = new Date(data);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  function slug(valor) {
+    return normalizar(valor).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  }
+
+  function isTrue(valor) {
+    if (window.SP && typeof SP.isTrue === "function") return SP.isTrue(valor);
+    return ["true", "sim", "1", "yes"].includes(normalizar(valor));
+  }
+
+  function semanaAtualFallback() {
+    if (typeof window.getSemanaIdAtualSelecionada === "function") return window.getSemanaIdAtualSelecionada();
+    if (window.AdminState && AdminState.getSemanaId) return AdminState.getSemanaId();
+    const d = new Date(); d.setHours(0,0,0,0);
+    d.setDate(d.getDate()+3-((d.getDay()+6)%7));
+    const w1 = new Date(d.getFullYear(),0,4);
+    const wn = 1+Math.round(((d-w1)/86400000-3+((w1.getDay()+6)%7))/7);
+    return `${d.getFullYear()}-W${String(wn).padStart(2,"0")}`;
+  }
+
+  function inicioSemanaISO(ano, semana) {
+    const jan4  = new Date(ano, 0, 4);
+    const start = new Date(jan4);
+    start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (semana-1)*7);
+    return start;
+  }
+
+  function diaSemanaCompleto(d) {
+    return ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"][d.getDay()];
+  }
+
+  function dataPedido(pedido) {
+    const dh = pedido.Data_Hora || pedido.data_hora || pedido.DataHora;
+    if (dh) {
+      const d = new Date(dh);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+
+    const semId  = pedido.Semana_id || pedido.semana_id || "";
+    const dia    = pedido.Dia || pedido.dia || "";
+    const match  = semId.match(/(\d{4})-W(\d{1,2})/i);
+
+    if (match && dia) {
+      const segunda = inicioSemanaISO(Number(match[1]), Number(match[2]));
+      const mapa = { segunda:0, terca:1, "terça":1, quarta:2, quinta:3, sexta:4, sabado:5, "sábado":5, domingo:6 };
+      const idx  = mapa[normalizar(dia)];
+      if (idx !== undefined) {
+        const d = new Date(segunda);
+        d.setDate(d.getDate() + idx);
+        return d;
       }
-    });
+    }
+    return null;
+  }
 
-    // Constrói linhas: primeiro pelos dias nomeados (com data real), depois por data bruta
-    const linhas = [];
+  function diaChave(data) {
+    return ["domingo","segunda","terca","quarta","quinta","sexta","sabado"][new Date(data).getDay()];
+  }
 
-    ORDEM_DIAS.forEach(dia => {
-      if (!mapasDia[dia]) return;
-      const lista    = mapasDia[dia];
-      const dataReal = diaParaData[dia] || dia;
-      linhas.push({ label: dataReal, lista });
-      // Remove do mapaData para não duplicar
-      if (mapaData[dataReal]) delete mapaData[dataReal];
-    });
+  function getStatusPedido(pedido) {
+    return normalizar(pedido.Status || pedido.status || "");
+  }
 
-    // Pedidos sem campo Dia nomeado — agrupa pela data do Data_Hora
-    Object.entries(mapaData).sort(([a],[b])=>a.localeCompare(b)).forEach(([data,lista])=>{
-      linhas.push({ label: data, lista });
-    });
+  function pedidoConta(pedido) {
+    const status = getStatusPedido(pedido);
+    if (["cancelado","bloqueado","afastado","ferias","férias","nao vai almocar","não vai almoçar"].includes(status)) return false;
+    if (pedido.Confirmado === false || pedido.confirmado === false) return false;
+    return true;
+  }
 
-    linhas.sort((a,b)=>a.label.localeCompare(b.label));
+  function getOpcao(pedido) {
+    const raw = normalizar(pedido.Opcao || pedido.opcao || pedido.Nome_Prato || pedido.nomePrato || "");
+    if (raw.includes("principal")) return "principal";
+    if (raw.includes("light") || raw.includes("ligth")) return "light";
+    if (raw.includes("carne")) return "carne";
+    if (raw.includes("massa")) return "massa";
+    if (raw.includes("lanche")) return "lanche";
+    return raw || "principal";
+  }
 
-    wrap.innerHTML = `
-      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">📅 Por dia — período ${this._periodo.ini} a ${this._periodo.fim}</div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead><tr><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
-          <tbody>
-            ${linhas.length ? linhas.map(({label, lista}) => `<tr>
-              <td>${label}</td>
-              <td>${this._countOp(lista,"principal")}</td>
-              <td>${this._countOp(lista,"light")}</td>
-              <td>${this._countOp(lista,"carne")}</td>
-              <td>${this._countOp(lista,"massa")}</td>
-              <td>${this._countOp(lista,"lanche")}</td>
-              <td><strong>${lista.length}</strong></td>
-            </tr>`).join("") + `
-            <tr style="border-top:2px solid rgba(255,255,255,.15)">
-              <td><strong>Total semana</strong></td>
-              <td>${this._countOp(conf,"principal")}</td>
-              <td>${this._countOp(conf,"light")}</td>
-              <td>${this._countOp(conf,"carne")}</td>
-              <td>${this._countOp(conf,"massa")}</td>
-              <td>${this._countOp(conf,"lanche")}</td>
-              <td><strong>${conf.length}</strong></td>
-            </tr>` : `<tr><td colspan="7" class="empty-cell">Nenhum pedido no período.</td></tr>`}
-          </tbody>
-        </table>
-      </div>`;
-  },
+  function getNomeColaborador(pedido) {
+    return pedido.Colaborador_nome || pedido.colaborador_nome || pedido.Colaborador || pedido.colaborador || pedido.Title || "Sem nome";
+  }
 
-  _renderPorCC(conf, wrap) {
-    const mapa = {};
-    conf.forEach(p => {
-      const cc = SP.pick(p, "Centro_Custo") || "Sem CC";
-      if (!mapa[cc]) mapa[cc] = [];
-      mapa[cc].push(p);
-    });
+  function getColaboradorId(pedido) {
+    return String(pedido.Colaborador_id || pedido.colaborador_id || pedido.ColaboradorId || pedido.colaboradorId || "");
+  }
 
-    const sorted = Object.entries(mapa).sort((a, b) => b[1].length - a[1].length);
+  function getCentroCustoRaw(pedido) {
+    const direto = pedido.Centro_Custo || pedido.centro_custo || pedido.CentroCusto || pedido.centroCusto;
+    if (direto) return String(direto).trim();
+    const colab = getColabData(pedido);
+    return String(colab?.Centro_Custo || colab?.centro_custo || "").trim() || "Sem CC";
+  }
 
-    wrap.innerHTML = `
-      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">🏢 Por centro de custo — período ${this._periodo.ini} a ${this._periodo.fim}</div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead><tr><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th></tr></thead>
-          <tbody>
-            ${sorted.length ? sorted.map(([cc, lista]) => `<tr>
-              <td>${AdminUtils.esc(cc)}</td>
-              <td>${this._countOp(lista, "principal")}</td>
-              <td>${this._countOp(lista, "light")}</td>
-              <td>${this._countOp(lista, "carne")}</td>
-              <td>${this._countOp(lista, "massa")}</td>
-              <td>${this._countOp(lista, "lanche")}</td>
-              <td><strong>${lista.length}</strong></td>
-            </tr>`).join("") : `<tr><td colspan="7" class="empty-cell">Nenhum pedido no período.</td></tr>`}
-          </tbody>
-        </table>
-      </div>`;
-  },
+  function valorNumero(valor) {
+    return Number(String(valor || "0").replace(",", ".")) || 0;
+  }
 
-  _renderPorCCFunc(conf, wrap) {
-    // Agrupa por CC e dentro por colaborador
-    const mapa = {};
-    conf.forEach(p => {
-      const cc   = SP.pick(p, "Centro_Custo")      || "Sem CC";
-      const nome = SP.pick(p, "Colaborador_nome", "Title") || "Desconhecido";
-      const key  = `${cc}||${nome}`;
-      if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
-      mapa[key].lista.push(p);
-    });
+  async function safe(fn, fallback = []) {
+    try { return await fn(); }
+    catch (erro) { console.warn("Falha no relatório:", erro); return fallback; }
+  }
 
-    const sorted = Object.values(mapa).sort((a, b) =>
-      a.cc.localeCompare(b.cc) || b.lista.length - a.lista.length
+  async function carregarDados(semanaId) {
+    if (!window.SP) throw new Error("SP não carregado.");
+
+    state.colaboradores = await safe(() =>
+      SP.getTodosColaboradores ? SP.getTodosColaboradores() : SP.getColaboradores(), []
     );
 
-    let ccAtual = null;
-    const linhas = sorted.map(({ cc, nome, lista }) => {
-      let cabecalho = "";
-      if (cc !== ccAtual) {
-        ccAtual = cc;
-        const totalCC = sorted.filter(x => x.cc === cc).reduce((s, x) => s + x.lista.length, 0);
-        cabecalho = `<tr style="background:rgba(255,255,255,.06)">
-          <td colspan="4" style="font-weight:700;color:#fff">🏢 ${AdminUtils.esc(cc)} — ${totalCC} refeições</td>
-        </tr>`;
+    buildColabCache();
+
+    if (SP.getItems) {
+      state.pedidos = await safe(() => SP.getItems("Pedidos"), []);
+    } else {
+      state.pedidos = await safe(() => SP.getPedidos(semanaId || semanaAtualFallback()), []);
+    }
+
+    if (SP.getValoresRefeicao) {
+      state.valores = await safe(() => SP.getValoresRefeicao(), []);
+    } else if (SP.getItems) {
+      state.valores = await safe(() => SP.getItems("Valores de Refeição"), []);
+    } else {
+      state.valores = [];
+    }
+  }
+
+  function obterValorPeriodo(dataInicio, dataFim) {
+    const ini = new Date(`${dataInicio}T00:00:00`);
+    const fim = new Date(`${dataFim}T23:59:59`);
+
+    const ativos = (state.valores || []).filter(v => {
+      const ativo = v.Ativo === undefined ? true : isTrue(v.Ativo);
+      const vi = v.Data_Inicio ? new Date(v.Data_Inicio) : null;
+      const vf = v.Data_Fim    ? new Date(v.Data_Fim)    : null;
+      if (!ativo) return false;
+      if (!vi || !vf) return true;
+      return vi <= fim && vf >= ini;
+    });
+
+    const v = ativos[0] || state.valores[0] || {};
+    return {
+      valorVascon:   valorNumero(v.Valor_Vascon   || v.valorVascon),
+      valorDesconto: valorNumero(v.Valor_Desconto_Funcionario || v.valorDescontoFuncionario || v.valorDesconto)
+    };
+  }
+
+  function filtrarPedidos(filtros) {
+    const ini = new Date(`${filtros.dataInicio}T00:00:00`);
+    const fim = new Date(`${filtros.dataFim}T23:59:59`);
+    return (state.pedidos || []).filter(p => {
+      if (!pedidoConta(p)) return false;
+      const data = dataPedido(p);
+      return data && data >= ini && data <= fim;
+    });
+  }
+
+  function montarResumoDia(filtros, pedidos) {
+    const linhas = [];
+    const ini = new Date(`${filtros.dataInicio}T00:00:00`);
+    const fim = new Date(`${filtros.dataFim}T00:00:00`);
+
+    for (let d = new Date(ini); d <= fim; d.setDate(d.getDate()+1)) {
+      const chave    = toInputDate(d);
+      const pedidosDia = pedidos.filter(p => {
+        const data = dataPedido(p);
+        return data && toInputDate(data) === chave;
+      });
+      const cont = { principal:0, light:0, carne:0, massa:0, lanche:0 };
+      pedidosDia.forEach(p => { const op = getOpcao(p); if (cont[op] !== undefined) cont[op]++; });
+      linhas.push({
+        "Dia":       DIA_LABEL[diaChave(d)] || diaSemanaCompleto(d),
+        "Data":      dataBR(d),
+        "Principal": cont.principal,
+        "Light":     cont.light,
+        "Carne":     cont.carne,
+        "Massa":     cont.massa,
+        "Lanche":    cont.lanche,
+        "Total":     pedidosDia.length
+      });
+    }
+    return linhas;
+  }
+
+  function montarCentroCusto(pedidos, valores, nf) {
+    const mapa = {};
+
+    pedidos.forEach(p => {
+      const ccRaw   = getCentroCustoRaw(p);
+      const colab   = getColabData(p);
+      const ccLabel = ccComNome(ccRaw, colab);
+      const conta   = contaContabil(ccRaw, colab);
+
+      if (!mapa[ccRaw]) {
+        mapa[ccRaw] = {
+          "_ccRaw":              ccRaw,
+          "_conta":              conta,
+          "Centro de custo":     ccLabel,
+          "Descrição":           (CC_MAP[ccRaw]?.descricao || (colab?.Departamento || "").toUpperCase() || ccRaw),
+          "Quantidade":          0,
+          "Valor Vascon":        0,
+          "Desconto funcionários": 0,
+          "Rateio NF":           0
+        };
       }
-      return cabecalho + `<tr>
-        <td style="padding-left:1.5rem">${AdminUtils.esc(nome)}</td>
-        <td>${AdminUtils.esc(cc)}</td>
-        <td>${lista.length}</td>
-        <td style="font-size:.78rem;color:rgba(143,170,210,.6)">
-          ${[...new Set(lista.map(p => (SP.pick(p, "Data_Hora") || "").slice(0, 10)).filter(Boolean))].sort().join(", ")}
-        </td>
-      </tr>`;
-    }).join("");
 
-    wrap.innerHTML = `
-      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">👤 Por CC e funcionário — período ${this._periodo.ini} a ${this._periodo.fim}</div>
-      <div class="alert alert-info" style="margin-bottom:.8rem">Total de refeições por colaborador no período — use para cálculo de desconto em folha.</div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Total refeições</th><th>Datas</th></tr></thead>
-          <tbody>${linhas || `<tr><td colspan="4" class="empty-cell">Nenhum pedido no período.</td></tr>`}</tbody>
-        </table>
-      </div>`;
-  },
+      mapa[ccRaw]["Quantidade"]++;
+      mapa[ccRaw]["Valor Vascon"]        += valores.valorVascon;
+      mapa[ccRaw]["Desconto funcionários"] += valores.valorDesconto;
+    });
 
-  // ── Exportação Excel ─────────────────────────────────────────
-  // ── Exportação Excel com padrão visual Homy ──────────────────
-  async _exportar() {
-    const tipo = AdminUtils.getVal("relTipo") || "dia";
-    const conf = this._pedidos.filter(p => this._isConf(p));
-    if (!conf.length) { AdminUtils.toast("Nenhum dado para exportar.", "info"); return; }
+    const total = pedidos.length || 1;
+    Object.values(mapa).forEach(l => {
+      l["Rateio NF"] = nf ? nf * (l["Quantidade"] / total) : 0;
+    });
 
-    if (typeof ExcelJS === "undefined") {
-      AdminUtils.toast("Biblioteca ExcelJS não carregou. Verifique conexão.", "error");
+    return Object.values(mapa).sort((a, b) => String(a._ccRaw).localeCompare(String(b._ccRaw)));
+  }
+
+  function montarColaborador(pedidos, valores) {
+    const mapa = {};
+
+    pedidos.forEach(p => {
+      const nome  = getNomeColaborador(p);
+      const ccRaw = getCentroCustoRaw(p);
+      const colab = getColabData(p);
+      const ccLabel = ccComNome(ccRaw, colab);
+      const key   = `${nome}|${ccRaw}`;
+
+      if (!mapa[key]) {
+        mapa[key] = {
+          "Colaborador":              nome,
+          "Centro de custo":          ccLabel,
+          "Quantidade":               0,
+          "Valor unitário desconto":  valores.valorDesconto,
+          "Total desconto em folha":  0,
+          "Valor Vascon estimado":    0
+        };
+      }
+
+      mapa[key]["Quantidade"]++;
+      mapa[key]["Total desconto em folha"] += valores.valorDesconto;
+      mapa[key]["Valor Vascon estimado"]   += valores.valorVascon;
+    });
+
+    return Object.values(mapa).sort((a, b) =>
+      String(a["Centro de custo"]).localeCompare(String(b["Centro de custo"])) ||
+      String(a.Colaborador).localeCompare(String(b.Colaborador))
+    );
+  }
+
+  // ── Rateio Vascon — igual ao modelo impresso ──────────────────────────────
+  function montarRateioVascon(pedidos, valores, nf) {
+    // Monta por CC com conta contábil
+    const mapaCC = {};
+
+    pedidos.forEach(p => {
+      const ccRaw = getCentroCustoRaw(p);
+      const colab = getColabData(p);
+      const info  = CC_MAP[ccRaw];
+      const conta = contaContabil(ccRaw, colab);
+      const descr = info?.descricao || (colab?.Departamento || "").toUpperCase() || ccRaw;
+
+      if (!mapaCC[ccRaw]) {
+        mapaCC[ccRaw] = { conta, cc: ccRaw, descricao: descr, qtde: 0 };
+      }
+      mapaCC[ccRaw].qtde++;
+    });
+
+    const total = pedidos.length || 1;
+
+    // Inclui todos os CCs do mapa (mesmo os com 0) para mostrar rateio completo
+    const todos = Object.keys(CC_MAP).reduce((acc, cc) => {
+      if (!acc[cc]) {
+        acc[cc] = {
+          conta:    CC_MAP[cc].conta,
+          cc,
+          descricao: CC_MAP[cc].descricao,
+          qtde:      0
+        };
+      }
+      return acc;
+    }, { ...mapaCC });
+
+    return Object.values(todos).sort((a, b) => String(a.cc).localeCompare(String(b.cc))).map(r => ({
+      conta:    r.conta,
+      cc:       r.cc,
+      descricao: r.descricao,
+      qtde:     r.qtde,
+      soma:     r.qtde * valores.valorVascon,
+      pct:      total > 0 ? (r.qtde / total) : 0
+    }));
+  }
+
+  function atualizarCards(pedidos, valores, filtros) {
+    const total    = pedidos.length;
+    const custo    = total * valores.valorVascon;
+    const desconto = total * valores.valorDesconto;
+    const cont = { principal:0, light:0, carne:0, massa:0, lanche:0 };
+    pedidos.forEach(p => { const op = getOpcao(p); if (cont[op] !== undefined) cont[op]++; });
+
+    $("relTotalGeral").textContent    = total;
+    $("relCustoVascon").textContent   = moeda(custo);
+    $("relDescontoFolha").textContent = moeda(desconto);
+    $("relDiferencaNF").textContent   = filtros.nf ? moeda(filtros.nf - custo) : "—";
+
+    $("rel-principal").textContent = cont.principal;
+    $("rel-light").textContent     = cont.light;
+    $("rel-carne").textContent     = cont.carne;
+    $("rel-massa").textContent     = cont.massa;
+    $("rel-lanche").textContent    = cont.lanche;
+  }
+
+  function linhasDoTipo(resultado) {
+    if (resultado.filtros.tipo === "centro-custo") return resultado.centroCusto;
+    if (resultado.filtros.tipo === "colaborador")  return resultado.colaborador;
+    return resultado.resumoDia;
+  }
+
+  function colunasDoTipo(tipo, linhas) {
+    // Remove chaves internas (_ccRaw, _conta)
+    if (linhas && linhas.length) return Object.keys(linhas[0]).filter(k => !k.startsWith("_"));
+    return COLUNAS_TIPO[tipo] || ["Sem dados"];
+  }
+
+  function valorTela(valor) {
+    if (typeof valor === "number") {
+      // Monetário ou percentual
+      if (valor > 0 && valor < 1) return (valor * 100).toFixed(2).replace(".", ",") + "%";
+      return String(valor).replace(".", ",");
+    }
+    return valor ?? "";
+  }
+
+  function renderTabela(resultado) {
+    const linhas  = linhasDoTipo(resultado);
+    const colunas = colunasDoTipo(resultado.filtros.tipo, linhas);
+    const titulo  = TIPOS[resultado.filtros.tipo] || "Relatório";
+
+    $("relTituloTabela").textContent = titulo;
+    $("relHead").innerHTML = `<tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>`;
+
+    if (!linhas.length) {
+      $("relTableFinal").innerHTML = `<tr><td colspan="${colunas.length}" style="text-align:center;padding:2rem;color:rgba(143,170,210,0.4)">Sem dados no período.</td></tr>`;
       return;
     }
 
-    const wb  = new ExcelJS.Workbook();
-    wb.creator  = "Refeitório Homy Química";
-    wb.created  = new Date();
+    $("relTableFinal").innerHTML = linhas.map(linha =>
+      `<tr>${colunas.map(c => `<td>${valorTela(linha[c])}</td>`).join("")}</tr>`
+    ).join("");
+  }
 
-    // ── Cores padrão Homy ──────────────────────────────────────
-    const COR_AZUL   = "FF0A1E3D";   // azul escuro (header)
-    const COR_VERM   = "FFC0281C";   // vermelho Homy (sub-header)
-    const COR_BEGE   = "FFF5F5F5";   // linhas pares
-    const COR_BRANCO = "FFFFFFFF";
-
-    const estTitulo = {
-      font:      { bold: true, color: { argb: COR_BRANCO }, size: 13, name: "Calibri" },
-      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_AZUL } },
-      alignment: { horizontal: "center", vertical: "middle" }
-    };
-    const estPeriodo = {
-      font:      { bold: true, color: { argb: COR_BRANCO }, size: 11, name: "Calibri" },
-      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_VERM } },
-      alignment: { horizontal: "center", vertical: "middle" }
-    };
-    const estCabecalho = {
-      font:      { bold: true, color: { argb: COR_BRANCO }, size: 10, name: "Calibri" },
-      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_AZUL } },
-      alignment: { horizontal: "center", vertical: "middle" },
-      border: {
-        bottom: { style: "thin", color: { argb: COR_VERM } }
-      }
-    };
-    const estDado = (par) => ({
-      font:      { size: 10, name: "Calibri" },
-      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: par ? COR_BEGE : COR_BRANCO } },
-      alignment: { horizontal: "center", vertical: "middle" },
-      border: {
-        bottom: { style: "hair", color: { argb: "FFE0E0E0" } }
-      }
-    });
-    const estDadoEsq = (par) => ({
-      ...estDado(par),
-      alignment: { horizontal: "left", vertical: "middle" }
-    });
-    const estTotal = {
-      font:      { bold: true, size: 10, name: "Calibri", color: { argb: COR_BRANCO } },
-      fill:      { type: "pattern", pattern: "solid", fgColor: { argb: COR_AZUL } },
-      alignment: { horizontal: "center", vertical: "middle" }
-    };
-
-    function aplicarEstilo(cell, est) {
-      if (!est) return;
-      if (est.font)      cell.font      = est.font;
-      if (est.fill)      cell.fill      = est.fill;
-      if (est.alignment) cell.alignment = est.alignment;
-      if (est.border)    cell.border    = est.border;
-    }
-
-    function mesclar(ws, inicio, fim) {
-      ws.mergeCells(`${inicio}:${fim}`);
-    }
-
-    function fmtData(v) {
-      if (!v) return v;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-        const [y,m,d] = v.split("-");
-        return `${d}/${m}/${y}`;
-      }
-      return v;
-    }
-
-    // ── Por Dia ────────────────────────────────────────────────
-    if (tipo === "dia") {
-      const ws = wb.addWorksheet("Por Dia");
-      ws.columns = [
-        { width: 18 }, { width: 13 }, { width: 10 },
-        { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 }
-      ];
-
-      // Linha 1 — Título
-      ws.addRow(["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR DIA"]);
-      mesclar(ws, "A1", "G1");
-      ws.getRow(1).height = 24;
-      aplicarEstilo(ws.getCell("A1"), estTitulo);
-
-      // Linha 2 — Período
-      ws.addRow([`Período: ${fmtData(this._periodo.ini)} a ${fmtData(this._periodo.fim)}`]);
-      mesclar(ws, "A2", "G2");
-      ws.getRow(2).height = 20;
-      aplicarEstilo(ws.getCell("A2"), estPeriodo);
-
-      // Linha 3 — vazia
-      ws.addRow([]);
-
-      // Linha 4 — Total
-      ws.addRow(["Total de refeições", conf.length]);
-      ws.getCell("A4").font = { bold: true, size: 10 };
-      ws.getCell("B4").font = { bold: true, size: 10 };
-
-      // Linha 5 — vazia
-      ws.addRow([]);
-
-      // Linha 6 — Cabeçalhos
-      const cabRow = ws.addRow(["Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"]);
-      ws.getRow(6).height = 20;
-      cabRow.eachCell(cell => aplicarEstilo(cell, estCabecalho));
-
-      // Dados por dia
-      const diaParaData = this._getDiaParaData();
-      const ORDEM_DIAS  = ["segunda","terca","quarta","quinta","sexta"];
-      const mapasDia = {}; const mapaData = {};
-      conf.forEach(p => {
-        const dn = AdminUtils.norm(SP.pick(p,"Dia")||"");
-        const dt = (SP.pick(p,"Data_Hora")||"").slice(0,10);
-        if (ORDEM_DIAS.includes(dn)) { if(!mapasDia[dn]) mapasDia[dn]=[]; mapasDia[dn].push(p); }
-        else if (dt) { if(!mapaData[dt]) mapaData[dt]=[]; mapaData[dt].push(p); }
-      });
-      const linhas2 = [];
-      ORDEM_DIAS.forEach(dia => {
-        if (!mapasDia[dia]) return;
-        const data = diaParaData[dia] || dia;
-        linhas2.push({ label: data, lista: mapasDia[dia] });
-        if (mapaData[data]) delete mapaData[data];
-      });
-      Object.entries(mapaData).sort(([a],[b])=>a.localeCompare(b)).forEach(([data,lista])=>linhas2.push({label:data,lista}));
-      linhas2.sort((a,b)=>a.label.localeCompare(b.label));
-
-      linhas2.forEach(({label, lista}, i) => {
-        const par = i % 2 === 0;
-        const r = ws.addRow([
-          fmtData(label),
-          this._countOp(lista,"principal"),
-          this._countOp(lista,"light"),
-          this._countOp(lista,"carne"),
-          this._countOp(lista,"massa"),
-          this._countOp(lista,"lanche"),
-          lista.length
-        ]);
-        r.getCell(1).alignment = { horizontal: "left" };
-        r.eachCell((cell, col) => aplicarEstilo(cell, col === 1 ? estDadoEsq(par) : estDado(par)));
-      });
-
-      // Linha total final
-      const totalRow = ws.addRow([
-        "TOTAL",
-        this._countOp(conf,"principal"),
-        this._countOp(conf,"light"),
-        this._countOp(conf,"carne"),
-        this._countOp(conf,"massa"),
-        this._countOp(conf,"lanche"),
-        conf.length
-      ]);
-      totalRow.eachCell(cell => aplicarEstilo(cell, estTotal));
-
-      // Filtro automático na linha 6
-      ws.autoFilter = { from: "A6", to: "G6" };
-
-    // ── Por CC ─────────────────────────────────────────────────
-    } else if (tipo === "cc") {
-      const ws = wb.addWorksheet("Por CC");
-      ws.columns = [{width:42},{width:13},{width:10},{width:10},{width:10},{width:10},{width:10}];
-      ws.addRow(["RELATÓRIO REFEITÓRIO HOMY  QUANTIDADE POR CENTRO DE CUSTO"]);
-      mesclar(ws, "A1", "G1"); ws.getRow(1).height = 24;
-      aplicarEstilo(ws.getCell("A1"), estTitulo);
-      ws.addRow([`Período: ${fmtData(this._periodo.ini)} a ${fmtData(this._periodo.fim)}`]);
-      mesclar(ws, "A2", "G2"); ws.getRow(2).height = 20;
-      aplicarEstilo(ws.getCell("A2"), estPeriodo);
-      ws.addRow([]);
-      const cab = ws.addRow(["Centro de Custo","Principal","Light","Carne","Massa","Lanche","Total"]);
-      ws.getRow(4).height = 20;
-      cab.eachCell(cell => aplicarEstilo(cell, estCabecalho));
-      const mapa = {};
-      conf.forEach(p => { const cc = SP.pick(p,"Centro_Custo")||"Sem CC"; if(!mapa[cc])mapa[cc]=[]; mapa[cc].push(p); });
-      Object.entries(mapa).sort((a,b)=>b[1].length-a[1].length).forEach(([cc,lista],i) => {
-        const par = i%2===0;
-        const r = ws.addRow([cc,this._countOp(lista,"principal"),this._countOp(lista,"light"),this._countOp(lista,"carne"),this._countOp(lista,"massa"),this._countOp(lista,"lanche"),lista.length]);
-        r.getCell(1).alignment={horizontal:"left"};
-        r.eachCell((cell,col)=>aplicarEstilo(cell,col===1?estDadoEsq(par):estDado(par)));
-      });
-      const tr = ws.addRow(["TOTAL",this._countOp(conf,"principal"),this._countOp(conf,"light"),this._countOp(conf,"carne"),this._countOp(conf,"massa"),this._countOp(conf,"lanche"),conf.length]);
-      tr.eachCell(cell=>aplicarEstilo(cell,estTotal));
-      ws.autoFilter = { from:"A4", to:"G4" };
-
-    // ── Por CC + Funcionário ───────────────────────────────────
-    } else if (tipo === "ccfunc") {
-      const ws = wb.addWorksheet("Por CC e Funcionario");
-      ws.columns = [{width:42},{width:32},{width:16},{width:14},{width:14}];
-      ws.addRow(["RELATÓRIO REFEITÓRIO HOMY  POR CC E FUNCIONÁRIO"]);
-      mesclar(ws,"A1","E1"); ws.getRow(1).height=24;
-      aplicarEstilo(ws.getCell("A1"),estTitulo);
-      ws.addRow([`Período: ${fmtData(this._periodo.ini)} a ${fmtData(this._periodo.fim)}`]);
-      mesclar(ws,"A2","E2"); ws.getRow(2).height=20;
-      aplicarEstilo(ws.getCell("A2"),estPeriodo);
-      ws.addRow([]);
-      const cab=ws.addRow(["Centro de Custo","Colaborador","Total Refeições","Período Início","Período Fim"]);
-      ws.getRow(4).height=20;
-      cab.eachCell(cell=>aplicarEstilo(cell,estCabecalho));
-      const mapa={};
-      conf.forEach(p=>{const cc=SP.pick(p,"Centro_Custo")||"Sem CC";const nome=SP.pick(p,"Colaborador_nome","Title")||"Desconhecido";const key=`${cc}||${nome}`;if(!mapa[key])mapa[key]={cc,nome,lista:[]};mapa[key].lista.push(p);});
-      Object.values(mapa).sort((a,b)=>a.cc.localeCompare(b.cc)||b.lista.length-a.lista.length).forEach(({cc,nome,lista},i)=>{
-        const par=i%2===0;
-        const r=ws.addRow([cc,nome,lista.length,fmtData(this._periodo.ini),fmtData(this._periodo.fim)]);
-        r.getCell(1).alignment={horizontal:"left"}; r.getCell(2).alignment={horizontal:"left"};
-        r.eachCell((cell,col)=>aplicarEstilo(cell,col<=2?estDadoEsq(par):estDado(par)));
-      });
-      ws.autoFilter={from:"A4",to:"E4"};
-    }
-
-    // ── Download ───────────────────────────────────────────────
+  async function gerarRelatorioFinal(semanaId) {
     try {
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob   = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const url    = URL.createObjectURL(blob);
-      const a      = document.createElement("a");
-      a.href       = url;
-      a.download   = `relatorio-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-      AdminUtils.toast("✅ Excel exportado com padrão Homy.", "success");
-    } catch (e) {
-      AdminUtils.toast("Erro ao gerar Excel: " + e.message, "error");
-    }
-  },
+      await carregarDados(semanaId);
 
-  _bindFeito: false,
+      const filtros = getFiltros();
+      const pedidos = filtrarPedidos(filtros);
+      const valores = obterValorPeriodo(filtros.dataInicio, filtros.dataFim);
 
-  _bindControles() {
-    if (this._bindFeito) return;
-    this._bindFeito = true;
+      const resultado = {
+        filtros,
+        pedidos,
+        valores,
+        resumoDia:   montarResumoDia(filtros, pedidos),
+        centroCusto: montarCentroCusto(pedidos, valores, filtros.nf),
+        colaborador: montarColaborador(pedidos, valores),
+        rateio:      montarRateioVascon(pedidos, valores, filtros.nf)
+      };
 
-    const btnBuscar = document.getElementById("btnBuscarRelatorio");
-    const btnExport = document.getElementById("btnExportarRelatorio");
-    const selTipo   = document.getElementById("relTipo");
-
-    if (btnBuscar) {
-      btnBuscar.addEventListener("click", async () => {
-        const ini = (document.getElementById("relDataIni")?.value || "").trim();
-        const fim = (document.getElementById("relDataFim")?.value || "").trim();
-        if (!ini || !fim) { AdminUtils.toast("Informe o período.", "error"); return; }
-        if (ini > fim)    { AdminUtils.toast("Data início maior que fim.", "error"); return; }
-        await AdminRelatorios._buscar(ini, fim);
-      });
-    }
-
-    if (selTipo) {
-      selTipo.addEventListener("change", () => AdminRelatorios._renderTipo());
-    }
-
-    if (btnExport) {
-      btnExport.addEventListener("click", () => AdminRelatorios._exportar());
+      state.resultado = resultado;
+      atualizarCards(pedidos, valores, filtros);
+      renderTabela(resultado);
+    } catch (erro) {
+      console.error("Erro ao gerar relatório final:", erro);
+      if (typeof window.toast === "function") toast("Erro ao gerar relatório: " + (erro.message || erro), "error");
+      else alert("Erro ao gerar relatório: " + (erro.message || erro));
     }
   }
-};
+
+  async function carregarExcelJS() {
+    if (window.ExcelJS) return;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("Não foi possível carregar ExcelJS."));
+      document.head.appendChild(s);
+    });
+  }
+
+  function borda(color = "FFCBD5E1") {
+    const b = { style: "thin", color: { argb: color } };
+    return { top: b, left: b, bottom: b, right: b };
+  }
+
+  // ── Exportação Excel com 2 abas ────────────────────────────────────────────
+  async function exportarRelatorioExcelFinal() {
+    if (!state.resultado) await gerarRelatorioFinal(semanaAtualFallback());
+    const resultado = state.resultado;
+    if (!resultado) return;
+
+    await carregarExcelJS();
+
+    const wb     = new ExcelJS.Workbook();
+    wb.creator   = "Homy Refeitório";
+
+    // ── ABA 1: Relatório principal ────────────────────────────────────────
+    const titulo  = TIPOS[resultado.filtros.tipo] || "Relatório";
+    const linhas  = linhasDoTipo(resultado);
+    const colunas = colunasDoTipo(resultado.filtros.tipo, linhas);
+    const totalCols = Math.max(colunas.length, 6);
+
+    const ws1 = wb.addWorksheet(titulo.substring(0, 31));
+
+    // Cabeçalho
+    const addHeader = (ws, text, row, cols, bgArgb, fontArgb) => {
+      ws.mergeCells(row, 1, row, cols);
+      const cell = ws.getCell(row, 1);
+      cell.value     = text;
+      cell.font      = { bold: true, size: row === 1 ? 14 : 11, color: { argb: fontArgb } };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
+    };
+
+    addHeader(ws1, `RELATÓRIO REFEITÓRIO HOMY — ${titulo.toUpperCase()}`, 1, totalCols, "FF0B1F3C", "FFFFFFFF");
+    addHeader(ws1, `Período: ${dataBR(resultado.filtros.dataInicio)} a ${dataBR(resultado.filtros.dataFim)}`, 2, totalCols, "FFC0281C", "FFFFFFFF");
+    addHeader(ws1, `Gerado em: ${new Date().toLocaleDateString("pt-BR")}`, 3, totalCols, "FFE8F1FF", "FF0B1F3C");
+    ws1.addRow([]);
+
+    // Resumo numérico
+    ws1.addRow(["Total de refeições", resultado.pedidos.length]);
+    ws1.addRow(["Valor unitário Vascon", resultado.valores.valorVascon]);
+    ws1.addRow(["Valor unitário desconto funcionário", resultado.valores.valorDesconto]);
+    if (resultado.filtros.nf) ws1.addRow(["NF Vascon recebida", resultado.filtros.nf]);
+    ws1.addRow([]);
+
+    // Header da tabela
+    const headerRow = ws1.addRow(colunas);
+    headerRow.eachCell(cell => {
+      cell.font      = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
+      cell.alignment = { horizontal: "center", wrapText: true };
+      cell.border    = borda();
+    });
+    ws1.getRow(headerRow.number).height = 30;
+
+    const moneyCols = ["Valor Vascon","Desconto funcionários","Rateio NF",
+                       "Valor unitário desconto","Total desconto em folha","Valor Vascon estimado"];
+
+    if (linhas.length) {
+      linhas.forEach((linha, idx) => {
+        const row = ws1.addRow(colunas.map(c => linha[c]));
+        row.eachCell((cell, colNumber) => {
+          const colName = colunas[colNumber - 1];
+          cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: idx % 2 === 0 ? "FFF3F6FB" : "FFFFFFFF" } };
+          cell.border = borda("FFD9E2F3");
+          if (moneyCols.includes(colName)) {
+            cell.numFmt = '"R$" #,##0.00';
+          } else if (colName === "Quantidade" || colName === "Total") {
+            cell.alignment = { horizontal: "center" };
+          }
+        });
+      });
+
+      // Linha de total
+      if (resultado.filtros.tipo !== "resumo-dia") {
+        ws1.addRow([]);
+        const totRow = ws1.addRow(["TOTAL", resultado.pedidos.length,
+          resultado.pedidos.length * resultado.valores.valorVascon,
+          resultado.pedidos.length * resultado.valores.valorDesconto,
+          resultado.filtros.nf || 0
+        ].slice(0, colunas.length));
+        totRow.eachCell(cell => {
+          cell.font   = { bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC0281C" } };
+          cell.border = borda();
+          cell.numFmt = '"R$" #,##0.00';
+        });
+      }
+    } else {
+      const row = ws1.addRow(["Sem dados no período."]);
+      row.getCell(1).font = { italic: true, color: { argb: "FF64748B" } };
+    }
+
+    ws1.columns.forEach(col => {
+      let max = 12;
+      col.eachCell({ includeEmpty: true }, cell => {
+        max = Math.max(max, String(cell.value || "").length + 2);
+      });
+      col.width = Math.min(max, 42);
+    });
+
+    // ── ABA 2: Rateio Vascon ──────────────────────────────────────────────
+    const ws2 = wb.addWorksheet("Rateio Vascon");
+
+    // Título
+    ws2.mergeCells(1, 1, 1, 6);
+    const t1 = ws2.getCell(1, 1);
+    t1.value     = "RATEIO VASCON";
+    t1.font      = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
+    t1.alignment = { horizontal: "center", vertical: "middle" };
+    t1.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
+    ws2.getRow(1).height = 28;
+
+    // Competência
+    ws2.mergeCells(2, 1, 2, 6);
+    const t2 = ws2.getCell(2, 1);
+    t2.value     = `COMPETÊNCIA ${dataBR(resultado.filtros.dataInicio)} A ${dataBR(resultado.filtros.dataFim)}`;
+    t2.font      = { bold: true, color: { argb: "FFFFFFFF" } };
+    t2.alignment = { horizontal: "center" };
+    t2.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC0281C" } };
+
+    ws2.addRow([]);
+
+    // Valor unitário
+    ws2.getCell(4, 2).value  = "Valor Unitário";
+    ws2.getCell(4, 3).value  = resultado.valores.valorVascon;
+    ws2.getCell(4, 3).numFmt = '"R$" #,##0.00';
+    ws2.getCell(4, 3).font   = { bold: true };
+
+    ws2.addRow([]);
+
+    // Header rateio
+    const rateioHeader = ["CONTA", "C. DE CUSTO", "DESCRIÇÃO CENTRO CUSTO", "QTDE", "SOMA", "%"];
+    const hr = ws2.addRow(rateioHeader);
+    hr.eachCell(cell => {
+      cell.font      = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
+      cell.alignment = { horizontal: "center", wrapText: true };
+      cell.border    = borda();
+    });
+    ws2.getRow(hr.number).height = 24;
+
+    let totalQtde = 0, totalSoma = 0;
+
+    (resultado.rateio || []).forEach((r, idx) => {
+      const row = ws2.addRow([
+        r.conta,
+        r.cc,
+        r.descricao,
+        r.qtde,
+        r.soma,
+        r.pct
+      ]);
+
+      totalQtde += r.qtde;
+      totalSoma += r.soma;
+
+      row.eachCell((cell, ci) => {
+        cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: idx % 2 === 0 ? "FFF3F6FB" : "FFFFFFFF" } };
+        cell.border = borda("FFD9E2F3");
+        if (ci === 5) cell.numFmt = '"R$" #,##0.00';
+        if (ci === 6) cell.numFmt = "0.00%";
+        if (ci === 4) cell.alignment = { horizontal: "center" };
+      });
+    });
+
+    // Linha total geral
+    ws2.addRow([]);
+    const totRateio = ws2.addRow(["", "", "Total geral", totalQtde, totalSoma, 1]);
+    totRateio.eachCell((cell, ci) => {
+      cell.font   = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
+      cell.border = borda();
+      if (ci === 5) cell.numFmt = '"R$" #,##0.00';
+      if (ci === 6) cell.numFmt = "0.00%";
+    });
+
+    // Largura das colunas da aba 2
+    ws2.getColumn(1).width = 14;
+    ws2.getColumn(2).width = 14;
+    ws2.getColumn(3).width = 44;
+    ws2.getColumn(4).width = 10;
+    ws2.getColumn(5).width = 18;
+    ws2.getColumn(6).width = 10;
+
+    // ── Download ──────────────────────────────────────────────────────────
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob   = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const nome   = `relatorio-refeitorio-${slug(titulo)}-${resultado.filtros.dataInicio}-a-${resultado.filtros.dataFim}.xlsx`;
+    const link   = document.createElement("a");
+    link.href     = URL.createObjectURL(blob);
+    link.download = nome;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    if (typeof window.toast === "function") toast("Relatório exportado com sucesso.", "success");
+  }
+
+  // ── Interface ─────────────────────────────────────────────────────────────
+  function criarTelaRelatorios() {
+    const mod = $("mod-relatorios");
+    if (!mod) return;
+
+    mod.dataset.advanced = "final-2026-06-10";
+
+    mod.innerHTML = `
+      <div class="section-header">
+        <div>
+          <div class="section-title">📈 Relatórios Gerenciais</div>
+          <div style="font-size:0.78rem;color:rgba(143,170,210,0.58);margin-top:0.25rem">
+            Quantidade, centro de custo, colaborador, valores e rateio Vascon.
+          </div>
+        </div>
+        <button class="btn-secondary" type="button" id="btnExportarRelatorioFinal">📥 Exportar Excel</button>
+      </div>
+
+      <div class="form-grid" style="margin-bottom:1rem;grid-template-columns:minmax(160px,1fr) minmax(160px,1fr) minmax(200px,1fr) minmax(220px,1fr) minmax(200px,1fr);align-items:end">
+        <div class="form-group">
+          <label class="form-label">Data inicial</label>
+          <input class="form-input" type="date" id="relDataInicio">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Data final</label>
+          <input class="form-input" type="date" id="relDataFim">
+        </div>
+        <div class="form-group">
+          <label class="form-label">NF Vascon recebida (R$)</label>
+          <input class="form-input" type="number" step="0.01" id="relValorNF" placeholder="Ex: 28487.68">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tipo de relatório</label>
+          <select class="form-select" id="tipoRelatorio">
+            <option value="resumo-dia">Resumo por dia</option>
+            <option value="centro-custo">Por centro de custo</option>
+            <option value="colaborador">Por colaborador</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end">
+          <button class="btn-primary" type="button" id="btnGerarRelatorioFinal" style="width:100%">🔍 Gerar relatório</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:1rem">
+        <div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="relTotalGeral">—</div><div class="stat-label">Total refeições</div></div>
+        <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value" id="relCustoVascon">—</div><div class="stat-label">Custo Vascon</div></div>
+        <div class="stat-card"><div class="stat-icon">💳</div><div class="stat-value" id="relDescontoFolha">—</div><div class="stat-label">Desconto funcionários</div></div>
+        <div class="stat-card"><div class="stat-icon">📄</div><div class="stat-value" id="relDiferencaNF">—</div><div class="stat-label">Diferença NF</div></div>
+        <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="rel-principal">0</div><div class="stat-label">Principal</div></div>
+        <div class="stat-card"><div class="stat-icon">🥦</div><div class="stat-value" id="rel-light">0</div><div class="stat-label">Light</div></div>
+        <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="rel-carne">0</div><div class="stat-label">Carne</div></div>
+        <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">0</div><div class="stat-label">Massa</div></div>
+        <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">0</div><div class="stat-label">Lanche</div></div>
+      </div>
+
+      <div style="margin-top:1rem">
+        <div class="section-title" id="relTituloTabela" style="font-size:1rem;margin-bottom:0.8rem">Resumo por dia</div>
+        <div class="alert alert-info" style="margin-bottom:0.8rem;font-size:0.78rem">
+          💡 O Excel exportado contém 2 abas: <b>Relatório</b> e <b>Rateio Vascon</b> (no padrão para envio ao fiscal junto com a NF).
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead id="relHead"></thead>
+            <tbody id="relTableFinal"></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    const hoje      = new Date();
+    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    $("relDataInicio").value = toInputDate(primeiroDia);
+    $("relDataFim").value    = toInputDate(hoje);
+
+    $("btnGerarRelatorioFinal").onclick   = () => gerarRelatorioFinal(semanaAtualFallback());
+    $("btnExportarRelatorioFinal").onclick = exportarRelatorioExcelFinal;
+    $("tipoRelatorio").onchange           = () => gerarRelatorioFinal(semanaAtualFallback());
+  }
+
+  function getFiltros() {
+    return {
+      dataInicio: $("relDataInicio")?.value || toInputDate(new Date()),
+      dataFim:    $("relDataFim")?.value    || toInputDate(new Date()),
+      nf:         valorNumero($("relValorNF")?.value || 0),
+      tipo:       $("tipoRelatorio")?.value || "resumo-dia"
+    };
+  }
+
+  // ── Exposição pública ─────────────────────────────────────────────────────
+  window.loadRelatorios = async function (semanaId) {
+    criarTelaRelatorios();
+    await gerarRelatorioFinal(semanaId || semanaAtualFallback());
+  };
+
+  window.loadRelatoriosAvancados  = window.loadRelatorios;
+  window.exportarRelatorioCSV     = exportarRelatorioExcelFinal;
+  window.exportarCSV              = exportarRelatorioExcelFinal;
+  window.exportarExcel            = exportarRelatorioExcelFinal;
+
+  window.AdminRelatorios = {
+    carregar:     window.loadRelatorios,
+    gerar:        gerarRelatorioFinal,
+    exportarExcel: exportarRelatorioExcelFinal
+  };
+
+  // Intercepta cliques em "exportar" quando o módulo relatórios está ativo
+  document.addEventListener("click", event => {
+    const btn   = event.target.closest("button, a");
+    if (!btn) return;
+    const texto = normalizar(btn.innerText || "");
+    const ativo = $("mod-relatorios")?.classList.contains("active") ||
+      normalizar(document.querySelector(".nav-item.active")?.innerText || "").includes("relatorios");
+    if (ativo && texto.includes("exportar")) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      exportarRelatorioExcelFinal();
+      return false;
+    }
+  }, true);
+
+  document.addEventListener("click", event => {
+    const item  = event.target.closest("[data-module='relatorios'], .nav-item");
+    if (!item) return;
+    const texto = normalizar(`${item.innerText || ""} ${item.dataset?.module || ""}`);
+    if (texto.includes("relatorios")) setTimeout(() => window.loadRelatorios(semanaAtualFallback()), 120);
+  }, true);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+      const ativo = document.querySelector(".nav-item.active");
+      if (normalizar(ativo?.dataset?.module || ativo?.innerText || "") === "relatorios") {
+        window.loadRelatorios(semanaAtualFallback());
+      }
+    }, 300);
+  });
+
+})();
