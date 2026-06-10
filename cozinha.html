@@ -3,258 +3,202 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#040c1a">
-
-<link rel="icon" type="image/png" href="favicon.png?v=homy-tech-20260601">
-<link rel="shortcut icon" href="favicon.ico?v=homy-tech-20260601">
-<link rel="apple-touch-icon" href="favicon.png?v=homy-tech-20260601">
-<title>Cozinha · Refeitório Homy</title>
-
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
+<title>Cozinha · Homy Química</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#040c1a;--surface:rgba(255,255,255,.045);--surface2:rgba(10,31,60,.58);
-  --border:rgba(255,255,255,.09);--border2:rgba(80,150,255,.24);
-  --text:#e8f0ff;--muted:rgba(143,170,210,.64);--blue:#61b8ff;--red:#c0281c;--green:#22c879;
+  --bg:#040c1a;
+  --surface:rgba(255,255,255,0.04);
+  --border:rgba(255,255,255,0.08);
+  --text:#e8f0ff;
+  --muted:rgba(143,170,210,0.6);
+  --red:#c0281c;
+  --green:#40d090;
+  --blue:rgba(97,184,255,0.9);
 }
-html,body{min-height:100%;background:var(--bg);font-family:Barlow,sans-serif;color:var(--text);overflow-x:hidden}
-body:before{
-  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:
-    radial-gradient(ellipse 70% 42% at 18% 8%,rgba(35,98,210,.20),transparent 60%),
-    radial-gradient(ellipse 62% 40% at 88% 88%,rgba(24,190,125,.12),transparent 64%),
-    radial-gradient(ellipse 50% 34% at 50% 105%,rgba(192,40,28,.10),transparent 70%),
-    linear-gradient(180deg,#040c1a 0%,#041126 58%,#030912 100%);
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-serif;color:var(--text);overflow-x:hidden}
+
+/* fundo tecnológico */
+#techCanvas{position:fixed;inset:0;z-index:0;width:100%;height:100%;pointer-events:none}
+
+.toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:rgba(26,80,60,0.95);color:#60e0a0;border:1px solid rgba(64,208,144,0.35);padding:0.7rem 1.4rem;border-radius:12px;font-size:0.88rem;font-weight:600;z-index:999;opacity:0;pointer-events:none;transition:opacity 0.3s}
+.toast.show{opacity:1}
+
+/* TELA DE ACESSO NEGADO */
+#telaAcessoNegado{
+  display:none;
+  position:fixed;inset:0;z-index:50;
+  background:var(--bg);
+  flex-direction:column;align-items:center;justify-content:center;
+  gap:1.5rem;padding:2rem;text-align:center;
 }
-body:after{
-  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-  background-image:
-    linear-gradient(rgba(72,138,255,.045) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(72,138,255,.045) 1px,transparent 1px);
-  background-size:56px 56px;
-  mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.25));
-}
-.tech-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-#techCanvas{position:absolute;inset:0;width:100%;height:100%;opacity:.82}
-.scan-line{
-  position:absolute;left:-20%;right:-20%;top:-12%;height:160px;
-  background:linear-gradient(180deg,transparent,rgba(80,170,255,.055),rgba(34,200,121,.03),transparent);
-  transform:rotate(-7deg);
-  animation:scanMove 11s ease-in-out infinite;
-}
-@keyframes scanMove{
-  0%{top:-20%;opacity:0}
-  16%{opacity:1}
-  70%{opacity:.75}
-  100%{top:108%;opacity:0}
-}
-.chem-symbol{
-  position:absolute;width:150px;height:132px;opacity:.12;
-  filter:drop-shadow(0 0 22px rgba(80,170,255,.25));
-  animation:chemFloat 12s ease-in-out infinite alternate;
-}
-.chem-symbol.s1{left:8%;top:14%;animation-duration:15s}
-.chem-symbol.s2{right:8%;top:16%;animation-duration:18s;transform:scale(.8) rotate(18deg)}
-.chem-symbol.s3{left:52%;bottom:7%;animation-duration:20s;transform:scale(1.15) rotate(-10deg)}
-.chem-symbol::before{
-  content:"";position:absolute;inset:18px;border:1px solid rgba(122,190,255,.52);
-  clip-path:polygon(25% 6%,75% 6%,100% 50%,75% 94%,25% 94%,0 50%);
-}
-.chem-symbol::after{
-  content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;
-  background:rgba(34,200,121,.75);
-  box-shadow:
-    -48px -42px 0 rgba(97,184,255,.75),
-    48px -42px 0 rgba(97,184,255,.7),
-    65px 0 0 rgba(192,40,28,.68),
-    48px 42px 0 rgba(97,184,255,.72),
-    -48px 42px 0 rgba(97,184,255,.72),
-    -65px 0 0 rgba(34,200,121,.65);
-}
-@keyframes chemFloat{
-  0%{translate:0 0;opacity:.08}
-  50%{translate:14px -18px;opacity:.16}
-  100%{translate:-10px 12px;opacity:.11}
-}
+#telaAcessoNegado .icon{font-size:3.5rem}
+#telaAcessoNegado .titulo{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase}
+#telaAcessoNegado .msg{font-size:0.95rem;color:var(--muted);line-height:1.6;max-width:360px}
+#telaAcessoNegado .btn-voltar-neg{display:inline-block;margin-top:0.5rem;padding:0.75rem 1.5rem;border-radius:12px;background:rgba(26,100,200,0.2);border:1px solid rgba(80,150,255,0.3);color:#9bd2ff;text-decoration:none;font-weight:700;font-size:0.9rem}
+
 .app{position:relative;z-index:1;min-height:100vh;padding-bottom:2rem}
-.header{position:sticky;top:0;z-index:10;background:rgba(4,12,26,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:.95rem 1rem .75rem}
+
+.header{
+  position:sticky;top:0;z-index:10;
+  background:rgba(4,12,26,0.92);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  padding:0.95rem 1rem 0.75rem;
+}
 .top{display:flex;align-items:center;justify-content:space-between;gap:1rem}
-.left{display:flex;align-items:center;gap:.75rem;min-width:0}
-.btn-voltar{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.045);color:var(--text);font-size:.72rem;font-weight:700;text-transform:uppercase;text-decoration:none;display:flex;align-items:center;gap:.35rem}
-.brand{display:flex;align-items:center;gap:.6rem;min-width:0}
-.brand img{width:32px;height:32px;border-radius:50%;object-fit:contain;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12)}
-.brand-title{font-family:"Barlow Condensed";font-size:1.05rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
-.brand-sub{font-size:.62rem;color:var(--muted);letter-spacing:.15em;text-transform:uppercase}
-.sync{height:30px;padding:0 12px;border-radius:999px;border:1px solid rgba(80,150,255,.25);background:rgba(26,100,200,.14);color:#75b7ff;font-weight:700;font-size:.68rem;cursor:pointer}
-.datebar{display:flex;align-items:baseline;gap:.7rem;margin-top:.65rem}
-.weekday{font-family:"Barlow Condensed";font-size:1.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-.fulldate{font-size:.75rem;color:var(--muted);letter-spacing:.08em;font-weight:600}
-.content{padding:1rem}
-.cardapio{border:1px solid var(--border2);background:rgba(8,31,68,.72);border-radius:14px;padding:1rem;display:flex;gap:.8rem;align-items:flex-start;margin-bottom:.85rem}
-.cardapio-icon{font-size:1.35rem}
-.label{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#75b7ff;margin-bottom:.25rem}
-.cardapio-text{font-size:.9rem;color:var(--text);line-height:1.45}
-.search{position:relative;margin-bottom:.85rem}
-.search input{width:100%;height:42px;border-radius:12px;border:1px solid var(--border);background:rgba(255,255,255,.055);color:var(--text);padding:0 42px 0 42px;font-size:.95rem;outline:none}
-.search:before{content:"🔎";position:absolute;left:14px;top:10px;opacity:.7}
-.clear{position:absolute;right:8px;top:7px;width:28px;height:28px;border:0;border-radius:8px;background:rgba(255,255,255,.06);color:var(--muted);cursor:pointer}
-.counter{display:flex;align-items:center;justify-content:space-between;margin:.6rem 0 .55rem}
-.counter-title{font-family:"Barlow Condensed";font-size:.82rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:700}
-.nums{font-size:.78rem;font-weight:700;color:var(--muted);display:flex;gap:.5rem}
-.done-pill{color:#40d090;background:rgba(34,200,121,.12);border:1px solid rgba(34,200,121,.28);border-radius:7px;padding:2px 8px}
-.list{display:flex;flex-direction:column;gap:.58rem}
-.item{display:flex;align-items:center;gap:.9rem;border:1px solid var(--border);background:var(--surface);border-radius:14px;padding:.82rem .95rem;cursor:pointer;transition:.15s}
-.item:hover{border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.07)}
-.item.done{background:rgba(34,200,121,.13);border-color:rgba(34,200,121,.32);cursor:default}
-.avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(26,100,200,.28);border:1px solid rgba(80,150,255,.28);font-family:"Barlow Condensed";font-weight:800;color:#9bd2ff}
+.left{display:flex;align-items:center;gap:0.75rem;min-width:0}
+.btn-voltar{
+  height:32px;padding:0 12px;border-radius:999px;
+  border:1px solid var(--border);background:rgba(255,255,255,0.045);
+  color:var(--text);font-size:0.72rem;font-weight:700;text-transform:uppercase;
+  text-decoration:none;display:flex;align-items:center;gap:0.35rem;
+}
+.brand{display:flex;align-items:center;gap:0.6rem;min-width:0}
+.brand img{width:32px;height:32px;border-radius:50%;object-fit:contain;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12)}
+.brand-title{font-family:"Barlow Condensed";font-size:1.05rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase}
+.brand-sub{font-size:0.62rem;color:var(--muted);letter-spacing:0.15em;text-transform:uppercase}
+.sync{
+  height:30px;padding:0 12px;border-radius:999px;
+  border:1px solid rgba(64,208,144,0.3);background:rgba(64,208,144,0.08);
+  color:var(--green);font-size:0.72rem;font-weight:700;cursor:pointer;
+  transition:background 0.2s;
+}
+.sync:hover{background:rgba(64,208,144,0.16)}
+
+.datebar{display:flex;align-items:center;gap:0.8rem;padding-top:0.55rem;flex-wrap:wrap}
+.weekday{font-family:"Barlow Condensed";font-size:1.15rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase}
+.fulldate{font-size:0.78rem;color:var(--muted);letter-spacing:0.06em}
+
+.content{max-width:700px;margin:0 auto;padding:1rem 1rem 0}
+
+/* cardápio do dia */
+.cardapio{
+  display:flex;align-items:center;gap:0.9rem;
+  padding:0.85rem 1rem;border-radius:14px;
+  background:rgba(40,100,200,0.08);border:1px solid rgba(60,140,255,0.14);
+  margin-bottom:1rem;
+}
+.cardapio-icon{font-size:1.7rem;flex-shrink:0}
+.label{font-size:0.66rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:0.15rem}
+.cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4}
+
+/* busca */
+.search{position:relative;margin-bottom:0.9rem}
+.search input{
+  width:100%;padding:0.75rem 2.6rem 0.75rem 1rem;
+  border-radius:12px;border:1px solid var(--border);
+  background:rgba(255,255,255,0.04);color:var(--text);
+  font-size:0.9rem;font-family:"Barlow",sans-serif;outline:none;
+}
+.search input::placeholder{color:var(--muted)}
+.search input:focus{border-color:rgba(60,140,255,0.35);background:rgba(255,255,255,0.06)}
+.clear{
+  position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:4px;
+}
+
+/* contador */
+.counter{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.65rem;padding:0 0.1rem}
+.counter-title{font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)}
+.nums{display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;color:var(--muted)}
+.done-pill{background:rgba(64,208,144,0.12);color:var(--green);border-radius:99px;padding:2px 10px;font-size:0.75rem;font-weight:700}
+
+/* lista */
+.list{display:flex;flex-direction:column;gap:0.55rem}
+.item{
+  display:flex;align-items:center;gap:0.85rem;
+  padding:0.85rem 1rem;border-radius:14px;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  cursor:pointer;transition:background 0.15s,border-color 0.15s;
+}
+.item:hover:not(.done):not(.ausente){background:rgba(255,255,255,0.07);border-color:rgba(60,140,255,0.25)}
+.item.done{background:rgba(64,208,144,0.05);border-color:rgba(64,208,144,0.18);cursor:default;opacity:0.7}
+.item.ausente{background:rgba(192,40,28,0.08);border-color:rgba(192,40,28,0.25);cursor:default}
+
+.avatar{
+  width:42px;height:42px;border-radius:50%;flex-shrink:0;
+  background:rgba(40,80,200,0.22);border:1.5px solid rgba(60,140,255,0.25);
+  display:flex;align-items:center;justify-content:center;
+  font-family:"Barlow Condensed";font-size:0.95rem;font-weight:700;color:#7ad0ff;
+}
+.item.done .avatar{background:rgba(64,208,144,0.1);border-color:rgba(64,208,144,0.3);color:var(--green)}
+.item.ausente .avatar{background:rgba(192,40,28,0.15);border-color:rgba(192,40,28,0.35);color:#ff8070}
+
 .info{flex:1;min-width:0}
-.name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.desc{font-size:.75rem;color:var(--muted);margin-top:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.badge{font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:4px 8px;border-radius:7px;background:rgba(255,255,255,.06);color:var(--muted)}
-.item.done .badge{background:rgba(34,200,121,.18);color:#40d090}
-.empty,.error{display:flex;min-height:270px;align-items:center;justify-content:center;text-align:center;flex-direction:column;color:var(--muted);gap:.45rem}
-.empty-icon{font-size:2.4rem;opacity:.45}
-.empty-title{font-weight:800;color:rgba(180,205,240,.72)}
-.empty-sub{font-size:.86rem;max-width:330px;line-height:1.45}
-.connect{margin-top:.8rem;border:1px solid rgba(80,150,255,.28);background:rgba(26,100,200,.18);color:#9bd2ff;border-radius:10px;padding:.65rem 1rem;font-weight:800;cursor:pointer}
-.toast{position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%) translateY(20px);opacity:0;z-index:50;background:#0d2010;border:1px solid rgba(34,200,121,.38);color:#40d090;border-radius:12px;padding:.7rem 1.1rem;font-weight:800;transition:.2s}
-.toast.show{opacity:1;transform:translateX(-50%)}
-.modal-bg{position:fixed;inset:0;background:rgba(4,12,26,.82);z-index:40;display:none;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(8px)}
-.modal-bg.open{display:flex}
-.modal{width:100%;max-width:360px;background:#0a1628;border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:1.5rem;text-align:center;box-shadow:0 22px 70px rgba(0,0,0,.5)}
-.modal h3{font-family:"Barlow Condensed";font-size:1.3rem;text-transform:uppercase;letter-spacing:.05em;margin:.5rem 0}
-.modal p{color:var(--muted);line-height:1.4;margin-bottom:1.2rem}
-.modal-actions{display:flex;gap:.7rem}
-.modal-actions button{flex:1;height:42px;border-radius:11px;border:1px solid var(--border);font-weight:800;cursor:pointer}
-.cancel{background:rgba(255,255,255,.06);color:var(--muted)}
-.confirm{background:linear-gradient(135deg,#22c879,#15834d);color:white}
-@media(max-width:600px){.brand-title{font-size:.95rem}.weekday{font-size:1.35rem}.content{padding:.85rem}.btn-voltar span{display:none}}
+.name{font-size:0.95rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desc{font-size:0.78rem;color:var(--muted);margin-top:0.1rem}
 
-.cozinha-cardapio-grid{
-  display:grid;
-  grid-template-columns:repeat(5, minmax(220px,1fr));
-  gap:12px;
-  width:100%;
-  align-items:start;
+.badge{
+  font-size:0.68rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;
+  padding:3px 10px;border-radius:99px;flex-shrink:0;
+  background:rgba(60,100,180,0.18);color:rgba(143,170,210,0.7);border:1px solid rgba(60,100,180,0.2);
 }
-@media (max-width:1200px){
-  .cozinha-cardapio-grid{
-    grid-template-columns:repeat(3,1fr);
-  }
+.item.done .badge{background:rgba(64,208,144,0.12);color:var(--green);border-color:rgba(64,208,144,0.25)}
+.item.ausente .badge{background:rgba(192,40,28,0.15);color:#ff8070;border-color:rgba(192,40,28,0.3)}
+
+/* vazio */
+.empty{padding:3rem 1rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:0.7rem}
+.empty-icon{font-size:2.5rem}
+.empty-title{font-size:1rem;font-weight:600;color:var(--text)}
+.empty-sub{font-size:0.83rem;color:var(--muted);max-width:280px;line-height:1.5}
+.connect{
+  margin-top:0.5rem;padding:0.6rem 1.2rem;border-radius:10px;
+  background:rgba(40,100,200,0.18);border:1px solid rgba(60,140,255,0.25);
+  color:#9bd2ff;font-size:0.85rem;font-weight:700;cursor:pointer;
 }
 
-@media (max-width:768px){
-  .cozinha-cardapio-grid{
-    grid-template-columns:repeat(2,1fr);
-  }
+/* modal */
+.modal-overlay{
+  position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.7);
+  display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity 0.25s;
 }
-
-@media (max-width:520px){
-  .cozinha-cardapio-grid{
-    grid-template-columns:1fr;
-  }
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal{
+  width:100%;max-width:500px;
+  background:rgb(8,18,38);border:1px solid rgba(60,140,255,0.2);
+  border-radius:22px 22px 0 0;padding:1.5rem 1.2rem 2.5rem;
+  transform:translateY(40px);transition:transform 0.28s cubic-bezier(.22,1,.36,1);
 }
-
-.cozinha-cardapio-card{
-  border:1px solid rgba(255,255,255,.10);
-  background:rgba(255,255,255,.045);
-  border-radius:14px;
-  padding:.9rem;
-  min-height:150px;
+.modal-overlay.open .modal{transform:translateY(0)}
+.modal-handle{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.12);margin:0 auto 1.2rem}
+.modal-nome{font-size:1.2rem;font-weight:700;margin-bottom:0.3rem}
+.modal-opcao{font-size:0.85rem;color:var(--muted);margin-bottom:1.4rem}
+.modal-actions{display:flex;flex-direction:column;gap:0.7rem}
+.btn-confirm{
+  width:100%;padding:1rem;border-radius:14px;border:none;
+  background:rgba(64,208,144,0.18);color:var(--green);
+  border:1.5px solid rgba(64,208,144,0.35);
+  font-size:1rem;font-weight:700;cursor:pointer;font-family:"Barlow",sans-serif;
+  transition:background 0.18s;
 }
-
-.cozinha-cardapio-head{
-  display:flex;
-  align-items:flex-start;
-  gap:.55rem;
-  margin-bottom:.65rem;
+.btn-confirm:hover{background:rgba(64,208,144,0.28)}
+.btn-cancel{
+  width:100%;padding:0.75rem;border-radius:12px;border:none;
+  background:rgba(255,255,255,0.04);color:var(--muted);
+  font-size:0.88rem;cursor:pointer;font-family:"Barlow",sans-serif;
 }
-
-.cozinha-cardapio-head strong{
-  color:#fff;
-  font-size:.95rem;
-  line-height:1.25;
-}
-
-.cozinha-cardapio-body{
-  display:flex;
-  flex-direction:column;
-  gap:.28rem;
-}
-
-.cozinha-cardapio-item{
-  font-size:.78rem;
-  color:rgba(143,170,210,.78);
-  line-height:1.35;
-}
-
-.tag-principal,
-.tag-light,
-.tag-carne,
-.tag-massa,
-.tag-lanche{
-  font-size:.58rem;
-  font-weight:800;
-  letter-spacing:.08em;
-  text-transform:uppercase;
-  padding:4px 7px;
-  border-radius:5px;
-  flex-shrink:0;
-}
-
-.tag-principal{
-  background:rgba(26,58,110,.7);
-  color:#9bd2ff;
-}
-
-.tag-light{
-  background:rgba(16,110,90,.6);
-  color:#50dca0;
-}
-
-.tag-carne{
-  background:rgba(192,40,28,.45);
-  color:#ffa08c;
-}
-
-.tag-massa{
-  background:rgba(100,60,10,.6);
-  color:#ffc864;
-}
-
-.tag-lanche{
-  background:rgba(80,20,140,.65);
-  color:#c8a0ff;
-}
-
 </style>
 </head>
-
 <body>
-<div class="tech-bg" aria-hidden="true">
-  <canvas id="techCanvas"></canvas>
-  <div class="scan-line"></div>
-  <div class="chem-symbol s1"></div>
-  <div class="chem-symbol s2"></div>
-  <div class="chem-symbol s3"></div>
+
+<canvas id="techCanvas"></canvas>
+
+<div id="telaAcessoNegado">
+  <div class="icon">🔒</div>
+  <div class="titulo">Acesso Restrito</div>
+  <div class="msg">Esta área é exclusiva para o e-mail da cozinha.<br>Acesse com a conta <strong>recepcao.hq@homyquimica.com.br</strong>.</div>
+  <a class="btn-voltar-neg" href="index.html">Voltar ao início</a>
 </div>
 
-<div class="modal-bg" id="modal">
-  <div class="modal">
-    <div style="font-size:2.2rem">🍽️</div>
-    <h3>Confirmar retirada</h3>
-    <p>Confirmar retirada para <strong id="modalNome"></strong>?</p>
-    <div class="modal-actions">
-      <button class="cancel" onclick="fecharModal()">Cancelar</button>
-      <button class="confirm" onclick="confirmarRetirada()">Confirmar ✓</button>
-    </div>
-  </div>
-</div>
+<div class="toast" id="toast"></div>
 
-<div class="toast" id="toast">Retirada confirmada</div>
-
-<div class="app">
+<div class="app" id="appCozinha" style="display:none">
   <header class="header">
     <div class="top">
       <div class="left">
@@ -269,7 +213,6 @@ body:after{
       </div>
       <button class="sync" onclick="sincronizar()">↻ Atualizar</button>
     </div>
-
     <div class="datebar">
       <div class="weekday" id="weekday">—</div>
       <div class="fulldate" id="fulldate">—</div>
@@ -292,7 +235,11 @@ body:after{
 
     <div class="counter">
       <div class="counter-title">Lista do dia</div>
-      <div class="nums"><span class="done-pill" id="cntDone">0 entregues</span><span>·</span><span id="cntTotal">0 total</span></div>
+      <div class="nums">
+        <span class="done-pill" id="cntDone">0 entregues</span>
+        <span>·</span>
+        <span id="cntTotal">0 total</span>
+      </div>
     </div>
 
     <section class="list" id="lista">
@@ -304,200 +251,155 @@ body:after{
   </main>
 </div>
 
+<!-- Modal confirmação -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-nome" id="modalNome">—</div>
+    <div class="modal-opcao" id="modalOpcao">—</div>
+    <div class="modal-actions">
+      <button class="btn-confirm" onclick="confirmarRetirada()">✓ Confirmar retirada</button>
+      <button class="btn-cancel" onclick="fecharModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 window.HOMY_SP_READY = (function(){
   function loadScript(src){
     return new Promise(function(resolve,reject){
-      var s=document.createElement("script");
-      s.src=src;
-      s.onload=resolve;
-      s.onerror=function(){reject(new Error("Falha ao carregar: "+src));};
+      var s = document.createElement("script");
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function(){ reject(new Error("Falha ao carregar: " + src)); };
       document.head.appendChild(s);
     });
   }
-
   return loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js")
     .catch(function(){
       return loadScript("https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js");
     })
     .then(function(){
-      if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=homy-msal-20260608-2").catch(function(){
-        return loadScript("./sharepoint.js?v=homy-msal-20260608-2");
-      }).catch(function(){
-        return loadScript("../sharepoint.js?v=homy-msal-20260608-2");
-      });
+      if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
+      return loadScript("sharepoint.js?v=homy-final-20260610-1")
+        .catch(function(){ return loadScript("./sharepoint.js?v=homy-final-20260610-1"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=homy-final-20260610-1"); });
     })
     .then(function(){
-      if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
+      if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
       return window.SP;
     });
 })();
 </script>
-<script>
-const DIAS = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
-const DIAS_CHAVE = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
-const DIAS_NORMAL = ["domingo","segunda","terca","quarta","quinta","sexta","sabado"];
 
-let pedidosHoje = [];
+<script>
+// ================================================================
+// COZINHA — restrito a recepcao.hq@homyquimica.com.br
+// ================================================================
+const EMAIL_COZINHA = "recepcao.hq@homyquimica.com.br";
+
+let pedidosHoje  = [];
 let checkinsHoje = [];
 let pedidoSelecionado = null;
 
-function normalizar(v){
-  return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
-}
-
-function hoje(){
-  return new Date();
-}
-
-function semanaIdAtual(){
-  if (window.SP && typeof window.SP.getCurrentWeekId === "function") return window.SP.getCurrentWeekId();
-  const d = new Date();
-  d.setHours(0,0,0,0);
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-  const w1 = new Date(d.getFullYear(),0,4);
-  const week = 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
-  return `${d.getFullYear()}-W${String(week).padStart(2,"0")}`;
-}
-
-function diaAtual(){
-  return DIAS_CHAVE[hoje().getDay()];
-}
-
-function atualizarData(){
-  const d = hoje();
-  document.getElementById("weekday").textContent = DIAS[d.getDay()];
-  document.getElementById("fulldate").textContent =
-    `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
-}
-
+// ---- helpers ----
+function normalizar(v){ return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
+function itemValor(obj,...keys){ for(const k of keys){ if(obj && obj[k] != null) return obj[k]; } return ""; }
+function getNome(p){ return itemValor(p,"Colaborador_nome","Title","Nome"); }
+function getOpcao(p){ return itemValor(p,"Opcao","opcao","Nome_Prato"); }
+function getPedidoId(p){ return String(p.id||p.ID||""); }
+function getColaboradorId(p){ return itemValor(p,"Colaborador_id","colaborador_id"); }
 function iniciais(nome){
-  return String(nome || "?").split(/\s+/).filter(Boolean).slice(0,2).map(p=>p[0]).join("").toUpperCase();
-}
-
-function itemValor(obj, ...keys){
-  for (const k of keys) if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
-  return "";
-}
-
-function pedidoConta(p){
-  const status = normalizar(itemValor(p, "Status", "status"));
-  return !["cancelado","bloqueado","afastado","ferias","férias","nao vai almocar","não vai almoçar"].includes(status);
-}
-
-function getNome(p){
-  return itemValor(p, "Colaborador_nome", "colaborador_nome", "Colaborador", "Title") || "Sem nome";
-}
-
-function getOpcao(p){
-  return itemValor(p, "Opcao", "opcao", "Nome_Prato", "nomePrato") || "Principal";
-}
-
-function getPedidoId(p){
-  return String(itemValor(p, "id", "ID"));
-}
-
-function getColaboradorId(p){
-  return String(itemValor(p, "Colaborador_id", "colaborador_id"));
+  const p = String(nome||"").trim().split(/\s+/).filter(Boolean);
+  if (!p.length) return "?";
+  return (p[0][0] + (p.length > 1 ? p[p.length-1][0] : "")).toUpperCase();
 }
 
 function isCheckinFeito(p){
-  const pid = getPedidoId(p);
-  const cid = getColaboradorId(p);
+  const cid = String(getColaboradorId(p));
+  return checkinsHoje.some(c => String(itemValor(c,"Colaborador_id")) === cid && c.Retirou === true);
+}
 
-  return checkinsHoje.some(c => {
-    const cPid = String(itemValor(c, "Pedido_id", "pedido_id"));
-    const cCid = String(itemValor(c, "Colaborador_id", "colaborador_id"));
-    const retirou = window.SP && window.SP.isTrue ? window.SP.isTrue(itemValor(c, "Retirou", "retirou")) : true;
-    return retirou && ((pid && cPid === pid) || (cid && cCid === cid));
-  });
+function isAusente(p){
+  // a lista já vem filtrada com ausências via getPedidos; status Ausente ou Não vai almoçar
+  const status = normalizar(itemValor(p,"Status","status"));
+  return status === "ausente" || status === "nao vai almocar" || status === "nao_vai_almocar" ||
+         status === "ferias" || status === "férias" || status === "afastado" || status === "atestado";
+}
+
+// verifica se pedido é extra interno (não aparece para cozinha como separado)
+function pedidoConta(p){
+  const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
+  return true; // cozinha vê tudo (extras também), para montar os pratos
+}
+
+function diaAtual(){
+  const dias = ["domingo","segunda","terca","quarta","quinta","sexta","sabado"];
+  return dias[new Date().getDay()] || "segunda";
+}
+
+function semanaIdAtual(){
+  if (window.SP && SP.getSemanaId) return SP.getSemanaId(new Date());
+  const d = new Date(); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay()+6)%7));
+  const w1 = new Date(d.getFullYear(),0,4);
+  const wn = 1 + Math.round(((d-w1)/86400000-3+((w1.getDay()+6)%7))/7);
+  return d.getFullYear() + "-W" + String(wn).padStart(2,"0");
+}
+
+function atualizarData(){
+  const d = new Date();
+  const dias = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
+  const meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  document.getElementById("weekday").textContent = dias[d.getDay()];
+  document.getElementById("fulldate").textContent = d.getDate() + " de " + meses[d.getMonth()];
 }
 
 async function carregarCardapio(semanaId, dia){
   try {
-    const cardapio = await window.SP.getCardapio(semanaId);
-    const itens = cardapio.filter(c => normalizar(itemValor(c,"Dia","dia")) === normalizar(dia));
-
-    const box = document.getElementById("cardapioHoje");
-
-    if (!itens.length) {
-      box.innerHTML = "Nenhum cardápio cadastrado para hoje.";
-      return;
-    }
-
-    box.innerHTML = `
-      <div class="cozinha-cardapio-grid">
-        ${itens.map(i => {
-          const opcao = String(itemValor(i, "Opcao", "opcao") || "").toLowerCase();
-          const nome = itemValor(i, "Nome_Prato", "nomePrato") || tituloOpcao(opcao);
-          const detalhes = itemValor(i, "Detalhes", "detalhes", "Descricao", "descricao") || "";
-
-          const linhas = String(detalhes)
-            .split(/\r?\n|;/)
-            .map(x => x.trim())
-            .filter(Boolean);
-
-          return `
-            <article class="cozinha-cardapio-card">
-              <div class="cozinha-cardapio-head">
-                <span class="tag-${opcao}">${tituloOpcao(opcao)}</span>
-                <strong>${nome}</strong>
-              </div>
-              <div class="cozinha-cardapio-body">
-                ${linhas.map(l => `<div class="cozinha-cardapio-item">• ${l}</div>`).join("")}
-              </div>
-            </article>
-          `;
-        }).join("")}
-      </div>
-    `;
+    const items = await window.SP.getCardapio(semanaId);
+    const hoje  = items.filter(i => normalizar(itemValor(i,"Dia","dia")) === normalizar(dia));
+    const principal = hoje.find(i => normalizar(itemValor(i,"Opcao","opcao")) === "principal");
+    const nome = principal ? itemValor(principal,"Nome_Prato","nome_prato","Title") : null;
+    document.getElementById("cardapioHoje").textContent = nome || (hoje.length ? "Cardápio disponível" : "Cardápio não cadastrado");
   } catch(e) {
-    console.warn("Cardápio:", e);
-    document.getElementById("cardapioHoje").textContent = "Não foi possível carregar o cardápio.";
+    document.getElementById("cardapioHoje").textContent = "Cardápio indisponível";
   }
 }
 
-function tituloOpcao(opcao){
-  const mapa = {
-    principal: "Principal",
-    light: "Light",
-    carne: "Carne",
-    massa: "Massa",
-    lanche: "Lanche"
-  };
-  return mapa[String(opcao || "").toLowerCase()] || "Opção";
-}
-  
 async function sincronizar(){
-  atualizarData();
-
   const lista = document.getElementById("lista");
-  lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
+  if (lista) lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
 
   try {
-    if (!window.SP) throw new Error("sharepoint.js não carregado");
-
-    await window.SP.init();
-
-    if (!window.SP._account) {
-      lista.innerHTML = `
-        <div class="empty">
-          <div class="empty-icon">🔐</div>
-          <div class="empty-title">Conexão necessária</div>
-          <div class="empty-sub">Entre uma vez com uma conta autorizada da Homy para acessar os dados com segurança, sem expor segredo no Git.</div>
-          <button class="connect" onclick="conectar()">Conectar com Microsoft</button>
-        </div>`;
-      return;
-    }
-
     const semanaId = semanaIdAtual();
-    const dia = diaAtual();
+    const dia      = diaAtual();
 
     await carregarCardapio(semanaId, dia);
 
-    const pedidos = await window.SP.getPedidos(semanaId);
-    pedidosHoje = pedidos.filter(p => normalizar(itemValor(p,"Dia","dia")) === normalizar(dia) && pedidoConta(p));
+    // Carrega pedidos e ausências em paralelo
+    const [pedidos, ausencias] = await Promise.all([
+      window.SP.getPedidos(semanaId),
+      window.SP.getAusencias ? window.SP.getAusencias(true) : Promise.resolve([])
+    ]);
+
+    // Filtra pedidos do dia
+    pedidosHoje = pedidos.filter(p => normalizar(itemValor(p,"Dia","dia")) === normalizar(dia));
+
+    // Marca ausentes
+    const hoje = new Date().toISOString().slice(0,10);
+    pedidosHoje = pedidosHoje.map(p => {
+      const cid = String(getColaboradorId(p));
+      const ausente = ausencias.some(a => {
+        if (String(itemValor(a,"Colaborador_id")) !== cid) return false;
+        const ini = itemValor(a,"Data_Inicio");
+        const fim = itemValor(a,"Data_Fim");
+        if (!ini || !fim) return false;
+        return hoje >= ini.slice(0,10) && hoje <= fim.slice(0,10);
+      });
+      if (ausente) return { ...p, Status: "Ausente", _ausente: true };
+      return p;
+    });
 
     try {
       checkinsHoje = await window.SP.getCheckIn(semanaId, dia);
@@ -509,7 +411,7 @@ async function sincronizar(){
     renderLista();
   } catch(e) {
     console.error(e);
-    lista.innerHTML = `
+    if (lista) lista.innerHTML = `
       <div class="empty">
         <div class="empty-icon">⚠️</div>
         <div class="empty-title">Não foi possível conectar</div>
@@ -539,7 +441,7 @@ function renderLista(){
   const filtrados = pedidosHoje.filter(p => normalizar(getNome(p)).includes(termo));
   const entregues = pedidosHoje.filter(isCheckinFeito).length;
 
-  document.getElementById("cntDone").textContent = `${entregues} entregues`;
+  document.getElementById("cntDone").textContent  = `${entregues} entregues`;
   document.getElementById("cntTotal").textContent = `${pedidosHoje.length} total`;
 
   if (!pedidosHoje.length) {
@@ -547,11 +449,10 @@ function renderLista(){
       <div class="empty">
         <div class="empty-icon">🍽️</div>
         <div class="empty-title">Nenhum pedido para hoje</div>
-        <div class="empty-sub">Quando houver pedidos confirmados no admin, eles aparecerão aqui automaticamente.</div>
+        <div class="empty-sub">Quando houver pedidos confirmados, aparecerão aqui.</div>
       </div>`;
     return;
   }
-
   if (!filtrados.length) {
     lista.innerHTML = `
       <div class="empty">
@@ -562,49 +463,47 @@ function renderLista(){
   }
 
   lista.innerHTML = filtrados.map(p => {
-    const done = isCheckinFeito(p);
-    const nome = getNome(p);
-    const opcao = getOpcao(p);
+    const done    = isCheckinFeito(p);
+    const ausente = isAusente(p) || p._ausente;
+    const nome    = getNome(p);
+    const opcao   = getOpcao(p);
+    const cls     = done ? "done" : ausente ? "ausente" : "";
+    const badgeLabel = done ? "Entregue" : ausente ? "🚫 Ausente" : "Pendente";
+    const onclick = (!done && !ausente) ? `onclick="abrirModal('${getPedidoId(p)}')"` : "";
     return `
-      <article class="item ${done ? "done" : ""}" ${done ? "" : `onclick="abrirModal('${getPedidoId(p)}')"`}>
+      <article class="item ${cls}" ${onclick}>
         <div class="avatar">${iniciais(nome)}</div>
         <div class="info">
           <div class="name">${nome}</div>
           <div class="desc">${opcao}</div>
         </div>
-        <div class="badge">${done ? "Entregue" : "Pendente"}</div>
-      </article>
-    `;
+        <div class="badge">${badgeLabel}</div>
+      </article>`;
   }).join("");
 }
 
 function abrirModal(id){
   pedidoSelecionado = pedidosHoje.find(p => getPedidoId(p) === String(id));
   if (!pedidoSelecionado) return;
-  document.getElementById("modalNome").textContent = getNome(pedidoSelecionado);
-  document.getElementById("modal").classList.add("open");
+  document.getElementById("modalNome").textContent  = getNome(pedidoSelecionado);
+  document.getElementById("modalOpcao").textContent = getOpcao(pedidoSelecionado);
+  document.getElementById("modalOverlay").classList.add("open");
 }
 
 function fecharModal(){
   pedidoSelecionado = null;
-  document.getElementById("modal").classList.remove("open");
+  document.getElementById("modalOverlay").classList.remove("open");
 }
 
 async function confirmarRetirada(){
   if (!pedidoSelecionado) return;
-
   try {
     const semanaId = semanaIdAtual();
-    const dia = diaAtual();
-    const cid = getColaboradorId(pedidoSelecionado);
-    const nome = getNome(pedidoSelecionado);
-
-    if (window.SP.saveCheckIn) {
-      await window.SP.saveCheckIn(semanaId, cid, nome, dia, window.SP.getUserName ? window.SP.getUserName() : "Cozinha");
-    } else {
-      await window.SP.registrarCheckIn(semanaId, cid, nome, dia, window.SP.getUserName ? window.SP.getUserName() : "Cozinha");
-    }
-
+    const dia      = diaAtual();
+    const cid      = getColaboradorId(pedidoSelecionado);
+    const nome     = getNome(pedidoSelecionado);
+    const quem     = window.SP.getUserName ? window.SP.getUserName() : "Cozinha";
+    await window.SP.registrarCheckIn(semanaId, cid, nome, dia, quem);
     fecharModal();
     mostrarToast("Retirada confirmada");
     await sincronizar();
@@ -617,441 +516,97 @@ function mostrarToast(msg){
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.classList.add("show");
-  setTimeout(()=>t.classList.remove("show"), 2200);
+  setTimeout(() => t.classList.remove("show"), 2200);
 }
 
+// ---- fundo tecnológico ----
 function iniciarFundoTecnologico(){
   const canvas = document.getElementById("techCanvas");
   if (!canvas) return;
-
   const ctx = canvas.getContext("2d");
-  let w = 0;
-  let h = 0;
-  let dpr = 1;
-  let particles = [];
-  let rafId = null;
-
-  function resize(){
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    w = window.innerWidth;
-    h = window.innerHeight;
-    canvas.width = Math.floor(w * dpr);
-    canvas.height = Math.floor(h * dpr);
-    canvas.style.width = w + "px";
-    canvas.style.height = h + "px";
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-
-    const qtd = Math.max(46, Math.min(82, Math.floor(w / 22)));
-    particles = Array.from({length:qtd}, (_,i)=>criarParticula(i));
-  }
+  let w=0, h=0, dpr=1, particles=[], rafId=null;
 
   function criarParticula(i){
-    const tipo = i % 11 === 0 ? "red" : i % 5 === 0 ? "green" : "blue";
+    const tipo = i%11===0 ? "red" : i%5===0 ? "green" : "blue";
     return {
-      x: Math.random() * w,
-      y: Math.random() * h,
-      vx: (Math.random() - .5) * .34,
-      vy: (Math.random() - .5) * .28,
-      r: tipo === "red" ? 2.4 : tipo === "green" ? 2.7 : 2.1 + Math.random() * 1.4,
-      tipo,
-      fase: Math.random() * Math.PI * 2
+      x: Math.random()*w, y: Math.random()*h,
+      vx: (Math.random()-.5)*.34, vy: (Math.random()-.5)*.28,
+      r: tipo==="red" ? 2.4 : tipo==="green" ? 1.9 : 1.6,
+      tipo, a: 0.3+Math.random()*0.4
     };
   }
-
-  function cor(p, alpha){
-    if (p.tipo === "red") return `rgba(192,40,28,${alpha})`;
-    if (p.tipo === "green") return `rgba(34,200,121,${alpha})`;
-    return `rgba(97,184,255,${alpha})`;
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio||1,2);
+    w = window.innerWidth; h = window.innerHeight;
+    canvas.width  = Math.floor(w*dpr); canvas.height = Math.floor(h*dpr);
+    canvas.style.width = w+"px"; canvas.style.height = h+"px";
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    particles = Array.from({length:Math.max(40,Math.min(70,Math.floor(w/22)))},(_,i)=>criarParticula(i));
   }
-
-  function desenharHexagonos(t){
-    const estruturas = [
-      {x:w*.18,y:h*.18,s:58,a:.16},
-      {x:w*.82,y:h*.24,s:74,a:.12},
-      {x:w*.62,y:h*.78,s:86,a:.10}
-    ];
-
-    estruturas.forEach((m,idx)=>{
-      ctx.save();
-      ctx.translate(m.x + Math.sin(t/1700+idx)*18, m.y + Math.cos(t/2100+idx)*14);
-      ctx.rotate(Math.sin(t/3600+idx)*.18);
-      ctx.strokeStyle = `rgba(97,184,255,${m.a})`;
-      ctx.lineWidth = 1;
-
-      ctx.beginPath();
-      for(let i=0;i<6;i++){
-        const ang = Math.PI/3*i + Math.PI/6;
-        const x = Math.cos(ang)*m.s;
-        const y = Math.sin(ang)*m.s;
-        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-      }
-      ctx.closePath();
-      ctx.stroke();
-
-      for(let i=0;i<6;i++){
-        const ang = Math.PI/3*i + Math.PI/6;
-        const x = Math.cos(ang)*m.s;
-        const y = Math.sin(ang)*m.s;
-        ctx.beginPath();
-        ctx.arc(x,y,3.2,0,Math.PI*2);
-        ctx.fillStyle = i%3===0 ? "rgba(34,200,121,.22)" : "rgba(97,184,255,.24)";
-        ctx.fill();
-      }
-      ctx.restore();
-    });
-  }
-
-  function loop(t){
+  function loop(){
     ctx.clearRect(0,0,w,h);
-
-    desenharHexagonos(t);
-
-    for(const p of particles){
-      p.x += p.vx + Math.sin(t/1800 + p.fase) * .055;
-      p.y += p.vy + Math.cos(t/2200 + p.fase) * .045;
-
-      if(p.x < -20) p.x = w + 20;
-      if(p.x > w + 20) p.x = -20;
-      if(p.y < -20) p.y = h + 20;
-      if(p.y > h + 20) p.y = -20;
-    }
-
-    for(let i=0;i<particles.length;i++){
-      for(let j=i+1;j<particles.length;j++){
-        const a = particles[i], b = particles[j];
-        const dx = a.x-b.x, dy = a.y-b.y;
-        const dist = Math.sqrt(dx*dx+dy*dy);
-        const max = 145;
-        if(dist < max){
-          const alpha = (1 - dist/max) * .22;
-          ctx.beginPath();
-          ctx.moveTo(a.x,a.y);
-          ctx.lineTo(b.x,b.y);
-          ctx.strokeStyle = `rgba(97,184,255,${alpha})`;
-          ctx.lineWidth = .8;
-          ctx.stroke();
-        }
-      }
-    }
-
-    for(const p of particles){
-      const pulse = .65 + Math.sin(t/650 + p.fase) * .35;
-      ctx.beginPath();
-      ctx.arc(p.x,p.y,p.r + pulse*.8,0,Math.PI*2);
-      ctx.fillStyle = cor(p,.62);
-      ctx.shadowColor = p.tipo === "green" ? "rgba(34,200,121,.75)" : p.tipo === "red" ? "rgba(192,40,28,.72)" : "rgba(97,184,255,.75)";
-      ctx.shadowBlur = 12;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-
+    ctx.fillStyle="#040c1a"; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle="rgba(30,80,200,0.04)"; ctx.lineWidth=0.5;
+    for(let x=0;x<w;x+=56){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    for(let y=0;y<h;y+=56){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+    particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0)p.x=w; if(p.x>w)p.x=0;
+      if(p.y<0)p.y=h; if(p.y>h)p.y=0;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle = p.tipo==="green" ? "rgba(34,200,121,.75)" : p.tipo==="red" ? "rgba(192,40,28,.72)" : "rgba(97,184,255,.75)";
+      ctx.globalAlpha = p.a; ctx.fill(); ctx.globalAlpha=1;
+    });
     rafId = requestAnimationFrame(loop);
   }
-
-  window.addEventListener("resize", resize);
-  resize();
-  rafId = requestAnimationFrame(loop);
+  window.addEventListener("resize",resize);
+  resize(); rafId = requestAnimationFrame(loop);
 }
 
-iniciarFundoTecnologico();
-atualizarData();
-
+// ================================================================
+// GATE DE ACESSO — só deixa entrar recepcao.hq@homyquimica.com.br
+// ================================================================
 async function iniciarCozinha(){
   const lista = document.getElementById("lista");
   try {
-    if (window.HOMY_SP_READY) {
-      await window.HOMY_SP_READY;
+    if (window.HOMY_SP_READY) await window.HOMY_SP_READY;
+    if (!window.SP) throw new Error("sharepoint.js não carregou.");
+
+    // Garante login
+    const logado = await window.SP.init();
+    if (!logado) await window.SP.login();
+
+    // Verifica email
+    const email = (window.SP.getUserEmail ? window.SP.getUserEmail() : "").toLowerCase().trim();
+    if (email !== EMAIL_COZINHA) {
+      // Acesso negado — mostra tela de bloqueio
+      document.getElementById("appCozinha").style.display = "none";
+      const neg = document.getElementById("telaAcessoNegado");
+      neg.style.display = "flex";
+      return;
     }
-    if (!window.SP) {
-      throw new Error("sharepoint.js não ficou disponível. Confirme se o arquivo sharepoint.js está na raiz do GitHub Pages.");
-    }
+
+    // Acesso permitido
+    document.getElementById("appCozinha").style.display = "block";
+    atualizarData();
     await sincronizar();
     setInterval(sincronizar, 30000);
+
   } catch(e) {
     console.error("Erro ao iniciar cozinha:", e);
-    if (lista) {
-      lista.innerHTML = `
-        <div class="empty">
-          <div class="empty-icon">⚠️</div>
-          <div class="empty-title">Não foi possível conectar</div>
-          <div class="empty-sub">${e.message || e}</div>
-          <button class="connect" onclick="location.reload()">Recarregar</button>
-        </div>`;
-    }
+    if (lista) lista.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-title">Não foi possível conectar</div>
+        <div class="empty-sub">${e.message || e}</div>
+        <button class="connect" onclick="location.reload()">Recarregar</button>
+      </div>`;
+    document.getElementById("appCozinha").style.display = "block";
   }
 }
 
+iniciarFundoTecnologico();
 iniciarCozinha();
-</script>
-<script>
-(function fixCozinhaCardapio(){
-
-  // Textos que NÃO devem aparecer como detalhe na cozinha
-  function ehObsSuja(texto){
-    const n = String(texto||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-    return n.includes("cardapio acima esta sujeito") ||
-           n.includes("sujeito a alteracoes") ||
-           n.includes("opcoes carne e massa substituem") ||
-           n.includes("opcao carne substitui") ||
-           n.includes("opcao massa substitui") ||
-           n.includes("opcoes light e lanche substituem") ||
-           n.includes("opcao light substitui") ||
-           n.includes("opcao lanche substitui") ||
-           n.includes("esta opcao substitui") ||
-           n.includes("extraido automaticamente") ||
-           n.includes("pdf vascon") ||
-           n.length < 2;
-  }
-
-  const NOMES_GENERICOS = [
-    "prato principal","principal","light","carne","massa","lanche",
-    "cardapio","prato","sem nome",""
-  ];
-
-  function ehNomeGenerico(v){
-    return NOMES_GENERICOS.includes(
-      String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim()
-    );
-  }
-
-  // Observação por opção — aparece como nota amarela no card
-  const OBS_POR_OPCAO = {
-    principal: "O cardápio acima está sujeito a alterações.",
-    light:     "Esta opção substitui o prato principal completo.",
-    lanche:    "Esta opção substitui o prato principal completo.",
-    carne:     "Esta opção substitui a carne do prato principal.",
-    massa:     "Esta opção substitui a carne do prato principal."
-  };
-
-  // Sobrescreve carregarCardapio após ela ser definida
-  function patchCarregarCardapio(){
-    if(typeof window.carregarCardapio !== "function") return false;
-
-    window.carregarCardapio = async function(semanaId, dia){
-      try{
-        const cardapio = await window.SP.getCardapio(semanaId);
-        const itens = cardapio.filter(c => {
-          const diaItem = String((c.Dia||c.dia||"")).normalize("NFD")
-            .replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-          const diaAlvo = String(dia||"").normalize("NFD")
-            .replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-          return diaItem === diaAlvo || diaItem.startsWith(diaAlvo.slice(0,3));
-        });
-
-        const box = document.getElementById("cardapioHoje");
-        if(!box) return;
-
-        if(!itens.length){
-          box.innerHTML = "Nenhum cardápio cadastrado para hoje.";
-          return;
-        }
-
-        // Ordem de exibição
-        const ORDEM = ["principal","light","carne","massa","lanche"];
-        itens.sort((a,b) => {
-          const ta = ORDEM.indexOf(String(a.Opcao||a.opcao||"").toLowerCase());
-          const tb = ORDEM.indexOf(String(b.Opcao||b.opcao||"").toLowerCase());
-          return (ta<0?99:ta)-(tb<0?99:tb);
-        });
-
-        box.innerHTML = '<div class="cozinha-cardapio-grid">' +
-          itens.map(i => {
-            const opcao   = String(i.Opcao||i.opcao||"principal").toLowerCase();
-            let   nomeRaw = String(i.Nome_Prato||i.nomePrato||i.Prato||i.Title||"").trim();
-            const detRaw  = String(i.Detalhes||i.detalhes||"");
-
-            // Filtra linhas sujas dos detalhes
-            let linhas = detRaw
-              .split(/\r?\n|;/)
-              .map(x => x.replace(/^[-•·\s]+/,"").trim())
-              .filter(x => x.length > 1 && !ehObsSuja(x));
-
-            // Nome genérico → usa primeiro detalhe como nome
-            if(ehNomeGenerico(nomeRaw) && linhas.length > 0){
-              if(opcao === "principal"){
-                nomeRaw = "Cardápio do Dia";
-              } else {
-                nomeRaw  = linhas[0];
-                linhas   = linhas.slice(1);
-              }
-            }
-            if(ehNomeGenerico(nomeRaw)) nomeRaw = "Cardápio não cadastrado";
-
-            const titulo = {
-              principal:"PRINCIPAL", light:"LIGHT", carne:"CARNE",
-              massa:"MASSA", lanche:"LANCHE"
-            }[opcao] || opcao.toUpperCase();
-
-            const obs = OBS_POR_OPCAO[opcao] || "";
-
-            return '<article class="cozinha-cardapio-card">' +
-              '<div class="cozinha-cardapio-head">' +
-                '<span class="tag-'+opcao+'">'+titulo+'</span>' +
-                '<strong>'+nomeRaw+'</strong>' +
-              '</div>' +
-              (linhas.length
-                ? '<div class="cozinha-cardapio-body">' +
-                    linhas.map(l => '<div class="cozinha-cardapio-item">• '+l+'</div>').join("") +
-                  '</div>'
-                : '') +
-              (obs
-                ? '<div class="cozinha-cardapio-obs">ℹ️ '+obs+'</div>'
-                : '') +
-            '</article>';
-          }).join("") +
-        '</div>';
-
-      } catch(e){
-        console.warn("Cardápio cozinha:", e);
-        const box = document.getElementById("cardapioHoje");
-        if(box) box.textContent = "Não foi possível carregar o cardápio.";
-      }
-    };
-
-    return true;
-  }
-
-  // Adiciona CSS para .cozinha-cardapio-obs
-  const style = document.createElement("style");
-  style.textContent = `.cozinha-cardapio-obs{
-    margin:.4rem 1rem .8rem;
-    padding:.45rem .7rem;
-    border-radius:8px;
-    background:rgba(255,180,0,.07);
-    border:1px solid rgba(255,180,0,.18);
-    font-size:.72rem;
-    color:rgba(255,210,120,.85);
-    line-height:1.45;
-  }`;
-  document.head.appendChild(style);
-
-  // Tenta patchar imediatamente e por até 3s
-  let t = 0;
-  const iv = setInterval(function(){
-    if(patchCarregarCardapio()){ clearInterval(iv); console.log("[fix-cozinha] patch aplicado"); }
-    if(++t > 30) clearInterval(iv);
-  }, 100);
-
-})();
-</script>
-  <!-- ========================================================
-  Mostra colaboradores ausentes travados na lista do dia
-======================================================== -->
-<script>
-(function fixCozinhaAusencias(){
-
-  // Aguarda sincronizar() estar disponível e intercepta
-  let ausenciasCache = [];
-
-  // Carrega ausências ativas hoje
-  async function carregarAusenciasHoje(){
-    try{
-      if(!window.SP) return [];
-      await SP.init();
-      const hoje = new Date(); hoje.setHours(0,0,0,0);
-      const todas = await SP.getAusencias(true).catch(()=>[]);
-      return todas.filter(a => {
-        const ini = new Date(SP.pick(a,"Data_Inicio")||0);
-        const fim = new Date(SP.pick(a,"Data_Fim")||0);
-        ini.setHours(0,0,0,0); fim.setHours(23,59,59,999);
-        return hoje >= ini && hoje <= fim;
-      });
-    } catch(e){
-      console.warn("[ausencias cozinha]",e);
-      return [];
-    }
-  }
-
-  function estaAusente(colaboradorId){
-    return ausenciasCache.some(a =>
-      String(SP.pick(a,"Colaborador_id")||"") === String(colaboradorId)
-    );
-  }
-
-  function getAusencia(colaboradorId){
-    return ausenciasCache.find(a =>
-      String(SP.pick(a,"Colaborador_id")||"") === String(colaboradorId)
-    );
-  }
-
-  function fmtData(v){
-    if(!v) return "";
-    const d = new Date(v);
-    return isNaN(d) ? v : d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
-  }
-
-  // Sobrescreve renderLista para incluir ausentes
-  function patchRenderLista(){
-    if(typeof window.renderLista !== "function") return false;
-    const original = window.renderLista;
-    window.renderLista = function(){
-      original();
-
-      // Após renderizar a lista normal, adiciona linha de ausentes
-      if(!ausenciasCache.length) return;
-
-      const lista = document.getElementById("lista");
-      if(!lista) return;
-
-      // Encontra colaboradores da semana que estão ausentes hoje
-      // mas que NÃO têm pedido (pedido cancelado ou sem pedido)
-      const idsComPedido = new Set(
-        pedidosHoje.map(p => String(itemValor(p,"Colaborador_id","colaborador_id")||""))
-      );
-
-      ausenciasCache.forEach(a => {
-        const cid   = String(SP.pick(a,"Colaborador_id")||"");
-        const cnome = String(SP.pick(a,"Colaborador_nome")||"");
-        const motivo = String(SP.pick(a,"Motivo")||"ausência").replace("ferias","férias");
-        const ini   = fmtData(SP.pick(a,"Data_Inicio"));
-        const fim   = fmtData(SP.pick(a,"Data_Fim"));
-
-        // Se já aparece como pedido cancelado, não duplica
-        if(idsComPedido.has(cid)) return;
-
-        const article = document.createElement("article");
-        article.className = "item done"; // trava visual igual entregue
-        article.style.cssText = "background:rgba(192,40,28,.10);border-color:rgba(192,40,28,.28);cursor:default";
-        article.innerHTML = `
-          <div class="avatar" style="background:rgba(100,100,100,.3);border-color:rgba(150,150,150,.3);color:rgba(200,200,200,.7)">🚫</div>
-          <div class="info">
-            <div class="name">${cnome}</div>
-            <div class="desc">${motivo} · ${ini}${fim&&fim!==ini?" – "+fim:""}</div>
-          </div>
-          <div class="badge" style="background:rgba(192,40,28,.18);color:rgba(255,120,100,.9)">Ausente</div>
-        `;
-        lista.appendChild(article);
-      });
-    };
-    return true;
-  }
-
-  // Sobrescreve sincronizar para carregar ausências junto
-  function patchSincronizar(){
-    if(typeof window.sincronizar !== "function") return false;
-    const original = window.sincronizar;
-    window.sincronizar = async function(){
-      // Carrega ausências em paralelo com sincronizar original
-      const [, aus] = await Promise.all([
-        original(),
-        carregarAusenciasHoje()
-      ]);
-      ausenciasCache = aus;
-      // Re-renderiza lista com ausentes
-      if(typeof window.renderLista === "function") window.renderLista();
-    };
-    return true;
-  }
-
-  let t = 0;
-  const iv = setInterval(function(){
-    const ok1 = patchRenderLista();
-    const ok2 = patchSincronizar();
-    if(ok1 && ok2){ clearInterval(iv); console.log("[fix-ausencias] patches aplicados"); }
-    if(++t > 50) clearInterval(iv);
-  }, 100);
-
-})();
 </script>
 </body>
 </html>
