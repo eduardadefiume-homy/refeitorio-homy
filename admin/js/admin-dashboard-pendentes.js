@@ -1,6 +1,7 @@
 // ============================================================
 // admin-dashboard-pendentes.js
-// Posição final + select estável
+// Botão de trava de pendentes no Dashboard
+// Regra preservada: quem não marcou vira Principal Confirmado
 // ============================================================
 
 (function () {
@@ -15,6 +16,18 @@
       .toLowerCase();
   }
 
+  function normalizarDiaParaSP(dia) {
+    const n = normalizar(dia);
+
+    if (n.startsWith("seg")) return "segunda";
+    if (n.startsWith("ter")) return "terca";
+    if (n.startsWith("qua")) return "quarta";
+    if (n.startsWith("qui")) return "quinta";
+    if (n.startsWith("sex")) return "sexta";
+
+    return n;
+  }
+
   function limparControlesAntigos() {
     document.querySelectorAll("[id^='controleTravaPendentes']").forEach(el => {
       if (el.id !== ID_BOX) el.remove();
@@ -22,26 +35,45 @@
   }
 
   function estaNoDashboard() {
-    const titulo = document.querySelector(".topbar-title, h1, h2");
+    const ativoModulo = document.querySelector("#mod-dashboard.module.active");
+    if (ativoModulo) return true;
+
+    const titulo = document.querySelector(".topbar-title, #topbarTitle, h1, h2");
     if (normalizar(titulo?.innerText || "").includes("dashboard")) return true;
 
-    const ativo = document.querySelector(".nav-item.active, .module.active");
+    const ativo = document.querySelector(".nav-item.active");
     return normalizar(ativo?.innerText || "").includes("dashboard");
   }
 
   function encontrarFaixaSemanaAtual() {
+    const ids = [
+      "semanaLabel",
+      "dashboardSemanaLabel",
+      "dashSemanaLabel"
+    ];
+
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) return el.closest(".info-box, .alert, .card, div") || el;
+    }
+
     const candidatos = Array.from(document.querySelectorAll("div"));
 
     return candidatos
       .filter(el => {
         const texto = el.innerText || "";
-        return texto.includes("Semana atual:") && texto.includes("dados exibidos");
+        return (
+          texto.includes("Semana:") ||
+          texto.includes("Semana atual:") ||
+          texto.includes("dados exibidos") ||
+          /\d{4}-W\d{1,2}/i.test(texto)
+        );
       })
       .sort((a, b) => {
         const areaA = a.offsetWidth * a.offsetHeight;
         const areaB = b.offsetWidth * b.offsetHeight;
         return areaA - areaB;
-      })[0] || null;
+      })[0] || document.querySelector("#mod-dashboard .module-body") || document.querySelector("#mod-dashboard");
   }
 
   function numeroSemanaISO(data) {
@@ -53,6 +85,14 @@
   }
 
   function obterSemanaAtual() {
+    if (window.AdminState && typeof AdminState.getSemanaId === "function") {
+      return AdminState.getSemanaId();
+    }
+
+    if (window.SP && typeof SP.getCurrentWeekId === "function") {
+      return SP.getCurrentWeekId();
+    }
+
     if (typeof window.getSemanaId === "function") return window.getSemanaId();
 
     const texto = document.body.innerText || "";
@@ -90,7 +130,6 @@
       gap: 12px;
       box-sizing: border-box;
       min-height: 54px;
-      max-height: 64px;
       overflow: visible;
       position: static;
       clear: both;
@@ -98,7 +137,7 @@
     `;
 
     box.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1;">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1;flex-wrap:wrap;">
         <div style="display:flex;flex-direction:column;gap:4px;width:145px;flex:0 0 145px;">
           <label class="form-label" style="font-size:10px;margin:0;">DIA</label>
           <select id="diaTravaPendentesUnico" class="form-select" style="height:34px;padding:4px 8px;">
@@ -110,7 +149,7 @@
           </select>
         </div>
 
-        <div style="font-size:12px;color:#ffcf8a;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        <div style="font-size:12px;color:#ffcf8a;line-height:1.3;white-space:normal;min-width:220px;flex:1;">
           Após o prazo, preenche automaticamente como <b>Principal</b> quem ficou pendente.
         </div>
       </div>
@@ -134,6 +173,56 @@
     document.getElementById("btnTravarPendentesUnico").addEventListener("click", travarPendentesComoPrincipal);
   }
 
+  async function salvarPedidoPrincipal({ semanaId, colaborador, dia }) {
+    const colaboradorId = String(colaborador.id || colaborador.ID || "");
+    const colaboradorNome = colaborador.Nome || colaborador.Title || "";
+    const centroCusto = colaborador.Centro_Custo || "";
+
+    if (!window.SP || typeof SP.savePedido !== "function") {
+      throw new Error("SP.savePedido não encontrado.");
+    }
+
+    const diaNormalizado = normalizarDiaParaSP(dia);
+
+    try {
+      return await SP.savePedido({
+        semanaId,
+        colaboradorId,
+        colaboradorNome,
+        centroCusto,
+        dia: diaNormalizado,
+        opcao: "principal",
+        nomePrato: "Principal",
+        confirmado: true,
+        status: "Confirmado",
+        origem: "Admin",
+        dataHora: new Date().toISOString(),
+        observacao: "Preenchido automaticamente após prazo de marcação.",
+        Alterado_Por: SP.getUserEmail ? SP.getUserEmail() : ""
+      });
+    } catch (erroNovoFormato) {
+      console.warn("[trava pendentes] savePedido novo formato falhou, tentando formato antigo:", erroNovoFormato);
+
+      return SP.savePedido(
+        semanaId,
+        colaboradorId,
+        colaboradorNome,
+        diaNormalizado,
+        "Principal",
+        "Principal",
+        {
+          confirmado: true,
+          status: "Confirmado",
+          origem: "Admin",
+          centroCusto,
+          dataHora: new Date().toISOString(),
+          observacao: "Preenchido automaticamente após prazo de marcação.",
+          alteradoPor: SP.getUserEmail ? SP.getUserEmail() : ""
+        }
+      );
+    }
+  }
+
   async function travarPendentesComoPrincipal() {
     try {
       if (!window.SP) {
@@ -141,11 +230,14 @@
         return;
       }
 
+      await SP.init();
+
       const dia = document.getElementById("diaTravaPendentesUnico")?.value || diaSelecionado || "Segunda";
       diaSelecionado = dia;
       localStorage.setItem("diaTravaPendentes", diaSelecionado);
 
       const semanaId = obterSemanaAtual();
+      const diaNormalizado = normalizarDiaParaSP(dia);
 
       const ok = confirm(
         `Confirmar trava dos pendentes?\n\n` +
@@ -156,50 +248,81 @@
 
       if (!ok) return;
 
-      const colaboradores = await (SP.getTodosColaboradores ? SP.getTodosColaboradores() : SP.getColaboradores());
+      const btn = document.getElementById("btnTravarPendentesUnico");
+      const txtOriginal = btn ? btn.textContent : "";
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Travando...";
+      }
+
+      const colaboradores = await (
+        SP.getTodosColaboradores
+          ? SP.getTodosColaboradores()
+          : SP.getColaboradores()
+      );
+
       const pedidosSemana = await SP.getPedidos(semanaId);
 
       const ativos = colaboradores.filter(c => {
-        const ativo = SP.isTrue ? SP.isTrue(c.Ativo) : String(c.Ativo).toLowerCase() !== "false";
-        return ativo;
+        if (SP.isTrue) return SP.isTrue(c.Ativo);
+        return String(c.Ativo).toLowerCase() !== "false";
       });
 
       let criados = 0;
+      let jaExistiam = 0;
+      let falhas = 0;
 
       for (const c of ativos) {
-        const colaboradorId = String(c.id);
+        const colaboradorId = String(c.id || c.ID || "");
+
+        if (!colaboradorId) continue;
 
         const jaTemPedido = pedidosSemana.some(p =>
-          String(p.Colaborador_id) === colaboradorId &&
-          normalizar(p.Dia) === normalizar(dia)
+          String(p.Colaborador_id || p.colaboradorId || "") === colaboradorId &&
+          normalizar(p.Dia) === normalizar(diaNormalizado)
         );
 
-        if (jaTemPedido) continue;
-
-        await SP.savePedido(semanaId, colaboradorId, c.Nome || c.Title || "", dia, "Principal", "Principal");
-
-        const pedidosColaborador = await SP.getPedidoColaborador(semanaId, colaboradorId);
-        const pedidoCriado = pedidosColaborador.find(p => normalizar(p.Dia) === normalizar(dia));
-
-        if (pedidoCriado) {
-          await SP.updatePedido(pedidoCriado.id, {
-            Centro_Custo: c.Centro_Custo || "",
-            Status: "Confirmado",
-            Confirmado: true,
-            Origem: "Admin",
-            Observacao: "Preenchido automaticamente após prazo de marcação.",
-            Alterado_Por: SP.getUserEmail ? SP.getUserEmail() : ""
-          });
+        if (jaTemPedido) {
+          jaExistiam++;
+          continue;
         }
 
-        criados++;
+        try {
+          await salvarPedidoPrincipal({
+            semanaId,
+            colaborador: c,
+            dia: diaNormalizado
+          });
+
+          criados++;
+        } catch (erro) {
+          falhas++;
+          console.error("Falha ao travar colaborador:", c.Nome || c.Title, erro);
+        }
       }
 
-      alert(`${criados} pendente(s) preenchido(s) como Principal para ${dia}.`);
-      location.reload();
+      alert(
+        `${criados} pendente(s) preenchido(s) como Principal para ${dia}.` +
+        `\n${jaExistiam} já tinham registro.` +
+        (falhas ? `\n${falhas} falha(s). Verifique o console.` : "")
+      );
+
+      if (window.AdminDashboard && window.AdminState) {
+        await AdminDashboard.load(AdminState.getSemanaId());
+      } else {
+        location.reload();
+      }
+
     } catch (erro) {
       console.error("Erro ao travar pendentes:", erro);
       alert(`Erro ao travar pendentes: ${erro.message || erro}`);
+    } finally {
+      const btn = document.getElementById("btnTravarPendentesUnico");
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "🔒 Travar pendentes";
+      }
     }
   }
 
@@ -210,7 +333,7 @@
       tentativas++;
       inserirBotao();
 
-      if (document.getElementById(ID_BOX) || tentativas >= 20) {
+      if (document.getElementById(ID_BOX) || tentativas >= 30) {
         clearInterval(timer);
       }
     }, 300);
