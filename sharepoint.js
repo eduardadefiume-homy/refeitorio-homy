@@ -17,6 +17,35 @@ const SP = window.SP = {
   _siteId: null,
   _listIds: {},
 
+  listAliases: {
+    Cardapio: ["Cardapio", "Cardápio"],
+    Pedidos: ["Pedidos"],
+    Colaboradores: ["Colaboradores"],
+    Extras: ["Extras"],
+    Configuracoes: ["Configuracoes", "Configurações"],
+    Ausencias_Refeitorio: [
+      "Ausencias_Refeitorio",
+      "Ausências_Refeitorio",
+      "Ausencias Refeitorio",
+      "Ausências Refeitório",
+      "Ausencias",
+      "Ausências",
+      "Ausencia",
+      "Ausência"
+    ],
+    Valores_Refeicao: [
+      "Valores_Refeicao",
+      "Valores Refeicao",
+      "Valores Refeição",
+      "Valores de Refeicao",
+      "Valores de Refeição",
+      "Valor_Refeicao",
+      "Valor Refeicao",
+      "Valor Refeição",
+      "Valores"
+    ]
+  },
+
   pick(obj, ...keys) {
     for (const key of keys) {
       if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
@@ -499,12 +528,16 @@ const SP = window.SP = {
     const siteId = await this.getSiteId();
     const data = await this.graph("GET", `/sites/${siteId}/lists?$select=id,displayName,name`);
 
-    const wanted = this.norm(displayName);
+    const candidates = this.listAliases[displayName] || [displayName];
+    const normalizedCandidates = candidates.map(x => this.norm(x));
 
-    const list = (data.value || []).find(l =>
-      this.norm(l.displayName) === wanted ||
-      this.norm(l.name) === wanted
-    );
+    const list = (data.value || []).find(l => {
+      const display = this.norm(l.displayName);
+      const name = this.norm(l.name);
+
+      return normalizedCandidates.includes(display) ||
+        normalizedCandidates.includes(name);
+    });
 
     if (!list) {
       throw new Error(`Lista não encontrada no SharePoint: ${displayName}`);
@@ -925,6 +958,18 @@ const SP = window.SP = {
     return valores.length ? valores[0] : null;
   },
 
+  async createValorRefeicao(fields) {
+    return this.createItem("Valores_Refeicao", fields);
+  },
+
+  async updateValorRefeicao(id, fields) {
+    return this.updateItem("Valores_Refeicao", id, fields);
+  },
+
+  async deleteValorRefeicao(id) {
+    return this.deleteItem("Valores_Refeicao", id);
+  },
+
   _resolveColunasValores(item) {
     const valorVascon = this.moneyToNumber(this.pick(
       item,
@@ -998,6 +1043,9 @@ const SP = window.SP = {
         total: conf.length,
         principal: conf.filter(p => this.norm(this.pick(p, "Opcao")) === "principal").length,
         light: conf.filter(p => this.norm(this.pick(p, "Opcao")) === "light").length,
+        carne: conf.filter(p => this.norm(this.pick(p, "Opcao")) === "carne").length,
+        massa: conf.filter(p => this.norm(this.pick(p, "Opcao")) === "massa").length,
+        lanche: conf.filter(p => this.norm(this.pick(p, "Opcao")) === "lanche").length,
         pendentes: Math.max(0, colabs.length - lista.length)
       };
     });
