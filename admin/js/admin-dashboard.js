@@ -13,6 +13,11 @@ const AdminDashboard = window.AdminDashboard = {
       await this._renderOperacaoDia(r, semanaId);
       this._renderGerencial(r);
       this._renderSetores(r);
+      this._renderProximosDias(r);
+
+      if (window.AdminDashboardPendentes?.init) {
+        window.AdminDashboardPendentes.init();
+      }
 
     } catch (e) {
       console.error("[Dashboard]", e);
@@ -209,15 +214,14 @@ const AdminDashboard = window.AdminDashboard = {
       el.innerHTML = `
         <div class="dashboard-list-item">
           <div>
-            <div class="dashboard-list-main">Nenhum setor com pedido hoje</div>
-            <div class="dashboard-list-sub">0 refeições</div>
+            <div class="dashboard-list-main">Sem dados hoje</div>
           </div>
         </div>
       `;
       return;
     }
 
-    el.innerHTML = setores.map(item => {
+    el.innerHTML = setores.slice(0, 6).map(item => {
       let nome = "Sem CC";
       let total = 0;
 
@@ -234,6 +238,42 @@ const AdminDashboard = window.AdminDashboard = {
           <div>
             <div class="dashboard-list-main">${AdminUtils.esc(nome)}</div>
             <div class="dashboard-list-sub">${AdminUtils.esc(total)} refeições</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  },
+
+  _renderProximosDias(r) {
+    const el = document.getElementById("dashProximosDiasList");
+    if (!el) return;
+
+    const porDia = r.porDia || {};
+    const ordem = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    const labels = {
+      segunda: "Segunda",
+      terca: "Terça",
+      quarta: "Quarta",
+      quinta: "Quinta",
+      sexta: "Sexta"
+    };
+
+    const hojeNorm = AdminUtils.norm(r.diaHoje || "");
+    const idxHoje = ordem.indexOf(hojeNorm);
+    const proximos = ordem.filter((dia, idx) => idxHoje < 0 || idx > idxHoje);
+
+    const lista = proximos.length ? proximos : ordem;
+
+    el.innerHTML = lista.slice(0, 5).map(dia => {
+      const item = porDia[dia] || {};
+      const total = item.total ?? 0;
+      const pendentes = item.pendentes ?? 0;
+
+      return `
+        <div class="dashboard-list-item">
+          <div>
+            <div class="dashboard-list-main">${labels[dia] || dia}</div>
+            <div class="dashboard-list-sub">${AdminUtils.esc(total)} refeições · ${AdminUtils.esc(pendentes)} pendentes</div>
           </div>
         </div>
       `;
