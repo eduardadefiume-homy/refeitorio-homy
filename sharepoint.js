@@ -1,9 +1,9 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: homy-sharepoint-syntax-fix-20260610-1
+// v: homy-admin-stable-20260610-1
 // ============================================================
 
-const SP = {
+const SP = window.SP = {
   clientId: "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
   tenantId: "a2850abc-334a-4805-b6b2-420b4aef68a9",
   siteUrl: "homyquimica.sharepoint.com",
@@ -39,13 +39,26 @@ const SP = {
   },
 
   moneyToNumber(value) {
-    if (typeof value === "number") return value;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
     const s = String(value || "")
       .replace(/[R$\s]/g, "")
       .replace(/\./g, "")
       .replace(",", ".");
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
+  },
+
+  async waitForMsal(timeoutMs = 8000) {
+    const start = Date.now();
+
+    while (!window.msal) {
+      if (Date.now() - start > timeoutMs) {
+        throw new Error("MSAL não carregou. Verifique se msal-browser.min.js está antes de sharepoint.js.");
+      }
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+
+    return true;
   },
 
   getSemanaId(date = new Date()) {
@@ -109,12 +122,17 @@ const SP = {
 
   isExtraPedido(p) {
     const origem = this.norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
+    const tipo = this.norm(this.pick(p, "tipo", "Tipo") || "");
     const nome = this.norm(this.pick(p, "Colaborador_nome", "Title", "Nome") || "");
 
     return origem.includes("extra") ||
+      tipo.includes("extra") ||
       origem.includes("investigador") ||
+      tipo.includes("investigador") ||
       origem.includes("guarda") ||
-      nome.includes("refeicao extra");
+      tipo.includes("guarda") ||
+      nome.includes("refeicao extra") ||
+      nome.includes("refeição extra");
   },
 
   isAusenciaPedido(p) {
@@ -129,6 +147,8 @@ const SP = {
       status.includes("afastado") ||
       status.includes("ferias") ||
       status.includes("férias") ||
+      status.includes("bloqueado") ||
+      status.includes("travado") ||
       opcao.includes("ausente") ||
       opcao.includes("nao vou almocar") ||
       origem.includes("ausencia") ||
@@ -152,9 +172,7 @@ const SP = {
       return !!this._account;
     }
 
-    if (!window.msal) {
-      throw new Error("MSAL não carregou. Verifique se msal-browser.min.js está antes de sharepoint.js.");
-    }
+    await this.waitForMsal();
 
     this._msalInstance = new msal.PublicClientApplication({
       auth: {
@@ -226,9 +244,7 @@ const SP = {
   async loginSilencioso() {
     await this.init();
 
-    if (!this._account) {
-      return false;
-    }
+    if (!this._account) return false;
 
     try {
       await this._msalInstance.acquireTokenSilent({
@@ -248,13 +264,9 @@ const SP = {
 
     await this.init();
 
-    if (this._account) {
-      return true;
-    }
+    if (this._account) return true;
 
-    if (!interactive) {
-      return false;
-    }
+    if (!interactive) return false;
 
     return this.login();
   },
@@ -328,7 +340,8 @@ const SP = {
       }
     });
   },
-    async logout() {
+
+  async logout() {
     await this.init();
 
     const account = this._account;
@@ -362,9 +375,7 @@ const SP = {
     } catch (e) {
       console.warn("[SP] acquireTokenSilent falhou:", e);
 
-      if (!interactive) {
-        return null;
-      }
+      if (!interactive) return null;
 
       const r = await this._msalInstance.acquireTokenPopup({
         scopes: this.scopes
@@ -483,9 +494,7 @@ const SP = {
   },
 
   async getListId(displayName) {
-    if (this._listIds[displayName]) {
-      return this._listIds[displayName];
-    }
+    if (this._listIds[displayName]) return this._listIds[displayName];
 
     const siteId = await this.getSiteId();
     const data = await this.graph("GET", `/sites/${siteId}/lists?$select=id,displayName,name`);
@@ -526,9 +535,7 @@ const SP = {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
 
-    return this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, {
-      fields
-    });
+    return this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, { fields });
   },
 
   async updateItem(listName, itemId, fields) {
@@ -561,9 +568,7 @@ const SP = {
       Valor: valor
     };
 
-    if (item?.id) {
-      return this.updateItem("Configuracoes", item.id, fields);
-    }
+    if (item?.id) return this.updateItem("Configuracoes", item.id, fields);
 
     return this.createItem("Configuracoes", fields);
   },
@@ -627,9 +632,7 @@ const SP = {
       Detalhes: detalhes || ""
     };
 
-    if (existente?.id) {
-      return this.updateItem("Cardapio", existente.id, fields);
-    }
+    if (existente?.id) return this.updateItem("Cardapio", existente.id, fields);
 
     return this.createItem("Cardapio", fields);
   },
@@ -689,6 +692,10 @@ const SP = {
     return this.updateItem("Colaboradores", id, { Ativo: false });
   },
 
+  async deleteColaborador(id) {
+    return this.deleteItem("Colaboradores", id);
+  },
+
   async getPedidos(semanaId) {
     const items = await this.getItems("Pedidos");
 
@@ -706,7 +713,8 @@ const SP = {
       this.norm(this.pick(p, "Dia")) === this.norm(dia)
     ) || null;
   },
-    async savePedido(dados) {
+
+  async savePedido(dados) {
     const semanaId = dados.semanaId || dados.Semana_id || this.getCurrentWeekId();
     const colaboradorId = dados.colaboradorId || dados.Colaborador_id;
     const dia = dados.dia || dados.Dia;
@@ -733,9 +741,7 @@ const SP = {
       Observacao: dados.observacao || dados.Observacao || ""
     };
 
-    if (existente?.id) {
-      return this.updateItem("Pedidos", existente.id, fields);
-    }
+    if (existente?.id) return this.updateItem("Pedidos", existente.id, fields);
 
     return this.createItem("Pedidos", fields);
   },
@@ -751,10 +757,16 @@ const SP = {
     if (dados.opcao || dados.Opcao) fields.Opcao = this.norm(dados.opcao || dados.Opcao);
     if (dados.nomePrato || dados.Nome_Prato) fields.Nome_Prato = dados.nomePrato || dados.Nome_Prato;
     if (dados.status || dados.Status) fields.Status = dados.status || dados.Status;
+    if (dados.Confirmado !== undefined || dados.confirmado !== undefined) fields.Confirmado = dados.Confirmado ?? dados.confirmado;
     if (dados.Alterado_Por) fields.Alterado_Por = dados.Alterado_Por;
+    if (dados.origem || dados.Origem) fields.Origem = dados.origem || dados.Origem;
     if (dados.observacao || dados.Observacao) fields.Observacao = dados.observacao || dados.Observacao;
 
     return this.updateItem("Pedidos", id, fields);
+  },
+
+  async deletePedido(id) {
+    return this.deleteItem("Pedidos", id);
   },
 
   async cancelarPedido(id, motivo = "") {
@@ -821,6 +833,38 @@ const SP = {
     return this.deleteItem("Extras", id);
   },
 
+  async _addExtraPedidoCC(semanaId, dia, nome, tipo, opcao, observacao, centroCusto, user) {
+    await this.createExtra({
+      semanaId,
+      dia,
+      nome,
+      tipo,
+      opcao,
+      observacao,
+      centroCusto,
+      status: "Confirmado"
+    });
+
+    return this.savePedido({
+      semanaId,
+      colaboradorId: `extra-${dia}`,
+      colaboradorNome: nome || "Refeição Extra",
+      centroCusto: centroCusto || "",
+      dia,
+      opcao: opcao || "principal",
+      nomePrato: nome || "Refeição Extra",
+      status: "Confirmado",
+      confirmado: true,
+      origem: tipo || "Extra",
+      observacao: observacao || user || ""
+    });
+  },
+
+  async deleteExtraComPedido(extra) {
+    if (extra?.id) await this.deleteExtra(extra.id);
+    return true;
+  },
+
   async getAusenciasRefeitorio() {
     return this.getItems("Ausencias_Refeitorio");
   },
@@ -835,23 +879,26 @@ const SP = {
     return items.filter(a => {
       const ini = String(this.pick(a, "Data_Inicio") || "").slice(0, 10);
       const fim = String(this.pick(a, "Data_Fim") || "").slice(0, 10);
-
       if (!ini || !fim) return false;
-
       return hoje >= ini && hoje <= fim;
     });
   },
 
   async createAusenciaRefeitorio(dados) {
     return this.createItem("Ausencias_Refeitorio", {
-      Title: dados.titulo || dados.nome || "Ausência",
+      Title: dados.titulo || dados.colaboradorNome || dados.nome || "Ausência",
       Colaborador_id: dados.colaboradorId || "",
       Colaborador_nome: dados.colaboradorNome || dados.nome || "",
-      Data_Inicio: dados.dataInicio || "",
-      Data_Fim: dados.dataFim || "",
-      Motivo: dados.motivo || "",
-      Observacao: dados.observacao || ""
+      Data_Inicio: dados.dataInicio || dados.Data_Inicio || "",
+      Data_Fim: dados.dataFim || dados.Data_Fim || "",
+      Motivo: dados.motivo || dados.Motivo || "",
+      Observacao: dados.observacao || dados.Observacao || "",
+      Ativo: dados.ativo !== undefined ? !!dados.ativo : true
     });
+  },
+
+  async createAusencia(dados) {
+    return this.createAusenciaRefeitorio(dados);
   },
 
   async updateAusenciaRefeitorio(id, dados) {
@@ -859,22 +906,49 @@ const SP = {
       Data_Inicio: dados.dataInicio || dados.Data_Inicio || "",
       Data_Fim: dados.dataFim || dados.Data_Fim || "",
       Motivo: dados.motivo || dados.Motivo || "",
-      Observacao: dados.observacao || dados.Observacao || ""
+      Observacao: dados.observacao || dados.Observacao || "",
+      Ativo: dados.ativo !== undefined ? !!dados.ativo : true
     });
+  },
+
+  async deleteAusencia(id) {
+    return this.deleteItem("Ausencias_Refeitorio", id);
   },
 
   async getValoresRefeicao(ativosSomente = true) {
     const items = await this.getItems("Valores_Refeicao");
-
     return items.filter(v => !ativosSomente || this.isTrue(this.pick(v, "Ativo")));
   },
 
   async getValorRefeicaoAtivo() {
     const valores = await this.getValoresRefeicao(true);
+    return valores.length ? valores[0] : null;
+  },
 
-    if (!valores.length) return null;
+  _resolveColunasValores(item) {
+    const valorVascon = this.moneyToNumber(this.pick(
+      item,
+      "Valor_Vascon",
+      "ValorVascon",
+      "valor_vascon",
+      "valorVascon",
+      "Valor"
+    ));
 
-    return valores[0];
+    const descontoFuncionario = this.moneyToNumber(this.pick(
+      item,
+      "Valor_Desconto_Funcionario",
+      "Valor_Desconto_Funcion_x00e1_rio",
+      "Desconto_Funcionario",
+      "DescontoFuncionario",
+      "Valor_Desconto",
+      "Desconto"
+    ));
+
+    return {
+      valorVascon,
+      descontoFuncionario
+    };
   },
 
   async getCheckIn() {
@@ -903,19 +977,14 @@ const SP = {
     const ausenciasAtivasHoje = ausencias.filter(a => {
       const ini = String(this.pick(a, "Data_Inicio") || "").slice(0, 10);
       const fim = String(this.pick(a, "Data_Fim") || "").slice(0, 10);
+      const ativo = this.isTrue(this.pick(a, "Ativo") ?? true);
 
-      if (!ini || !fim) return false;
+      if (!ini || !fim || !ativo) return false;
 
       return hojeStr >= ini && hojeStr <= fim;
     });
 
     const ausenciasPedidosHoje = pedidosHoje.filter(p => this.isAusenciaPedido(p));
-
-    const idsComRegistroSemana = new Set(
-      pedidos
-        .map(p => String(this.pick(p, "Colaborador_id") || ""))
-        .filter(Boolean)
-    );
 
     const pendentesSemana = Math.max(0, colabs.length * 5 - pedidos.length);
 
@@ -944,7 +1013,6 @@ const SP = {
       colaboradoresAtivos: colabs.length,
       pedidosConfirmadosColaboradores: confirmados.length,
       pendentesColaboradores: pendentesSemana,
-      colaboradoresComRegistroSemana: idsComRegistroSemana.size,
       checkinsHoje: pedidosHoje.filter(p => this.isTrue(this.pick(p, "Checkin"))).length,
       extrasAtivos: extras.length,
       extrasConfirmados: extras.filter(e => this.norm(this.pick(e, "Status")) === "confirmado").length,
@@ -955,17 +1023,13 @@ const SP = {
       totalPedidosSemana: confirmados.length,
       principalHoje: confirmadosHoje.filter(p => this.norm(this.pick(p, "Opcao")) === "principal").length,
       lightHoje: confirmadosHoje.filter(p => this.norm(this.pick(p, "Opcao")) === "light").length,
-      outrasHoje: confirmadosHoje.filter(p =>
-        !["principal", "light"].includes(this.norm(this.pick(p, "Opcao")))
-      ).length,
+      outrasHoje: confirmadosHoje.filter(p => !["principal", "light"].includes(this.norm(this.pick(p, "Opcao")))).length,
       setoresHoje: Array.from(setoresMap.entries()).map(([nome, total]) => ({ nome, total })),
       porDia,
       diaHoje
     };
   }
 };
-
-window.SP = SP;
 
 window.HOMY_SP_READY = (async () => {
   try {
