@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="favicon.png?v=homy-tech-20260610">
 <title>Cardápio do Dia · Homy</title>
 
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -227,8 +227,6 @@ body::after{
   gap:0.6rem;
 }
 
-.section-title span{font-size:1.1rem}
-
 .cardapio-grid{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
@@ -254,8 +252,6 @@ body::after{
   transform:translateY(-3px);
   box-shadow:0 8px 24px rgba(0,0,0,0.3);
 }
-
-.option-card:active{transform:scale(0.98)}
 
 .option-header{
   display:flex;
@@ -302,6 +298,12 @@ body::after{
   background:rgba(80,20,140,0.65);
   color:rgba(200,160,255,0.95);
   border:1px solid rgba(140,80,220,0.4);
+}
+
+.tag-ausente{
+  background:rgba(105,105,120,0.58);
+  color:rgba(220,225,240,0.95);
+  border:1px solid rgba(170,175,190,0.35);
 }
 
 .option-name{
@@ -400,7 +402,7 @@ body::after{
 
 .func-grid{
   display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
   gap:0.6rem;
 }
 
@@ -422,7 +424,16 @@ body::after{
   transform:translateY(-2px);
 }
 
-.func-card:active{transform:scale(0.98)}
+.func-card.sem-pedido{
+  cursor:default;
+  opacity:.72;
+}
+
+.func-card.sem-pedido:hover{
+  transform:none;
+  border-color:rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.04);
+}
 
 .func-name{
   font-size:0.9rem;
@@ -449,11 +460,17 @@ body::after{
 
 .func-status{
   font-size:0.72rem;
-  color:rgba(143,170,210,0.55);
+  color:rgba(143,170,210,0.65);
 }
 
-.func-card.nao-marcou .func-name{color:rgba(143,170,210,0.5)}
-.func-card.nao-marcou{border-color:rgba(255,255,255,0.04);background:rgba(255,255,255,0.02)}
+.empty-box{
+  border-radius:14px;
+  border:1px solid rgba(255,200,80,0.15);
+  background:rgba(255,180,0,0.05);
+  padding:0.85rem 1rem;
+  color:rgba(255,210,120,0.82);
+  font-size:0.85rem;
+}
 
 .modal-overlay{
   position:fixed;
@@ -481,7 +498,7 @@ body::after{
   border:1px solid rgba(255,255,255,0.12);
   border-radius:22px;
   width:100%;
-  max-width:480px;
+  max-width:500px;
   box-shadow:0 24px 80px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.08);
   overflow:hidden;
   transform:scale(0.92) translateY(16px);
@@ -581,19 +598,11 @@ body::after{
   line-height:1.5;
 }
 
-.empty-box{
-  border-radius:14px;
-  border:1px solid rgba(255,200,80,0.15);
-  background:rgba(255,180,0,0.05);
-  padding:0.85rem 1rem;
-  color:rgba(255,210,120,0.82);
-  font-size:0.85rem;
-}
-
 @media(max-width:640px){
   .main-content{padding:1rem 1rem 2.5rem}
   .header-inner{padding:0.75rem 1rem}
   .cardapio-grid{grid-template-columns:1fr}
+  .func-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -635,7 +644,7 @@ body::after{
       <span class="search-icon">🔍</span>
       <input id="buscaColaborador" class="search-input" type="text" placeholder="Digite seu nome para encontrar sua refeição">
     </div>
-    <div class="search-count" id="searchCount">Carregando colaboradores...</div>
+    <div class="search-count" id="searchCount">Carregando pedidos...</div>
     <div class="func-grid" id="funcGrid"></div>
   </section>
 </main>
@@ -673,7 +682,7 @@ const TAG_CLASS = {
   carne: "tag-carne",
   massa: "tag-massa",
   lanche: "tag-lanche",
-  ausente: "tag-lanche"
+  ausente: "tag-ausente"
 };
 
 const TAG_LABEL = {
@@ -685,11 +694,11 @@ const TAG_LABEL = {
   ausente: "Ausente"
 };
 
-const ORDEM_OPCOES = ["principal", "light", "carne", "massa", "lanche"];
+const ORDEM_OPCOES = ["principal", "light", "carne", "massa", "lanche", "ausente"];
 
 let CARDAPIO_HOJE = [];
 let PEDIDOS_HOJE = [];
-let COLABORADORES = [];
+let PEDIDOS_VISIVEIS = [];
 let SEMANA_ID = "";
 let DIA_HOJE = "";
 
@@ -735,6 +744,14 @@ function detalhesLista(valor) {
     .split(/\n|;/)
     .map(x => x.replace(/^[-•·\s]+/, "").trim())
     .filter(Boolean);
+}
+
+function getCampo(item, ...keys) {
+  for (const key of keys) {
+    if (item && item[key] !== undefined && item[key] !== null) return item[key];
+  }
+
+  return "";
 }
 
 function avisoPorOpcaoCardapioDia(opcao) {
@@ -786,14 +803,6 @@ function separarDetalhesEAviso(opcao, detalhes) {
   return { comida, aviso };
 }
 
-function getCampo(item, ...keys) {
-  for (const key of keys) {
-    if (item && item[key] !== undefined && item[key] !== null) return item[key];
-  }
-
-  return "";
-}
-
 function deduplicarCardapio(items) {
   const mapa = new Map();
 
@@ -838,7 +847,7 @@ function montarItemCardapio(item) {
   };
 }
 
-function ordenarCardapio(lista) {
+function ordenarPorOpcao(lista) {
   return [...(lista || [])].sort((a, b) => {
     const ia = ORDEM_OPCOES.indexOf(a.tag);
     const ib = ORDEM_OPCOES.indexOf(b.tag);
@@ -928,67 +937,89 @@ function renderCardapioHoje() {
 
 function pedidoEhVisivelPublico(pedido) {
   const origem = normalizarTexto(getCampo(pedido, "Origem", "tipo", "Tipo"));
+  const tipo = normalizarTexto(getCampo(pedido, "Tipo", "tipo"));
   const nome = normalizarTexto(getCampo(pedido, "Colaborador_nome", "Nome", "Title"));
   const status = normalizarTexto(getCampo(pedido, "Status"));
+  const opcao = normalizarOpcao(getCampo(pedido, "Opcao"));
 
   if (status.includes("nao vai almocar") || status.includes("ausente")) return false;
+  if (opcao === "ausente") return false;
 
-  if (origem.includes("guarda")) return false;
-  if (origem.includes("investigador")) return false;
+  if (origem.includes("guarda") || tipo.includes("guarda")) return false;
+  if (origem.includes("investigador") || tipo.includes("investigador")) return false;
+
   if (nome.includes("refeicao extra")) return false;
+  if (origem.includes("refeicao extra")) return false;
+  if (tipo.includes("refeicao extra")) return false;
 
   return true;
 }
 
-function montarPedidoColaborador(colab) {
-  const id = String(getCampo(colab, "id", "ID") || "");
-  const nome = getCampo(colab, "Nome", "Title") || "Colaborador";
-  const depto = getCampo(colab, "Departamento", "Centro_Custo") || "";
-
-  const pedido = PEDIDOS_HOJE.find(p =>
-    String(getCampo(p, "Colaborador_id", "colaboradorId")) === id
-  );
-
-  if (!pedido) {
-    return {
-      nome,
-      depto,
-      marcado: false,
-      opcao: "",
-      prato: "Não marcou refeição"
-    };
-  }
-
+function montarPedidoVisivel(pedido) {
   const opcao = normalizarOpcao(getCampo(pedido, "Opcao"));
+  const nome = getCampo(pedido, "Colaborador_nome", "Nome", "Title") || "Não informado";
   const prato = getCampo(pedido, "Nome_Prato", "Prato", "Title") || TAG_LABEL[opcao] || "Pedido";
+  const status = getCampo(pedido, "Status") || "Confirmado";
+  const centroCusto = getCampo(pedido, "Centro_Custo", "CentroCusto") || "";
+  const observacao = getCampo(pedido, "Observacao", "Observação", "obs") || "";
+  const origem = getCampo(pedido, "Origem", "tipo", "Tipo") || "Colaborador";
 
   return {
+    id: getCampo(pedido, "id", "ID"),
     nome,
-    depto,
-    marcado: true,
     opcao,
-    prato
+    opcaoLabel: TAG_LABEL[opcao] || opcao,
+    tagClass: TAG_CLASS[opcao] || "tag-principal",
+    prato,
+    status,
+    centroCusto,
+    observacao,
+    origem
   };
 }
 
-function criarCardFuncionario(info) {
-  const div = document.createElement("div");
-  div.className = "func-card" + (info.marcado ? "" : " nao-marcou");
+function abrirModalPedido(info) {
+  const modalTag = document.getElementById("modalTag");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalBody = document.getElementById("modalBody");
 
-  if (info.marcado) {
-    div.innerHTML = `
-      <div class="func-name">${escapeHtml(info.nome)}</div>
-      <div class="func-opcao">
-        <span class="func-tag ${TAG_CLASS[info.opcao] || "tag-principal"}">${escapeHtml(TAG_LABEL[info.opcao] || info.opcao)}</span>
-        <span class="func-status">${escapeHtml(info.prato)}</span>
-      </div>
-    `;
-  } else {
-    div.innerHTML = `
-      <div class="func-name">${escapeHtml(info.nome)}</div>
-      <div class="func-status">Não marcou refeição</div>
-    `;
-  }
+  modalTag.textContent = "Pedido";
+  modalTag.className = `modal-tag ${info.tagClass}`;
+  modalTitle.textContent = info.nome;
+
+  const linhas = [
+    ["Dia", DIAS_LABEL[DIA_HOJE] || DIA_HOJE],
+    ["Opção", info.opcaoLabel],
+    ["Prato", info.prato],
+    ["Status", info.status],
+    ["Origem", info.origem],
+    ["Centro de custo", info.centroCusto],
+    ["Observação", info.observacao]
+  ].filter(([, valor]) => String(valor || "").trim());
+
+  modalBody.innerHTML = linhas.map(([label, valor]) => `
+    <div class="modal-detail">
+      <span class="modal-detail-text"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(valor)}</span>
+    </div>
+  `).join("");
+
+  document.getElementById("modalOverlay").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function criarCardPedido(info) {
+  const div = document.createElement("div");
+  div.className = "func-card";
+
+  div.innerHTML = `
+    <div class="func-name">${escapeHtml(info.nome)}</div>
+    <div class="func-opcao">
+      <span class="func-tag ${escapeHtml(info.tagClass)}">${escapeHtml(info.opcaoLabel)}</span>
+      <span class="func-status">${escapeHtml(info.prato)}</span>
+    </div>
+  `;
+
+  div.addEventListener("click", () => abrirModalPedido(info));
 
   return div;
 }
@@ -1000,24 +1031,23 @@ function renderPedidosBusca() {
 
   grid.innerHTML = "";
 
-  const dados = COLABORADORES
-    .map(montarPedidoColaborador)
-    .filter(info => !busca || normalizarTexto(info.nome).includes(busca))
-    .slice(0, busca ? 80 : 0);
-
   if (!busca) {
-    count.textContent = `${COLABORADORES.length} colaboradores encontrados`;
+    count.textContent = `${PEDIDOS_VISIVEIS.length} pedidos visíveis hoje`;
     return;
   }
+
+  const dados = PEDIDOS_VISIVEIS
+    .filter(info => normalizarTexto(info.nome).includes(busca))
+    .slice(0, 80);
 
   count.textContent = `${dados.length} resultado(s) encontrado(s)`;
 
   if (!dados.length) {
-    grid.innerHTML = `<div class="empty-box">Nenhum colaborador encontrado.</div>`;
+    grid.innerHTML = `<div class="empty-box">Nenhum pedido encontrado para esse nome.</div>`;
     return;
   }
 
-  dados.forEach(info => grid.appendChild(criarCardFuncionario(info)));
+  dados.forEach(info => grid.appendChild(criarCardPedido(info)));
 }
 
 function diaHojeKey() {
@@ -1029,8 +1059,13 @@ function atualizarHeader() {
   const hoje = new Date();
   const dia = diaHojeKey();
 
+  const meses = [
+    "janeiro","fevereiro","março","abril","maio","junho",
+    "julho","agosto","setembro","outubro","novembro","dezembro"
+  ];
+
   document.getElementById("headerSub").textContent =
-    `${DIAS_LABEL[dia] || "Hoje"}, ${hoje.getDate()} de junho`;
+    `${DIAS_LABEL[dia] || "Hoje"}, ${hoje.getDate()} de ${meses[hoje.getMonth()]}`;
 }
 
 async function carregarDados() {
@@ -1049,22 +1084,23 @@ async function carregarDados() {
     SEMANA_ID = SP.getCurrentWeekId();
     DIA_HOJE = diaHojeKey();
 
-    const [cardapioSemana, pedidosSemana, colaboradores] = await Promise.all([
+    const [cardapioSemana, pedidosSemana] = await Promise.all([
       SP.getCardapio(SEMANA_ID),
-      SP.getPedidos(SEMANA_ID),
-      SP.getTodosColaboradores(false)
+      SP.getPedidos(SEMANA_ID)
     ]);
 
     const cardapioHojeRaw = deduplicarCardapio(cardapioSemana)
       .filter(i => normalizarTexto(getCampo(i, "Dia", "dia")) === normalizarTexto(DIA_HOJE));
 
-    CARDAPIO_HOJE = ordenarCardapio(cardapioHojeRaw.map(montarItemCardapio));
+    CARDAPIO_HOJE = ordenarPorOpcao(cardapioHojeRaw.map(montarItemCardapio));
 
     PEDIDOS_HOJE = (pedidosSemana || [])
-      .filter(p => normalizarTexto(getCampo(p, "Dia")) === normalizarTexto(DIA_HOJE))
-      .filter(pedidoEhVisivelPublico);
+      .filter(p => normalizarTexto(getCampo(p, "Dia")) === normalizarTexto(DIA_HOJE));
 
-    COLABORADORES = colaboradores || [];
+    PEDIDOS_VISIVEIS = PEDIDOS_HOJE
+      .filter(pedidoEhVisivelPublico)
+      .map(montarPedidoVisivel)
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
     renderCardapioHoje();
     renderPedidosBusca();
