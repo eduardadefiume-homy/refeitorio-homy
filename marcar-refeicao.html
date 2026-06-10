@@ -82,10 +82,12 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 .step-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:#fff;transition:all .2s}
 .step-item.active .step-dot{border-color:#c0281c;background:rgba(192,40,28,0.3);color:#fff}
 .step-item.done .step-dot{border-color:#40d090;background:rgba(64,208,144,0.2);color:#40d090}
+.step-item.done.ausencia-step .step-dot{border-color:rgba(255,150,50,0.8);background:rgba(255,100,20,0.2);color:rgba(255,180,100,0.9)}
 .step-label{font-size:0.58rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:rgba(143,170,210,0.6);white-space:nowrap}
 .step-item.active .step-label{color:rgba(255,160,140,0.9)}
 .step-connector{width:24px;height:2px;background:rgba(255,255,255,0.1);flex-shrink:0;margin-bottom:12px}
 .step-item.done+.step-connector{background:rgba(64,208,144,0.3)}
+.step-item.done.ausencia-step+.step-connector{background:rgba(255,150,50,0.4)}
 
 /* DAY CONTENT */
 .day-content{max-width:900px;margin:0 auto;padding:1rem 1.4rem;flex:1}
@@ -112,6 +114,21 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 .opcao-detalhe::before{content:"·";color:rgba(192,40,28,0.7);font-size:1rem;line-height:1.2;flex-shrink:0}
 .opcao-aviso{font-size:0.75rem;color:rgba(255,200,100,0.75);line-height:1.45;padding:0.5rem 0.6rem;border-radius:8px;background:rgba(255,180,0,0.07);border:1px solid rgba(255,180,0,0.12);margin-top:0.2rem}
 
+/* AUSÊNCIA CARD */
+.ausencia-card{border-radius:16px;border:2px solid rgba(255,150,50,0.2);background:rgba(255,255,255,0.03);padding:1rem;cursor:pointer;transition:all .18s;display:flex;flex-direction:column;gap:0.5rem;margin-top:0.2rem}
+.ausencia-card:hover{background:rgba(255,150,50,0.06);border-color:rgba(255,150,50,0.35);transform:translateY(-2px)}
+.ausencia-card.selected{border-color:rgba(255,100,20,0.7)!important;background:rgba(255,100,20,0.1)!important;box-shadow:0 0 20px rgba(255,100,20,0.15)}
+.ausencia-card .check{width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:transparent;transition:all .18s;flex-shrink:0}
+.ausencia-card.selected .check{border-color:rgba(255,150,50,0.9);background:rgba(255,120,30,0.2);color:rgba(255,180,80,0.95)}
+.tag-ausencia{font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:3px 8px;border-radius:5px;flex-shrink:0;background:rgba(255,100,20,0.2);color:rgba(255,180,100,0.95);border:1px solid rgba(255,120,30,0.35)}
+.ausencia-nome{font-size:0.95rem;font-weight:600;color:rgba(255,200,150,0.9);line-height:1.3}
+.ausencia-form{margin-top:0.8rem;display:flex;flex-direction:column;gap:0.6rem}
+.ausencia-field{display:flex;flex-direction:column;gap:0.3rem}
+.ausencia-label{font-size:0.68rem;font-weight:700;color:rgba(143,170,210,0.6);text-transform:uppercase;letter-spacing:0.08em}
+.ausencia-select,.ausencia-input{padding:0.55rem 0.8rem;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#e8f0ff;font-family:"Barlow",sans-serif;font-size:0.88rem;outline:none;transition:border-color .18s}
+.ausencia-select:focus,.ausencia-input:focus{border-color:rgba(255,150,50,0.4);background:rgba(255,255,255,0.07)}
+.ausencia-select option{background:#0a1628;color:#e8f0ff}
+
 /* NAV BOTTOM */
 .nav-bottom{max-width:900px;margin:0 auto;padding:1rem 1.4rem 2rem;display:flex;gap:0.7rem;align-items:center}
 .btn-nav{flex:1;padding:0.9rem 1rem;border-radius:12px;font-family:"Barlow",sans-serif;font-size:0.95rem;font-weight:600;cursor:pointer;border:none;transition:all .18s;text-align:center}
@@ -126,9 +143,11 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 /* RESUMO */
 .resumo-wrap{display:flex;flex-direction:column;gap:0.6rem;margin-bottom:1rem}
 .resumo-dia{border-radius:13px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);padding:0.85rem 1rem;display:flex;align-items:center;gap:0.8rem}
+.resumo-dia.resumo-ausencia{border-color:rgba(255,150,50,0.2);background:rgba(255,100,20,0.05)}
 .resumo-dia-label{font-family:"Barlow Condensed",sans-serif;font-size:1rem;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.04em;min-width:80px}
-.resumo-dia-opcao{display:flex;align-items:center;gap:0.5rem;flex:1}
+.resumo-dia-opcao{display:flex;align-items:center;gap:0.5rem;flex:1;flex-wrap:wrap}
 .resumo-dia-nome{font-size:0.88rem;color:rgba(200,220,255,0.85)}
+.resumo-ausencia-obs{font-size:0.75rem;color:rgba(255,180,100,0.7);margin-top:2px}
 .resumo-aviso{border-radius:11px;border:1px solid rgba(255,150,0,0.2);background:rgba(255,150,0,0.06);padding:0.75rem 1rem;font-size:0.8rem;color:rgba(255,180,80,0.85);line-height:1.5}
 
 /* MODAL */
@@ -252,7 +271,7 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("sharepoint.js?v="+Date.now());
+      return loadScript("sharepoint.js?v=homy-final-20260610-1");
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
@@ -276,7 +295,7 @@ const TAG_CLASS = {
   vegetariano:"tag-light",   carne:"tag-carne", massa:"tag-massa", lanche:"tag-lanche"
 };
 
-// Observação específica por opção (aparece no card como aviso amarelo)
+// Observação específica por opção
 const OBS_POR_OPCAO = {
   principal: "O cardápio acima está sujeito a alterações.",
   light:     "Esta opção substitui o prato principal completo. Sujeito a alterações.",
@@ -284,6 +303,14 @@ const OBS_POR_OPCAO = {
   carne:     "Esta opção substitui a carne do prato principal. Sujeito a alterações.",
   massa:     "Esta opção substitui a carne do prato principal. Sujeito a alterações."
 };
+
+// Motivos de ausência disponíveis para o colaborador
+const MOTIVOS_AUSENCIA = [
+  {value:"nao_vai_almocar", label:"Não vou almoçar"},
+  {value:"homy_office",     label:"Homy Office"},
+  {value:"banco_horas",     label:"Banco de Horas"},
+  {value:"outro",           label:"Outros"}
+];
 
 const NOMES_GENERICOS = [
   "prato principal","principal","light","carne","massa","lanche",
@@ -296,6 +323,7 @@ let SEMANA_ID    = null;
 
 let funcSelecionado = null;
 let stepAtual       = 0;
+// pedidos[diaKey] = {tag, tagClass, nome, dia} OU {_ausencia:true, motivo, observacao, dia}
 let pedidos         = {};
 
 // ── Utilitários ──────────────────────────────────────────────────────────────
@@ -378,7 +406,6 @@ function formatDataCurta(date){
   return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
 }
 
-// ── Textos de observação que já vêm do SharePoint e precisam ser removidos ────
 function ehObsVascon(texto){
   const n=norm(texto);
   return n.includes("cardapio acima esta sujeito") ||
@@ -392,17 +419,14 @@ function ehObsVascon(texto){
          n.includes("esta opcao substitui");
 }
 
-// ── Normaliza item do SharePoint → formato da tela ────────────────────────────
 function normalizarItemCardapio(item){
   const tag     = normOpcao(pick(item,"Opcao","opcao"));
   const nomeRaw = String(pick(item,"Nome_Prato","nomePrato","Prato","Title")||"").trim();
   const detRaw  = String(pick(item,"Detalhes","detalhes")||"").trim();
 
   let nome     = nomeRaw;
-  // Remove detalhes sujos E observações Vascon que já vieram do SharePoint
   let detalhes = splitDetalhes(detRaw).filter(x => !ehObsVascon(x));
 
-  // Nome com ";" = PDF concatenado: primeira parte é nome, resto são detalhes
   if(nome.includes(";")){
     const partes=nome.split(";").map(x=>x.trim()).filter(Boolean);
     if(partes.length>1){
@@ -411,12 +435,11 @@ function normalizarItemCardapio(item){
     }
   }
 
-  // Nome genérico + detalhes existem
   if(ehNomeGenerico(nome) && detalhes.length>0){
     if(tag==="principal"){
-      nome="Cardápio do Dia";  // principal: mostra tudo como detalhes
+      nome="Cardápio do Dia";
     } else {
-      nome=detalhes[0];        // outros: primeiro detalhe = nome do prato
+      nome=detalhes[0];
       detalhes=detalhes.slice(1);
     }
   }
@@ -430,16 +453,13 @@ function normalizarItemCardapio(item){
     tag,
     tagClass: TAG_CLASS[tag]||"tag-principal",
     nome,
-    detalhes,                          // só detalhes reais do prato
-    aviso: OBS_POR_OPCAO[tag] || null  // observação única e correta por opção
+    detalhes,
+    aviso: OBS_POR_OPCAO[tag] || null
   };
 }
 
-// ── Monta CARDAPIO a partir dos itens do SharePoint ───────────────────────────
 function mapCardapio(items){
   const map={seg:[],ter:[],qua:[],qui:[],sex:[]};
-
-  // Deduplica por dia+opcao (prefere o item com mais detalhes)
   const mapa=new Map();
   for(const item of items||[]){
     const semana=String(pick(item,"Semana_id","SemanaId")||"").trim();
@@ -462,14 +482,12 @@ function mapCardapio(items){
     map[dia].push(normalizarItemCardapio(item));
   }
 
-  // Ordena por opção
   const ORDEM=["principal","light","carne","massa","lanche"];
   Object.keys(map).forEach(dia=>{
     map[dia].sort((a,b)=>{
       const ia=ORDEM.indexOf(a.tag); const ib=ORDEM.indexOf(b.tag);
       return (ia<0?99:ia)-(ib<0?99:ib);
     });
-    // Fallback se não veio nada
     if(!map[dia].length){
       map[dia]=[{tag:"principal",tagClass:"tag-principal",nome:"Cardápio não cadastrado",detalhes:[],aviso:null}];
     }
@@ -495,12 +513,10 @@ function atualizarBadgesPrazo(txt){
   });
 }
 
-// Verifica se marcação está liberada (apenas pelo toggle do admin)
 async function verificarBloqueioMarcacao(){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
-
     const liberado = await SP.isCardapioLiberado().catch(()=>true);
     if(!liberado){
       mostrarBloqueio("🔒 Marcação encerrada",
@@ -508,11 +524,8 @@ async function verificarBloqueioMarcacao(){
         false);
       return false;
     }
-
-    // Atualiza badge do prazo (só informativo — não bloqueia)
     const prazo = await SP.getPrazoMarcacao().catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
-
     return true;
   } catch(e){
     console.warn("[prazo]",e);
@@ -521,7 +534,6 @@ async function verificarBloqueioMarcacao(){
 }
 
 function mostrarBloqueio(titulo, mensagem, prazoVencido){
-  // Bloqueia view1 (seleção de colaborador)
   const grid = document.getElementById("funcGrid");
   const count = document.getElementById("searchCount");
   if(count) count.textContent = "";
@@ -559,12 +571,9 @@ async function carregarDadosSharePoint(){
 
   try{
     await window.HOMY_SP_READY;
-
-    // Tenta sessão silenciosa — NÃO abre popup automático
     const logado = await SP.init();
 
     if(!logado){
-      // Sem sessão: mostra botão de login (popup só funciona com clique do usuário)
       grid.innerHTML =
         '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;color:rgba(143,170,210,.75);text-align:center">' +
           '<div style="font-size:2rem">🔐</div>' +
@@ -587,11 +596,9 @@ async function carregarDadosSharePoint(){
       return;
     }
 
-    // Verifica se marcação está liberada (flag admin + prazo)
     const podeMarcar = await verificarBloqueioMarcacao();
     if(!podeMarcar) return;
 
-    // Logado — carrega dados normalmente
     SEMANA_ID = getSemanaAtual();
     const datas = getWeekDatesLocal(SEMANA_ID);
     DIAS_SEMANA.forEach((d,i)=>{ d.data = formatDataCurta(datas[i]); });
@@ -674,18 +681,29 @@ function selecionarFunc(func){
   renderStep();
 }
 
+// ── Captura campos de ausência antes de avançar step ─────────────────────────
+function capturarAusencia(diaKey){
+  if(!pedidos[diaKey] || !pedidos[diaKey]._ausencia) return;
+  const motivoEl = document.getElementById("ausMotivoSel_"+diaKey);
+  const obsEl    = document.getElementById("ausObsInput_"+diaKey);
+  if(motivoEl) pedidos[diaKey].motivo      = motivoEl.value;
+  if(obsEl)    pedidos[diaKey].observacao  = obsEl.value.trim();
+}
+
 // ── Steps ─────────────────────────────────────────────────────────────────────
 function buildStepsHeader(){
   const el=document.getElementById("stepsHeader");
   el.innerHTML="";
   DIAS_SEMANA.forEach((dia,i)=>{
     if(i>0){ const conn=document.createElement("div"); conn.className="step-connector"; el.appendChild(conn); }
-    const done=pedidos[dia.key]!=null;
+    const p=pedidos[dia.key];
+    const done=p!=null;
+    const isAus=done && p._ausencia;
     const active=i===stepAtual;
     const item=document.createElement("div");
-    item.className="step-item"+(active?" active":"")+(done&&!active?" done":"");
-    item.innerHTML='<div class="step-dot">'+(done&&!active?"✓":(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
-    item.addEventListener("click",()=>{ if(done||active){stepAtual=i;renderStep();} });
+    item.className="step-item"+(active?" active":"")+(done&&!active?" done":"")+(isAus&&!active?" ausencia-step":"");
+    item.innerHTML='<div class="step-dot">'+(done&&!active?(isAus?"🚫":"✓"):(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
+    item.addEventListener("click",()=>{ if(done||active){capturarAusencia(DIAS_SEMANA[stepAtual].key);stepAtual=i;renderStep();} });
     el.appendChild(item);
   });
 }
@@ -711,9 +729,11 @@ function renderStep(){
     '<div class="opcoes-grid" id="opcoesGrid"></div>';
 
   const grid=document.getElementById("opcoesGrid");
+
+  // Cards das opções normais de cardápio
   opcoes.forEach(op=>{
     const card=document.createElement("div");
-    const sel=selecionada && selecionada.tag===op.tag;
+    const sel=selecionada && !selecionada._ausencia && selecionada.tag===op.tag;
     card.className="opcao-card"+(sel?" selected":"");
     card.innerHTML=
       '<div class="opcao-top">'+
@@ -732,29 +752,120 @@ function renderStep(){
     });
     grid.appendChild(card);
   });
+
+  // ── Card de Ausência ──────────────────────────────────────────────────────
+  const ausenciaSelecionada = selecionada && selecionada._ausencia;
+  const ausCard = document.createElement("div");
+  ausCard.className = "ausencia-card" + (ausenciaSelecionada ? " selected" : "");
+
+  // Valores atuais do motivo/obs (preserva se já preencheu)
+  const motivoAtual = ausenciaSelecionada ? (selecionada.motivo || "nao_vai_almocar") : "nao_vai_almocar";
+  const obsAtual    = ausenciaSelecionada ? (selecionada.observacao || "") : "";
+
+  const optsMotivo = MOTIVOS_AUSENCIA.map(m=>
+    '<option value="'+m.value+'"'+(motivoAtual===m.value?' selected':'')+'>'+m.label+'</option>'
+  ).join("");
+
+  ausCard.innerHTML =
+    '<div class="opcao-top">'+
+      '<span class="tag-ausencia">🚫 Ausência</span>'+
+      '<div class="check">✓</div>'+
+    '</div>'+
+    '<div class="ausencia-nome">Não vou almoçar neste dia</div>'+
+    '<div class="ausencia-form" id="ausFormDia_'+dia.key+'" style="display:'+(ausenciaSelecionada?'flex':'none')+'">'+
+      '<div class="ausencia-field">'+
+        '<label class="ausencia-label">Motivo</label>'+
+        '<select class="ausencia-select" id="ausMotivoSel_'+dia.key+'">'+optsMotivo+'</select>'+
+      '</div>'+
+      '<div class="ausencia-field">'+
+        '<label class="ausencia-label">Observação (opcional)</label>'+
+        '<input class="ausencia-input" id="ausObsInput_'+dia.key+'" type="text" placeholder="Detalhe se necessário..." value="'+esc(obsAtual)+'">'+
+      '</div>'+
+    '</div>';
+
+  ausCard.addEventListener("click", function(e){
+    // Não processa cliques dentro dos campos do formulário
+    if(e.target.tagName==="SELECT" || e.target.tagName==="INPUT" || e.target.tagName==="LABEL") return;
+
+    if(ausenciaSelecionada){
+      // Deseleciona ausência
+      delete pedidos[dia.key];
+    } else {
+      // Seleciona ausência
+      pedidos[dia.key] = {
+        _ausencia: true,
+        motivo:    "nao_vai_almocar",
+        observacao:"",
+        dia:       dia.dia
+      };
+    }
+    renderStep();
+  });
+
+  grid.appendChild(ausCard);
 }
 
+// ── Navegação entre steps ────────────────────────────────────────────────────
 document.getElementById("btnNext").addEventListener("click",()=>{
-  if(stepAtual<DIAS_SEMANA.length-1){ stepAtual++; renderStep(); }
-  else{ showView("view3"); renderResumo(); }
+  // Captura dados de ausência antes de avançar
+  capturarAusencia(DIAS_SEMANA[stepAtual].key);
+
+  if(stepAtual<DIAS_SEMANA.length-1){
+    stepAtual++;
+    renderStep();
+  } else {
+    showView("view3");
+    renderResumo();
+  }
 });
-document.getElementById("btnPrev").addEventListener("click",()=>{ if(stepAtual>0){stepAtual--;renderStep();} });
+
+document.getElementById("btnPrev").addEventListener("click",()=>{
+  if(stepAtual>0){
+    capturarAusencia(DIAS_SEMANA[stepAtual].key);
+    stepAtual--;
+    renderStep();
+  }
+});
+
 document.getElementById("btnVoltarView1").addEventListener("click",()=>showView("view1"));
 document.getElementById("btnVoltarView2").addEventListener("click",()=>{showView("view2");renderStep();});
 
 // ── Resumo ────────────────────────────────────────────────────────────────────
+function motivoLabel(motivo){
+  const m = MOTIVOS_AUSENCIA.find(x=>x.value===motivo);
+  return m ? m.label : "Não vou almoçar";
+}
+
 function renderResumo(){
   const wrap=document.getElementById("resumoWrap");
   wrap.innerHTML="";
   DIAS_SEMANA.forEach(dia=>{
     const p=pedidos[dia.key];
     const row=document.createElement("div");
-    row.className="resumo-dia";
-    row.innerHTML=
-      '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+
-      '<div class="resumo-dia-opcao">'+
-      (p?'<span class="opcao-tag '+esc(p.tagClass)+'" style="font-size:.55rem;padding:2px 7px">'+esc(p.tag)+'</span><span class="resumo-dia-nome">'+esc(p.nome)+'</span>':'<span style="color:rgba(143,170,210,.4);font-size:.85rem">Não marcado</span>')+
-      '</div>';
+
+    if(p && p._ausencia){
+      row.className="resumo-dia resumo-ausencia";
+      row.innerHTML=
+        '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+
+        '<div class="resumo-dia-opcao" style="flex-direction:column;align-items:flex-start;gap:0.2rem">'+
+          '<div style="display:flex;align-items:center;gap:0.5rem">'+
+            '<span class="tag-ausencia" style="font-size:.55rem;padding:2px 7px">🚫 Ausência</span>'+
+            '<span class="resumo-dia-nome" style="color:rgba(255,180,100,.85)">'+esc(motivoLabel(p.motivo))+'</span>'+
+          '</div>'+
+          (p.observacao
+            ? '<div class="resumo-ausencia-obs">'+esc(p.observacao)+'</div>'
+            : '')+
+        '</div>';
+    } else {
+      row.className="resumo-dia";
+      row.innerHTML=
+        '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+
+        '<div class="resumo-dia-opcao">'+
+        (p
+          ?'<span class="opcao-tag '+esc(p.tagClass)+'" style="font-size:.55rem;padding:2px 7px">'+esc(p.tag)+'</span><span class="resumo-dia-nome">'+esc(p.nome)+'</span>'
+          :'<span style="color:rgba(143,170,210,.4);font-size:.85rem">Não marcado</span>')+
+        '</div>';
+    }
     wrap.appendChild(row);
   });
 }
@@ -762,6 +873,10 @@ function renderResumo(){
 // ── Confirmar pedido ──────────────────────────────────────────────────────────
 document.getElementById("btnConfirmar").addEventListener("click",async()=>{
   if(!funcSelecionado){ alert("Selecione um colaborador."); return; }
+
+  // Captura campos de ausência do step atual caso ainda esteja na view2
+  capturarAusencia(DIAS_SEMANA[stepAtual].key);
+
   const selecionados=Object.keys(pedidos);
   if(!selecionados.length){ alert("Selecione pelo menos uma refeição."); return; }
 
@@ -770,27 +885,61 @@ document.getElementById("btnConfirmar").addEventListener("click",async()=>{
 
   try{
     await SP.init();
+
     for(const key of selecionados){
       const diaInfo=DIAS_SEMANA.find(d=>d.key===key);
       const pedido=pedidos[key];
-      await SP.savePedido(SEMANA_ID,funcSelecionado.id,funcSelecionado.nome,diaInfo.dia,pedido.tag,pedido.nome,{
-        confirmado:  true,
-        status:      "Confirmado",
-        origem:      "Refeitório",
-        centroCusto: funcSelecionado.cc || "",
-        dataHora:    new Date().toISOString(),
-        alteradoPor: SP.getUserName ? SP.getUserName() : ""
-      });
+
+      if(pedido._ausencia){
+        // ── Grava na lista Ausencias do Refeitorio ──────────────────────────
+        // Calcula a data real daquele dia da semana
+        const datas = getWeekDatesLocal(SEMANA_ID);
+        const idxDia = DIAS_SEMANA.findIndex(d=>d.key===key);
+        const dataRef = datas[idxDia] ? datas[idxDia].toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+
+        await SP.createAusencia({
+          colaboradorId:   funcSelecionado.id,
+          colaboradorNome: funcSelecionado.nome,
+          centroCusto:     funcSelecionado.cc || "",
+          dataInicio:      dataRef,
+          dataFim:         dataRef,
+          motivo:          pedido.motivo     || "nao_vai_almocar",
+          observacao:      pedido.observacao || "",
+          criadoPor:       funcSelecionado.nome
+        });
+
+      } else {
+        // ── Grava pedido normal de refeição ─────────────────────────────────
+        await SP.savePedido(
+          SEMANA_ID,
+          funcSelecionado.id,
+          funcSelecionado.nome,
+          diaInfo.dia,
+          pedido.tag,
+          pedido.nome,
+          {
+            confirmado:  true,
+            status:      "Confirmado",
+            origem:      "Refeitório",
+            centroCusto: funcSelecionado.cc || "",
+            dataHora:    new Date().toISOString(),
+            alteradoPor: SP.getUserName ? SP.getUserName() : ""
+          }
+        );
+      }
     }
+
     const nomeFirst=funcSelecionado.nome.split(" ")[0];
-    document.getElementById("modalText").textContent=nomeFirst+", seu pedido da semana foi confirmado! Qualquer alteração deverá ser solicitada à Luana.";
+    document.getElementById("modalText").textContent=
+      nomeFirst+", seu pedido da semana foi confirmado! Qualquer alteração deverá ser solicitada à Luana.";
     const overlay=document.getElementById("modalOverlay");
     overlay.style.display="flex"; overlay.offsetHeight; overlay.classList.add("open");
     const idx=FUNCIONARIOS.findIndex(f=>String(f.id)===String(funcSelecionado.id));
     if(idx>=0) FUNCIONARIOS[idx].confirmado=true;
+
   } catch(e){
     console.error("[confirmar]",e);
-    alert("Erro ao salvar pedido: "+(e.message||e));
+    alert("Erro ao salvar: "+(e.message||e));
   } finally{
     btn.disabled=false; btn.textContent="✓ Confirmar pedido da semana";
   }
