@@ -187,7 +187,7 @@ body::after{
 }
 /* garante que o conteúdo fique acima do fundo */
 .header,.main-content,.cards-area,.week-nav,.day-tabs-wrap,.view,.content,.app,#app,#splash,.modal-overlay,.modal-bg{position:relative;z-index:1}
-
+.option-aviso{font-size:0.75rem;color:rgba(255,200,100,0.8);background:rgba(255,180,0,0.07);border:1px solid rgba(255,180,0,0.15);border-radius:8px;padding:0.5rem 0.7rem;margin-top:0.5rem;line-height:1.45}
 </style>
 </head>
 <body>
@@ -301,7 +301,17 @@ function openFuncModal(func){
 function renderCardapio(){
   const grid=document.getElementById("cardapioGrid"); grid.innerHTML="";
   if(!CARDAPIO_HOJE.length){ grid.innerHTML='<div class="modal-note">Nenhum cardápio real cadastrado para hoje no Admin.</div>'; return; }
-  CARDAPIO_HOJE.forEach(op=>{ const card=document.createElement("div"); card.className="option-card"; card.innerHTML='<div class="option-header"><span class="option-tag '+op.tagClass+'">'+op.tag+'</span><span class="option-name">'+op.nome+'</span></div><div class="option-body">'+op.detalhes.map(d=>'<div class="option-detail">'+d+'</div>').join("")+'</div><div class="option-hint">Toque para ver detalhes</div>'; card.addEventListener("click",()=>openCardapioModal(op)); grid.appendChild(card); });
+  CARDAPIO_HOJE.forEach(op=>{
+    const card=document.createElement("div");
+    card.className="option-card";
+    card.innerHTML=
+      '<div class="option-header"><span class="option-tag '+op.tagClass+'">'+op.tag+'</span><span class="option-name">'+op.nome+'</span></div>'+
+      (op.detalhes.length ? '<div class="option-body">'+op.detalhes.map(d=>'<div class="option-detail">'+d+'</div>').join("")+'</div>' : '')+
+      (op.aviso ? '<div class="option-aviso">ℹ️ '+op.aviso+'</div>' : '')+
+      '<div class="option-hint">Toque para ver detalhes</div>';
+    card.addEventListener("click",()=>openCardapioModal(op));
+    grid.appendChild(card);
+  });
 }
 function renderFuncs(lista){
   const grid=document.getElementById("funcGrid"); grid.innerHTML="";
@@ -320,7 +330,21 @@ async function carregarDadosReais(){
     const semanaId = SP.getSemanaId ? SP.getSemanaId(hoje) : "";
     const dia = diaHojeKey();
     const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId)]);
-    CARDAPIO_HOJE = (cardapioSemana||[]).filter(i=>normalizarDia(val(i,"Dia","dia"))===dia).map(i=>{ const tag=String(val(i,"Opcao","opcao")||"principal").toLowerCase(); return {tag, tagClass:TAG_CLASS[tag]||"tag-principal", nome:val(i,"Nome_Prato","nomePrato","Prato","Title")||"Prato não informado", detalhes:detalhesLista(val(i,"Detalhes","detalhes"))}; });
+const OPCOES_VALIDAS_DIA = ["principal","light","carne","massa","lanche"];
+CARDAPIO_HOJE = (cardapioSemana||[])
+  .filter(i => {
+    const opcao = String(val(i,"Opcao","opcao")||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    return normalizarDia(val(i,"Dia","dia"))===dia && OPCOES_VALIDAS_DIA.includes(opcao);
+  })
+  .map(i=>{
+    const tag = String(val(i,"Opcao","opcao")||"principal").toLowerCase();
+    const nomeRaw = val(i,"Nome_Prato","nomePrato","Prato","Title")||"Prato não informado";
+    const detRaw  = String(val(i,"Detalhes","detalhes")||"");
+    const isTextoAviso = /sujeito a alterações|substitui|cardápio acima|opções.*substituem|carne do prato/i.test(detRaw);
+    const detalhes = isTextoAviso ? [] : detalhesLista(detRaw);
+    const aviso    = isTextoAviso ? detRaw.split(/\n|;/)[0].trim() : null;
+    return { tag, tagClass:TAG_CLASS[tag]||"tag-principal", nome:nomeRaw, detalhes, aviso };
+  });
     FUNCIONARIOS = (pedidosSemana||[]).filter(p=>normalizarDia(val(p,"Dia","dia"))===dia).map(p=>({nome:val(p,"Colaborador_nome","colaborador_nome","Title")||"Colaborador", dept:val(p,"Departamento","departamento","Centro_Custo","centroCusto")||"", opcao:String(val(p,"Opcao","opcao")||"").toLowerCase()})).sort((a,b)=>a.nome.localeCompare(b.nome));
     renderCardapio(); renderFuncs(FUNCIONARIOS);
   }catch(e){
