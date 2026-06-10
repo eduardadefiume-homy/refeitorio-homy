@@ -16,22 +16,22 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 
 <!-- Camada de dados (sempre primeiro) -->
-<script src="../sharepoint.js?v=homy-final-20260610-1"></script>
+<script src="../sharepoint.js?v=homy-admin-index-fix-20260610-1"></script>
 
 <!-- Módulos admin (ordem importa) -->
-<script src="js/admin-utils.js"></script>
-<script src="js/admin-state.js"></script>
-<script src="js/admin-core.js"></script>
-<script src="js/admin-dashboard.js"></script>
-<script src="js/admin-cardapio.js"></script>
-<script src="js/admin-pedidos.js"></script>
-<script src="js/admin-operacao-dia.js"></script>
-<script src="js/admin-colaboradores.js"></script>
-<script src="js/admin-extras.js"></script>
-<script src="js/admin-valores.js"></script>
-<script src="js/admin-relatorios.js"></script>
-<script src="js/admin-ausencias.js"></script>
-<script src="js/admin-configuracoes.js"></script>
+<script src="js/admin-utils.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-state.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-core.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-dashboard.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-cardapio.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-pedidos.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-operacao-dia.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-colaboradores.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-extras.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-valores.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-relatorios.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-ausencias.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-configuracoes.js?v=homy-admin-index-fix-20260610-1"></script>
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -963,6 +963,61 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     </div>
   </div>
 </div>
+
+
+
+<!-- Admin boot scripts -->
+<script>
+(function(){
+  const statusEl = document.getElementById("loginStatus");
+  function setStatus(msg){ if(statusEl) statusEl.textContent = msg || ""; }
+
+  window.AdminBoot = {
+    async waitFor(name, timeoutMs){
+      const started = Date.now();
+      while(Date.now() - started < timeoutMs){
+        if(window[name]) return window[name];
+        await new Promise(r => setTimeout(r, 50));
+      }
+      return null;
+    },
+
+    async start(){
+      try{
+        setStatus("Carregando dependências...");
+
+        const msalOk = await this.waitFor("msal", 10000);
+        if(!msalOk) throw new Error("MSAL não carregou. Verifique internet/CDN ou bloqueio do navegador.");
+
+        const spOk = await this.waitFor("SP", 10000);
+        if(!spOk) throw new Error("SP is not defined. Verifique se ../sharepoint.js existe na raiz e carregou sem erro.");
+
+        if(window.HOMY_SP_READY){
+          await window.HOMY_SP_READY.catch(e => { console.warn("[AdminBoot] HOMY_SP_READY", e); return false; });
+        }
+
+        const coreOk = await this.waitFor("AdminCore", 10000);
+        if(!coreOk) throw new Error("AdminCore não carregou. Verifique js/admin-core.js.");
+
+        setStatus("");
+        await AdminCore.init();
+      }catch(e){
+        console.error("[AdminBoot]", e);
+        setStatus("Erro: " + (e.message || e));
+        if(window.AdminUtils && AdminUtils.toast){
+          AdminUtils.toast("Erro no login: " + (e.message || e), "error");
+        }
+      }
+    }
+  };
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", () => AdminBoot.start());
+  }else{
+    AdminBoot.start();
+  }
+})();
+</script>
 
 </body>
 </html>
