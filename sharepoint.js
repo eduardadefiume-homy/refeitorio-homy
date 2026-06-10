@@ -1,27 +1,22 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: homy-login-unico-20260610-1
+// v: homy-sharepoint-syntax-fix-20260610-1
 // ============================================================
 
 const SP = {
-  clientId:  "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
-  tenantId:  "a2850abc-334a-4805-b6b2-420b4aef68a9",
-  siteUrl:   "homyquimica.sharepoint.com",
-  sitePath:  "/sites/Refeitrio-Homy",
-  scopes:    ["https://graph.microsoft.com/Sites.ReadWrite.All", "User.Read"],
+  clientId: "aa37acf9-f3bd-4d1e-968a-fde57f79094c",
+  tenantId: "a2850abc-334a-4805-b6b2-420b4aef68a9",
+  siteUrl: "homyquimica.sharepoint.com",
+  sitePath: "/sites/Refeitrio-Homy",
+  scopes: ["https://graph.microsoft.com/Sites.ReadWrite.All", "User.Read"],
 
-  // Redirect fixo da aplicação.
-  // Nunca usar window.location.pathname como redirectUri.
   redirectUri: "https://eduardadefiume-homy.github.io/refeitorio-homy/index.html",
 
   _msalInstance: null,
-  _account:      null,
-  _siteId:       null,
-  _listIds:      {},
+  _account: null,
+  _siteId: null,
+  _listIds: {},
 
-  // ============================================================
-  // UTILITÁRIOS
-  // ============================================================
   pick(obj, ...keys) {
     for (const key of keys) {
       if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
@@ -41,6 +36,16 @@ const SP = {
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
       .trim();
+  },
+
+  moneyToNumber(value) {
+    if (typeof value === "number") return value;
+    const s = String(value || "")
+      .replace(/[R$\s]/g, "")
+      .replace(/\./g, "")
+      .replace(",", ".");
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
   },
 
   getSemanaId(date = new Date()) {
@@ -104,7 +109,7 @@ const SP = {
 
   isExtraPedido(p) {
     const origem = this.norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
-    const nome   = this.norm(this.pick(p, "Colaborador_nome", "Title", "Nome") || "");
+    const nome = this.norm(this.pick(p, "Colaborador_nome", "Title", "Nome") || "");
 
     return origem.includes("extra") ||
       origem.includes("investigador") ||
@@ -114,17 +119,33 @@ const SP = {
 
   isAusenciaPedido(p) {
     const status = this.norm(this.pick(p, "Status") || "");
-    const opcao  = this.norm(this.pick(p, "Opcao") || "");
+    const opcao = this.norm(this.pick(p, "Opcao") || "");
+    const origem = this.norm(this.pick(p, "Origem") || "");
 
     return status.includes("nao vai almocar") ||
+      status.includes("não vai almoçar") ||
       status.includes("ausente") ||
+      status.includes("cancelado") ||
+      status.includes("afastado") ||
+      status.includes("ferias") ||
+      status.includes("férias") ||
       opcao.includes("ausente") ||
-      opcao.includes("nao vou almocar");
+      opcao.includes("nao vou almocar") ||
+      origem.includes("ausencia") ||
+      origem.includes("ausência");
   },
 
-  // ============================================================
-  // AUTENTICAÇÃO
-  // ============================================================
+  isPedidoProdutivo(p) {
+    const status = this.norm(this.pick(p, "Status") || "");
+    const opcao = this.norm(this.pick(p, "Opcao") || "");
+
+    if (this.isAusenciaPedido(p)) return false;
+    if (opcao === "ausente") return false;
+
+    return ["confirmado", "extra", "aprovado"].includes(status) ||
+      this.isTrue(this.pick(p, "Confirmado"));
+  },
+
   async init() {
     if (this._msalInstance) {
       if (!this._account) this._restoreAccountFromCache();
@@ -272,6 +293,7 @@ const SP = {
       `;
 
       const ref = document.querySelector(".main-content, .content, .cards-area, .app, body");
+
       if (ref && ref !== document.body) {
         ref.prepend(box);
       } else {
@@ -306,8 +328,7 @@ const SP = {
       }
     });
   },
-
-  async logout() {
+    async logout() {
     await this.init();
 
     const account = this._account;
@@ -359,9 +380,6 @@ const SP = {
     }
   },
 
-  // ============================================================
-  // GRAPH
-  // ============================================================
   async graph(method, endpoint, body = null, options = {}) {
     const token = await this.getToken(options);
 
@@ -435,9 +453,6 @@ const SP = {
     return out;
   },
 
-  // ============================================================
-  // SITE E LISTAS
-  // ============================================================
   async getSiteId() {
     if (this._siteId) return this._siteId;
 
@@ -454,6 +469,7 @@ const SP = {
     for (const path of unique) {
       try {
         const data = await this.graph("GET", `/sites/${this.siteUrl}:${path}`);
+
         if (data?.id) {
           this._siteId = data.id;
           return this._siteId;
@@ -529,9 +545,6 @@ const SP = {
     return this.graph("DELETE", `/sites/${siteId}/lists/${listId}/items/${itemId}`);
   },
 
-  // ============================================================
-  // CONFIGURAÇÕES
-  // ============================================================
   async getConfig(chave) {
     const items = await this.getItems("Configuracoes");
     const item = items.find(i => this.norm(this.pick(i, "Chave", "Title")) === this.norm(chave));
@@ -576,9 +589,6 @@ const SP = {
     return this.setConfig("prazo_marcacao", valor);
   },
 
-  // ============================================================
-  // CARDÁPIO
-  // ============================================================
   async getCardapio(semanaId) {
     const items = await this.getItems("Cardapio");
 
@@ -624,9 +634,6 @@ const SP = {
     return this.createItem("Cardapio", fields);
   },
 
-  // ============================================================
-  // COLABORADORES
-  // ============================================================
   async getTodosColaboradores(incluirInativos = false) {
     const items = await this.getItems("Colaboradores");
 
@@ -644,36 +651,44 @@ const SP = {
     return this.getTodosColaboradores(false);
   },
 
-  async createColaborador({ nome, departamento, centroCusto, email, tipo }) {
+  async getColaboradores() {
+    return this.getColaboradoresAtivos();
+  },
+
+  async createColaborador({ nome, departamento, centroCusto, email, tipo, contaContabil }) {
     return this.createItem("Colaboradores", {
       Title: nome,
       Nome: nome,
       Departamento: departamento || "",
       Centro_Custo: centroCusto || "",
+      Conta_Contabil: contaContabil || "",
       Email: email || "",
       tipo: tipo || "colaborador",
       Ativo: true
     });
   },
 
-  async updateColaborador(id, { nome, departamento, centroCusto, email, tipo }) {
-    return this.updateItem("Colaboradores", id, {
+  async updateColaborador(id, { nome, departamento, centroCusto, email, tipo, contaContabil }) {
+    const fields = {
       Title: nome,
       Nome: nome,
       Departamento: departamento || "",
       Centro_Custo: centroCusto || "",
       Email: email || "",
       tipo: tipo || "colaborador"
-    });
+    };
+
+    if (contaContabil !== undefined) {
+      fields.Conta_Contabil = contaContabil || "";
+    }
+
+    return this.updateItem("Colaboradores", id, fields);
   },
 
   async desativarColaborador(id) {
     return this.updateItem("Colaboradores", id, { Ativo: false });
   },
 
-  // ============================================================
-  // PEDIDOS
-  // ============================================================
   async getPedidos(semanaId) {
     const items = await this.getItems("Pedidos");
 
@@ -691,8 +706,7 @@ const SP = {
       this.norm(this.pick(p, "Dia")) === this.norm(dia)
     ) || null;
   },
-
-  async savePedido(dados) {
+    async savePedido(dados) {
     const semanaId = dados.semanaId || dados.Semana_id || this.getCurrentWeekId();
     const colaboradorId = dados.colaboradorId || dados.Colaborador_id;
     const dia = dados.dia || dados.Dia;
@@ -778,9 +792,6 @@ const SP = {
     });
   },
 
-  // ============================================================
-  // EXTRAS
-  // ============================================================
   async getExtras(semanaId, dia = "") {
     const items = await this.getItems("Extras");
 
@@ -799,6 +810,7 @@ const SP = {
       Semana_id: dados.semanaId || dados.Semana_id || this.getCurrentWeekId(),
       Dia: this.norm(dados.dia || dados.Dia || ""),
       Opcao: this.norm(dados.opcao || dados.Opcao || "principal"),
+      Centro_Custo: dados.centroCusto || dados.Centro_Custo || "",
       Observacao: dados.observacao || dados.Observacao || "",
       Status: dados.status || dados.Status || "Confirmado",
       Data_Hora: dados.dataHora || dados.Data_Hora || new Date().toISOString()
@@ -809,11 +821,25 @@ const SP = {
     return this.deleteItem("Extras", id);
   },
 
-  // ============================================================
-  // AUSÊNCIAS REFEITÓRIO
-  // ============================================================
   async getAusenciasRefeitorio() {
     return this.getItems("Ausencias_Refeitorio");
+  },
+
+  async getAusencias(ativasSomente = false) {
+    const items = await this.getAusenciasRefeitorio();
+
+    if (!ativasSomente) return items;
+
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    return items.filter(a => {
+      const ini = String(this.pick(a, "Data_Inicio") || "").slice(0, 10);
+      const fim = String(this.pick(a, "Data_Fim") || "").slice(0, 10);
+
+      if (!ini || !fim) return false;
+
+      return hoje >= ini && hoje <= fim;
+    });
   },
 
   async createAusenciaRefeitorio(dados) {
@@ -837,48 +863,67 @@ const SP = {
     });
   },
 
-  // ============================================================
-  // VALORES
-  // ============================================================
   async getValoresRefeicao(ativosSomente = true) {
     const items = await this.getItems("Valores_Refeicao");
 
     return items.filter(v => !ativosSomente || this.isTrue(this.pick(v, "Ativo")));
   },
 
-  // ============================================================
-  // DASHBOARD
-  // ============================================================
-const [colabs, pedidos, extras, checkIns, ausencias] = await Promise.all([
-  this.getColaboradores().catch(() => []),
-  this.getPedidos(semanaId).catch(() => []),
-  this.getExtras(semanaId).catch(() => []),
-  this.getCheckIn(semanaId, diaHojeUtil).catch(() => []),
-  this.getAusencias(true).catch(() => [])
-]);
+  async getValorRefeicaoAtivo() {
+    const valores = await this.getValoresRefeicao(true);
 
-const hojeStr = hoje.toISOString().slice(0, 10);
-const ausenciasAtivasHoje = ausencias.filter(a => {
-  const ini = this.pick(a, "Data_Inicio");
-  const fim = this.pick(a, "Data_Fim");
-  if (!ini || !fim) return false;
-  return hojeStr >= ini.slice(0, 10) && hojeStr <= fim.slice(0, 10);
-}).length;
+    if (!valores.length) return null;
 
-    const diaHoje = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"][new Date().getDay()] || "segunda";
-    const isProd = p => {
-      const s = this.norm(this.pick(p, "Status"));
-      return ["confirmado", "extra", "aprovado"].includes(s) || this.isTrue(this.pick(p, "Confirmado"));
-    };
+    return valores[0];
+  },
 
-    const confirmados = pedidos.filter(isProd);
-    const pedidosHoje = pedidos.filter(p => this.norm(this.pick(p, "Dia")) === this.norm(diaHoje));
-    const confirmadosHoje = pedidosHoje.filter(isProd);
+  async getCheckIn() {
+    return [];
+  },
+
+  async getDashboardResumo(semanaId) {
+    const hoje = new Date();
+    const diaHoje = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"][hoje.getDay()] || "segunda";
+    const hojeStr = hoje.toISOString().slice(0, 10);
+
+    const [colabs, pedidos, extras, ausencias] = await Promise.all([
+      this.getColaboradoresAtivos().catch(() => []),
+      this.getPedidos(semanaId).catch(() => []),
+      this.getExtras(semanaId).catch(() => []),
+      this.getAusenciasRefeitorio().catch(() => [])
+    ]);
+
+    const pedidosHoje = pedidos.filter(p =>
+      this.norm(this.pick(p, "Dia")) === this.norm(diaHoje)
+    );
+
+    const confirmados = pedidos.filter(p => this.isPedidoProdutivo(p));
+    const confirmadosHoje = pedidosHoje.filter(p => this.isPedidoProdutivo(p));
+
+    const ausenciasAtivasHoje = ausencias.filter(a => {
+      const ini = String(this.pick(a, "Data_Inicio") || "").slice(0, 10);
+      const fim = String(this.pick(a, "Data_Fim") || "").slice(0, 10);
+
+      if (!ini || !fim) return false;
+
+      return hojeStr >= ini && hojeStr <= fim;
+    });
+
+    const ausenciasPedidosHoje = pedidosHoje.filter(p => this.isAusenciaPedido(p));
+
+    const idsComRegistroSemana = new Set(
+      pedidos
+        .map(p => String(this.pick(p, "Colaborador_id") || ""))
+        .filter(Boolean)
+    );
+
+    const pendentesSemana = Math.max(0, colabs.length * 5 - pedidos.length);
 
     const porDia = {};
+
     ["segunda", "terca", "quarta", "quinta", "sexta"].forEach(dia => {
       const lista = pedidos.filter(p => this.norm(this.pick(p, "Dia")) === dia);
-      const conf = lista.filter(isProd);
+      const conf = lista.filter(p => this.isPedidoProdutivo(p));
 
       porDia[dia] = {
         total: conf.length,
@@ -898,17 +943,21 @@ const ausenciasAtivasHoje = ausencias.filter(a => {
     return {
       colaboradoresAtivos: colabs.length,
       pedidosConfirmadosColaboradores: confirmados.length,
-      pendentesColaboradores: Math.max(0, colabs.length * 5 - pedidos.length),
+      pendentesColaboradores: pendentesSemana,
+      colaboradoresComRegistroSemana: idsComRegistroSemana.size,
       checkinsHoje: pedidosHoje.filter(p => this.isTrue(this.pick(p, "Checkin"))).length,
       extrasAtivos: extras.length,
       extrasConfirmados: extras.filter(e => this.norm(this.pick(e, "Status")) === "confirmado").length,
       extrasPendentes: extras.filter(e => this.norm(this.pick(e, "Status")) === "pendente").length,
       totalPedidosHoje: confirmadosHoje.length,
-      ausenciasHoje: Math.max(pedidosHoje.filter(isCancelado).length, ausenciasAtivasHoje),
+      ausenciasHoje: Math.max(ausenciasPedidosHoje.length, ausenciasAtivasHoje.length),
+      ausenciasAtivasHoje: ausenciasAtivasHoje.length,
       totalPedidosSemana: confirmados.length,
       principalHoje: confirmadosHoje.filter(p => this.norm(this.pick(p, "Opcao")) === "principal").length,
       lightHoje: confirmadosHoje.filter(p => this.norm(this.pick(p, "Opcao")) === "light").length,
-      outrasHoje: confirmadosHoje.filter(p => !["principal", "light"].includes(this.norm(this.pick(p, "Opcao")))).length,
+      outrasHoje: confirmadosHoje.filter(p =>
+        !["principal", "light"].includes(this.norm(this.pick(p, "Opcao")))
+      ).length,
       setoresHoje: Array.from(setoresMap.entries()).map(([nome, total]) => ({ nome, total })),
       porDia,
       diaHoje
