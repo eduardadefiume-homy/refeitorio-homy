@@ -321,12 +321,28 @@ function renderFuncs(lista){
 
 document.getElementById("searchInput").addEventListener("input",function(){ const q=this.value.toLowerCase().trim(); renderFuncs(q?FUNCIONARIOS.filter(f=>f.nome.toLowerCase().includes(q)):FUNCIONARIOS); });
 
-async function carregarDadosReais(){
+ async function carregarDadosReais(){
   const hoje=new Date();
   document.getElementById("headerDate").textContent=DIAS[hoje.getDay()]+", "+hoje.getDate()+" de "+MESES[hoje.getMonth()];
   try{
     await window.HOMY_SP_READY;
-    await SP.ensureLogin();
+
+    const logado = await SP.init();
+    if(!logado){
+      document.getElementById("cardapioGrid").innerHTML=
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;text-align:center">'+
+          '<div style="font-size:2rem">🔐</div>'+
+          '<div style="font-size:.95rem;font-weight:600;color:#fff">Login necessário</div>'+
+          '<div style="font-size:.82rem;color:rgba(143,170,210,.7)">Conecte com sua conta Microsoft para ver o cardápio.</div>'+
+          '<button id="btnLoginCardapio" style="margin-top:.5rem;padding:.8rem 1.8rem;border-radius:12px;border:none;background:rgba(192,40,28,.8);color:#fff;font-family:Barlow,sans-serif;font-size:.95rem;font-weight:700;cursor:pointer">Entrar com Microsoft</button>'+
+        '</div>';
+      document.getElementById("btnLoginCardapio").addEventListener("click",async function(){
+        this.disabled=true; this.textContent="⏳ Abrindo...";
+        try{ await SP.login(); await carregarDadosReais(); }
+        catch(e){ this.disabled=false; this.textContent="Entrar com Microsoft"; }
+      });
+      return;
+    } 
     const semanaId = SP.getSemanaId ? SP.getSemanaId(hoje) : "";
     const dia = diaHojeKey();
     const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId)]);
