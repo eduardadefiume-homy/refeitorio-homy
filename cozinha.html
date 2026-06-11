@@ -113,6 +113,12 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 .label{font-size:0.66rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:0.15rem}
 .cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4}
 
+.cardapio-options{display:flex;flex-wrap:wrap;gap:0.45rem;margin-top:0.35rem}
+.cardapio-opcao{display:inline-flex;align-items:center;gap:0.35rem;padding:4px 9px;border-radius:999px;background:rgba(26,58,110,0.55);border:1px solid rgba(60,140,255,0.22);font-size:0.72rem;color:rgba(210,230,255,0.92);max-width:100%}
+.cardapio-opcao b{font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:rgba(120,190,255,0.96)}
+.cardapio-opcao span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+@media(max-width:520px){.cardapio{align-items:flex-start}.cardapio-options{flex-direction:column}.cardapio-opcao{width:100%}.cardapio-opcao span{max-width:100%}}
+
 /* busca */
 .search{position:relative;margin-bottom:0.9rem}
 .search input{
@@ -328,9 +334,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=homy-final-20260610-1")
-        .catch(function(){ return loadScript("./sharepoint.js?v=homy-final-20260610-1"); })
-        .catch(function(){ return loadScript("../sharepoint.js?v=homy-final-20260610-1"); });
+      return loadScript("sharepoint.js?v=homy-final-20260611-cozinha-2")
+        .catch(function(){ return loadScript("./sharepoint.js?v=homy-final-20260611-cozinha-2"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=homy-final-20260611-cozinha-2"); });
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -353,6 +359,7 @@ let cozinhaSyncTimer = null;
 // ---- helpers ----
 function normalizar(v){ return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
 function itemValor(obj,...keys){ for(const k of keys){ if(obj && obj[k] != null) return obj[k]; } return ""; }
+function esc(v){ return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
 function getNome(p){ return itemValor(p,"Colaborador_nome","Title","Nome"); }
 function getOpcao(p){ return itemValor(p,"Opcao","opcao","Nome_Prato"); }
 function getPedidoId(p){ return String(p.id||p.ID||""); }
@@ -404,15 +411,56 @@ function atualizarData(){
 }
 
 async function carregarCardapio(semanaId, dia){
+  const el = document.getElementById("cardapioHoje");
   try {
     const items = await window.SP.getCardapio(semanaId);
-    const hoje  = items.filter(i => normalizar(itemValor(i,"Dia","dia")) === normalizar(dia));
-    const principal = hoje.find(i => normalizar(itemValor(i,"Opcao","opcao")) === "principal");
-    const nome = principal ? itemValor(principal,"Nome_Prato","nome_prato","Title") : null;
-    document.getElementById("cardapioHoje").textContent = nome || (hoje.length ? "Cardápio disponível" : "Cardápio não cadastrado");
+    const hoje  = (items || []).filter(i => normalizar(itemValor(i,"Dia","dia")) === normalizar(dia));
+    const ordem = ["principal", "light", "carne", "massa", "lanche"];
+    const labels = { principal:"Principal", light:"Light", carne:"Carne", massa:"Massa", lanche:"Lanche" };
+
+    if (!hoje.length) {
+      el.textContent = "Cardápio não cadastrado";
+      return;
+    }
+
+    const porOpcao = ordem
+      .map(op => hoje.find(i => normalizar(itemValor(i,"Opcao","opcao")) === op))
+      .filter(Boolean);
+
+    const outros = hoje.filter(i => !ordem.includes(normalizar(itemValor(i,"Opcao","opcao"))));
+    const final = porOpcao.concat(outros);
+
+    el.innerHTML = `<div class="cardapio-options">${final.map(i => {
+      const op = normalizar(itemValor(i,"Opcao","opcao")) || "opcao";
+      const nome = itemValor(i,"Nome_Prato","nome_prato","Title") || "Prato cadastrado";
+      return `<div class="cardapio-opcao"><b>${esc(labels[op] || op)}</b><span>${esc(nome)}</span></div>`;
+    }).join("")}</div>`;
   } catch(e) {
-    document.getElementById("cardapioHoje").textContent = "Cardápio indisponível";
+    console.warn("Cardápio cozinha:", e);
+    if (el) el.textContent = "Cardápio indisponível";
   }
+}
+
+async function carregarAusenciasSeguras(){
+  const tentativas = [
+    () => window.SP.getAusenciasRefeitorio?.(),
+    () => window.SP.getAusencias?.(true),
+    () => window.SP.getItems?.("Ausencias_Refeitorio"),
+    () => window.SP.getItems?.("Ausências_Refeitório"),
+    () => window.SP.getItems?.("Ausencias"),
+    () => window.SP.getItems?.("Ausências")
+  ];
+
+  for (const fn of tentativas) {
+    try {
+      const r = await fn();
+      if (Array.isArray(r)) return r;
+    } catch(e) {
+      console.warn("Ausências ignoradas na cozinha:", e.message || e);
+    }
+  }
+
+  return [];
 }
 
 async function sincronizar(){
@@ -425,25 +473,34 @@ async function sincronizar(){
 
     await carregarCardapio(semanaId, dia);
 
-    // Carrega pedidos e ausências em paralelo
-    const [pedidos, ausencias] = await Promise.all([
-      window.SP.getPedidos(semanaId),
-      window.SP.getAusencias ? window.SP.getAusencias(true) : Promise.resolve([])
-    ]);
+    // A lista de ausências NÃO pode impedir a cozinha de abrir.
+    // Se a lista não existir no SharePoint, seguimos com os pedidos normalmente.
+    const pedidos = await window.SP.getPedidos(semanaId);
+    const ausencias = await carregarAusenciasSeguras();
 
-    // Filtra pedidos do dia
-    pedidosHoje = pedidos.filter(p => normalizar(itemValor(p,"Dia","dia")) === normalizar(dia));
+    pedidosHoje = (pedidos || []).filter(p => {
+      const okDia = normalizar(itemValor(p,"Dia","dia")) === normalizar(dia);
+      const nome  = String(getNome(p) || "").trim();
+      const opcao = String(itemValor(p,"Opcao","opcao") || "").trim();
+      const status = normalizar(itemValor(p,"Status","status") || "");
+      const quebrado = !nome && !opcao;
+      const cancelado = ["cancelado", "bloqueado", "travado"].includes(status);
+      return okDia && !quebrado && !cancelado;
+    });
 
-    // Marca ausentes
     const hoje = new Date().toISOString().slice(0,10);
     pedidosHoje = pedidosHoje.map(p => {
       const cid = String(getColaboradorId(p));
-      const ausente = ausencias.some(a => {
-        if (String(itemValor(a,"Colaborador_id")) !== cid) return false;
-        const ini = itemValor(a,"Data_Inicio");
-        const fim = itemValor(a,"Data_Fim");
+      const nome = normalizar(getNome(p));
+      const ausente = (ausencias || []).some(a => {
+        const aCid = String(itemValor(a,"Colaborador_id","colaborador_id") || "");
+        const aNome = normalizar(itemValor(a,"Colaborador_nome","Nome","Title") || "");
+        const mesmoColab = (cid && aCid && aCid === cid) || (nome && aNome && aNome === nome);
+        if (!mesmoColab) return false;
+        const ini = itemValor(a,"Data_Inicio","Inicio","DataInicio");
+        const fim = itemValor(a,"Data_Fim","Fim","DataFim");
         if (!ini || !fim) return false;
-        return hoje >= ini.slice(0,10) && hoje <= fim.slice(0,10);
+        return hoje >= String(ini).slice(0,10) && hoje <= String(fim).slice(0,10);
       });
       if (ausente) return { ...p, Status: "Ausente", _ausente: true };
       return p;
@@ -463,7 +520,7 @@ async function sincronizar(){
       <div class="empty">
         <div class="empty-icon">⚠️</div>
         <div class="empty-title">Não foi possível conectar</div>
-        <div class="empty-sub">${e.message || e}</div>
+        <div class="empty-sub">${esc(e.message || e)}</div>
         <button class="connect" onclick="conectar()">Conectar novamente</button>
       </div>`;
   }
@@ -515,12 +572,12 @@ function renderLista(){
     const onclick = (!done && !ausente) ? `onclick="abrirModal('${getPedidoId(p)}')"` : "";
     return `
       <article class="item ${cls}" ${onclick}>
-        <div class="avatar">${iniciais(nome)}</div>
+        <div class="avatar">${esc(iniciais(nome))}</div>
         <div class="info">
-          <div class="name">${nome}</div>
-          <div class="desc">${opcao}</div>
+          <div class="name">${esc(nome)}</div>
+          <div class="desc">${esc(opcao)}</div>
         </div>
-        <div class="badge">${badgeLabel}</div>
+        <div class="badge">${esc(badgeLabel)}</div>
       </article>`;
   }).join("");
 }
@@ -731,7 +788,7 @@ async function iniciarCozinha(){
       <div class="empty">
         <div class="empty-icon">⚠️</div>
         <div class="empty-title">Não foi possível conectar</div>
-        <div class="empty-sub">${e.message || e}</div>
+        <div class="empty-sub">${esc(e.message || e)}</div>
         <button class="connect" onclick="location.reload()">Recarregar</button>
       </div>`;
     document.getElementById("appCozinha").style.display = "block";
