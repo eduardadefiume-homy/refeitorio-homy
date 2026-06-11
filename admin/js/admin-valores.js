@@ -17,12 +17,36 @@ const AdminValores = window.AdminValores = {
   COL_ATIVO: "Ativo",
 
   async load() {
-    this._ensureResponsiveStyles();
-    this._bindBotoes();
-    await this._carregar();
-    await this._preencherPainelNFPadrao();
+    // Usa a referência global para evitar perda de contexto quando o loader do admin
+    // chamar a função indiretamente. Isso elimina o erro:
+    // this._ensureResponsiveStyles is not a function
+    const self = window.AdminValores || this;
+    if (typeof self._ensureResponsiveStyles === "function") self._ensureResponsiveStyles();
+    if (typeof self._bindBotoes === "function") self._bindBotoes();
+    if (typeof self._carregar === "function") await self._carregar();
+    if (typeof self._preencherPainelNFPadrao === "function") await self._preencherPainelNFPadrao();
   },
 
+
+  _ensureResponsiveStyles() {
+    if (document.getElementById("homy-admin-valores-responsive-style")) return;
+    const st = document.createElement("style");
+    st.id = "homy-admin-valores-responsive-style";
+    st.textContent = `
+      .nf-recon-card{margin-top:1rem;border:1px solid rgba(255,190,60,.28);background:rgba(255,180,0,.055);border-radius:14px;padding:1rem;max-width:100%;overflow:hidden}
+      .nf-recon-card.ok{border-color:rgba(64,208,144,.28);background:rgba(64,208,144,.055)}
+      .nf-recon-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.8rem;flex-wrap:wrap}
+      .nf-recon-title{font-family:"Barlow Condensed",sans-serif;font-weight:700;text-transform:uppercase;color:#fff;font-size:1.05rem}
+      .nf-recon-sub{font-size:.78rem;color:rgba(255,220,120,.82);margin-top:2px}
+      .nf-recon-badge{font-size:.65rem;font-weight:700;text-transform:uppercase;border-radius:999px;padding:5px 10px;background:rgba(255,180,0,.13);border:1px solid rgba(255,180,0,.28);color:#ffd45a}
+      .nf-recon-card.ok .nf-recon-badge{background:rgba(64,208,144,.12);border-color:rgba(64,208,144,.28);color:#40d090}
+      .nf-recon-table-wrap{max-width:100%;overflow:auto;border-radius:12px;border:1px solid rgba(255,255,255,.08)}
+      .nf-recon-table{min-width:520px}
+      .nf-recon-table td:last-child{font-weight:700;color:#fff;text-align:right}
+      @media(max-width:700px){.nf-recon-card{padding:.8rem}.nf-recon-table{min-width:460px}.nf-recon-head{align-items:flex-start}}
+    `;
+    document.head.appendChild(st);
+  },
   _getEl(...ids) {
     for (const id of ids) {
       const el = document.getElementById(id);
