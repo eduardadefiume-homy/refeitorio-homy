@@ -213,13 +213,20 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   _pedidoTemConteudo(p) {
-    // Pedido válido precisa ter, no mínimo, identidade e referência de dia/data.
-    // Linhas antigas criadas por versões anteriores vinham só com Principal/Confirmado,
-    // sem colaborador e sem dia; essas linhas NÃO devem aparecer nem contar no dashboard.
+    // Pedido válido precisa ter identidade real e referência de dia/data.
+    // Registros quebrados criados por versões antigas vinham como "Pedido",
+    // sem colaborador real, sem dia e sem centro de custo. Eles não devem aparecer
+    // nem contam no dashboard/por setor.
     const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title");
     const dia = this._pick(p, "Dia");
     const data = this._pick(p, "Data_Hora", "Data", "Data_Referencia");
-    return this._valorValido(nome) && (this._valorValido(dia) || this._valorValido(data));
+    const colabId = this._pick(p, "Colaborador_id", "colaboradorId", "ColaboradorId");
+    const nomeNorm = this._norm(nome);
+
+    if (!this._valorValido(nome) || ["pedido", "pedidos", "sem nome", "undefined", "null"].includes(nomeNorm)) return false;
+    if (!this._valorValido(dia) && !this._valorValido(data)) return false;
+    if (nomeNorm === "pedido" && !this._valorValido(colabId)) return false;
+    return true;
   },
 
   _isPedidoProd(p) {
@@ -446,8 +453,8 @@ const AdminDashboard = window.AdminDashboard = {
     };
 
     const extrasHojeSemPedido = extrasHoje.filter(e => !extraJaExisteNoPedidoHoje(e));
-    extrasHojeSemPedido.forEach(() => {
-      const setor = "120602 - PORTARIA";
+    extrasHojeSemPedido.forEach(e => {
+      const setor = this._centroCustoExtra(e);
       setoresHojeMap.set(setor, (setoresHojeMap.get(setor) || 0) + 1);
     });
 
@@ -951,6 +958,18 @@ const AdminDashboard = window.AdminDashboard = {
 
     const setorColab = colab ? this._pick(colab, "Centro_Custo", "Setor", "Departamento") : "";
     return setorColab ? this._formatarCC(setorColab) : "Sem setor";
+  },
+
+  _centroCustoExtra(extra) {
+    const direto = this._pick(extra, "Centro_Custo", "CentroCusto", "Setor", "Departamento");
+    if (direto && this._formatarCC(direto) !== "Sem setor") return this._formatarCC(direto);
+
+    const obs = this._pick(extra, "Observacao", "Observação") || "";
+    const m = String(obs).match(/(\d{6})(?:\s*-\s*([A-Za-zÀ-ÿ\s/.-]+))?/);
+    if (m) return this._formatarCC(m[0]);
+
+    // Guarda, investigador e extras sem centro de custo caem na Portaria.
+    return "120602 - PORTARIA";
   },
 
   _extrairSetorTotal(item) {
