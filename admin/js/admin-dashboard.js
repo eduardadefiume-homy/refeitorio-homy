@@ -205,12 +205,21 @@ const AdminDashboard = window.AdminDashboard = {
     return `nome:${this._norm(nome)}`;
   },
 
+  _valorValido(v) {
+    const s = String(v ?? "").trim();
+    if (!s) return false;
+    const n = this._norm(s);
+    return !["-", "_", "—", "sem", "sem setor", "undefined", "null"].includes(n);
+  },
+
   _pedidoTemConteudo(p) {
+    // Pedido válido precisa ter, no mínimo, identidade e referência de dia/data.
+    // Linhas antigas criadas por versões anteriores vinham só com Principal/Confirmado,
+    // sem colaborador e sem dia; essas linhas NÃO devem aparecer nem contar no dashboard.
     const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title");
     const dia = this._pick(p, "Dia");
-    const opcao = this._pick(p, "Opcao");
-    const prato = this._pick(p, "Nome_Prato");
-    return !!(String(nome || "").trim() || String(dia || "").trim() || String(opcao || "").trim() || String(prato || "").trim());
+    const data = this._pick(p, "Data_Hora", "Data", "Data_Referencia");
+    return this._valorValido(nome) && (this._valorValido(dia) || this._valorValido(data));
   },
 
   _isPedidoProd(p) {
@@ -416,7 +425,8 @@ const AdminDashboard = window.AdminDashboard = {
 
     const setoresHojeMap = new Map();
     pedidosHojeProd.forEach(p => {
-      const setor = this._centroCustoPedido(p);
+      const setor = this._centroCustoPedidoResolvido(p, colaboradoresAtivos);
+      if (this._formatarCC(setor) === "Sem setor") return;
       setoresHojeMap.set(setor, (setoresHojeMap.get(setor) || 0) + 1);
     });
 
@@ -888,7 +898,8 @@ const AdminDashboard = window.AdminDashboard = {
   _formatarCC(valor) {
     if (!valor) return "Sem setor";
     const v = String(valor).trim();
-    if (!v || v === "—") return "Sem setor";
+    const nv = this._norm(v);
+    if (!v || v === "—" || v === "-" || v === "_" || nv === "sem" || nv === "sem setor" || nv === "undefined" || nv === "null") return "Sem setor";
 
     // Padrão oficial: CÓDIGO - NOME DO SETOR.
     // Corrige entradas antigas como "ADM GERAL - 120101" para "120101 - ADM GERAL".
@@ -911,18 +922,35 @@ const AdminDashboard = window.AdminDashboard = {
     const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo") || "");
     const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome") || "");
     const obs = this._pick(p, "Observacao", "Observação") || "";
+    const rawInvalido = !this._valorValido(raw) || this._norm(raw).includes("sem setor");
     const isExtra = this._isExtraPedido(p) || origem.includes("guarda") || origem.includes("extra") ||
                     origem.includes("visitante") || origem.includes("prestador") || origem.includes("motorista") ||
-                    nome.includes("guarda") || nome.includes("refeicao extra");
+                    origem.includes("investigador") || nome.includes("guarda") || nome.includes("investigador") ||
+                    nome.includes("refeicao extra");
 
-    if ((!raw || String(raw).trim() === "—" || this._norm(raw).includes("sem")) && obs) {
+    if (rawInvalido && obs) {
       const m = String(obs).match(/(\d{6})(?:\s*-\s*([A-Za-zÀ-ÿ\s/.-]+))?/);
       if (m) return this._formatarCC(m[0]);
     }
 
-    if ((!raw || String(raw).trim() === "—" || this._norm(raw).includes("sem")) && isExtra) return "120602 - PORTARIA";
-    if (origem.includes("guarda") || nome.includes("guarda")) return "120602 - PORTARIA";
-    return raw || "Sem setor";
+    if ((rawInvalido && isExtra) || origem.includes("guarda") || nome.includes("guarda")) return "120602 - PORTARIA";
+    return rawInvalido ? "Sem setor" : this._formatarCC(raw);
+  },
+
+  _centroCustoPedidoResolvido(p, colaboradores = []) {
+    const direto = this._centroCustoPedido(p);
+    if (direto && this._formatarCC(direto) !== "Sem setor") return this._formatarCC(direto);
+
+    const idPedido = String(this._pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const nomePedido = this._norm(this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "");
+    const colab = (colaboradores || []).find(c => {
+      const idColab = String(this._pick(c, "id", "ID", "Colaborador_id", "ColaboradorId") || "").trim();
+      const nomeColab = this._norm(this._pick(c, "Nome", "Title", "Colaborador_nome", "Colaborador") || "");
+      return (idPedido && idColab && idPedido === idColab) || (nomePedido && nomeColab && nomePedido === nomeColab);
+    });
+
+    const setorColab = colab ? this._pick(colab, "Centro_Custo", "Setor", "Departamento") : "";
+    return setorColab ? this._formatarCC(setorColab) : "Sem setor";
   },
 
   _extrairSetorTotal(item) {
@@ -949,6 +977,7 @@ const AdminDashboard = window.AdminDashboard = {
       const qtd = this._num(total);
       if (qtd <= 0) return;
       const s = this._formatarCC(String(setor || "Sem setor").trim() || "Sem setor");
+      if (s === "Sem setor") return;
       acumulado.set(s, (acumulado.get(s) || 0) + qtd);
     });
 
