@@ -4,12 +4,20 @@ const AdminPedidos = window.AdminPedidos = {
 
   _lista: [],
 
+  _valorValido(v) {
+    const s = String(v ?? "").trim();
+    if (!s) return false;
+    const n = AdminUtils.norm(s);
+    return !["-", "_", "—", "sem", "sem setor", "undefined", "null"].includes(n);
+  },
+
   _pedidoTemConteudo(p) {
+    // Remove da tela pedidos quebrados criados por versões anteriores
+    // com apenas Principal/Confirmado, mas sem colaborador e sem dia.
     const nome = SP.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title");
     const dia = SP.pick(p, "Dia");
-    const opcao = SP.pick(p, "Opcao");
-    const prato = SP.pick(p, "Nome_Prato");
-    return !!(String(nome || "").trim() || String(dia || "").trim() || String(opcao || "").trim() || String(prato || "").trim());
+    const data = SP.pick(p, "Data_Hora", "Data", "Data_Referencia");
+    return this._valorValido(nome) && (this._valorValido(dia) || this._valorValido(data));
   },
 
   async load(semanaId) {
@@ -73,10 +81,10 @@ const AdminPedidos = window.AdminPedidos = {
 
     tbody.innerHTML = lista.map(p => {
       const id     = AdminUtils.esc(p.id || "");
-      const nome   = AdminUtils.esc(SP.pick(p, "Colaborador_nome") || "—");
-      const dia    = AdminUtils.esc(SP.pick(p, "Dia")              || "—");
-      const opcao  = AdminUtils.esc(SP.pick(p, "Opcao")            || "—");
-      const prato  = AdminUtils.esc(SP.pick(p, "Nome_Prato")       || "—");
+      const nome   = AdminUtils.esc(SP.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—");
+      const dia    = AdminUtils.esc(SP.pick(p, "Dia") || "—");
+      const opcao  = AdminUtils.esc(SP.pick(p, "Opcao") || "—");
+      const prato  = AdminUtils.esc(SP.pick(p, "Nome_Prato", "Prato") || "—");
       const status = SP.pick(p, "Status") || (SP.isTrue(SP.pick(p, "Confirmado")) ? "Confirmado" : "Pendente");
       return `<tr>
         <td>${nome}</td>
@@ -188,7 +196,7 @@ const AdminPedidos = window.AdminPedidos = {
 
     const linhas = this._lista.map(p => ({
       Semana:      SP.pick(p, "Semana_id")       || "",
-      Colaborador: SP.pick(p, "Colaborador_nome") || "",
+      Colaborador: SP.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "",
       Dia:         SP.pick(p, "Dia")              || "",
       Opcao:       SP.pick(p, "Opcao")            || "",
       Prato:       SP.pick(p, "Nome_Prato")       || "",
