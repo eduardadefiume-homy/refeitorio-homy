@@ -1,0 +1,23 @@
+{
+  "name": "Cozinha · Homy Química",
+  "short_name": "Cozinha Homy",
+  "start_url": "/refeitorio-homy/cozinha.html",
+  "scope": "/refeitorio-homy/",
+  "display": "standalone",
+  "background_color": "#031225",
+  "theme_color": "#031b3d",
+  "icons": [
+    {
+      "src": "/refeitorio-homy/icon-cozinha-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/refeitorio-homy/icon-cozinha-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
