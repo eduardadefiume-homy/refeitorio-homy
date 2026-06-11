@@ -100,25 +100,27 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 .weekday{font-family:"Barlow Condensed";font-size:1.15rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase}
 .fulldate{font-size:0.78rem;color:var(--muted);letter-spacing:0.06em}
 
-.content{max-width:980px;margin:0 auto;padding:1rem 1rem 0}
+.content{max-width:1180px;margin:0 auto;padding:1rem 1rem 0}
 
 /* cardápio do dia — cards iguais ao Cardápio do Dia */
 .cardapio{
-  display:flex;align-items:flex-start;gap:0.9rem;
+  display:grid;grid-template-columns:auto minmax(0,1fr);align-items:flex-start;gap:0.9rem;
   padding:1rem;border-radius:16px;
   background:rgba(40,100,200,0.08);border:1px solid rgba(60,140,255,0.14);
   margin-bottom:1rem;
   box-shadow:0 2px 12px rgba(0,0,0,0.18);
+  width:100%;
 }
 .cardapio-icon{font-size:1.7rem;flex-shrink:0;margin-top:0.25rem}
 .label{font-size:0.66rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:0.65rem}
-.cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4;width:100%}
+.cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4;width:100%;min-width:0}
 
 .cozinha-cardapio-grid{
   display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(185px,1fr));
   gap:0.75rem;
   width:100%;
+  min-width:0;
 }
 .cozinha-op-card{
   min-height:118px;
@@ -164,13 +166,19 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   border:1px solid rgba(255,200,80,0.14);
   color:rgba(255,215,130,0.9);
 }
+@media(min-width:900px){
+  .cozinha-cardapio-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(min-width:1200px){
+  .cozinha-cardapio-grid{grid-template-columns:repeat(auto-fit,minmax(185px,1fr))}
+}
 @media(max-width:720px){
   .content{max-width:100%;padding:0.9rem 0.8rem 0}
-  .cardapio{flex-direction:column;gap:0.65rem}
+  .cardapio{grid-template-columns:1fr;gap:0.65rem}
   .cozinha-cardapio-grid{grid-template-columns:1fr}
 }
-@media(min-width:721px) and (max-width:1020px){
-  .content{max-width:92vw}
+@media(min-width:721px) and (max-width:899px){
+  .content{max-width:94vw}
   .cozinha-cardapio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
@@ -437,10 +445,24 @@ function isAusente(p){
          status === "ferias" || status === "férias" || status === "afastado" || status === "atestado";
 }
 
-// verifica se pedido é extra interno (não aparece para cozinha como separado)
+// Extras administrativos não devem aparecer na lista da cozinha.
+// Eles continuam existindo para operação, pedidos, dashboard e relatórios,
+// mas a tela da cozinha exibe apenas os colaboradores do refeitório.
+function isPedidoExtraCozinha(p){
+  const origem = normalizar(itemValor(p,"Origem","origem"));
+  const tipo   = normalizar(itemValor(p,"tipo","Tipo"));
+  const nome   = normalizar(getNome(p));
+  const titulo = normalizar(itemValor(p,"Title","Nome"));
+
+  return origem.includes("extra") || origem.includes("investigador") || origem.includes("guarda") ||
+         tipo.includes("extra")   || tipo.includes("investigador")   || tipo.includes("guarda")   ||
+         nome.includes("refeicao extra") || nome.includes("investigador") || nome.includes("guarda") ||
+         titulo.includes("refeicao extra") || titulo.includes("investigador") || titulo.includes("guarda");
+}
+
+// Mantido por compatibilidade com versões anteriores.
 function pedidoConta(p){
-  const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
-  return true; // cozinha vê tudo (extras também), para montar os pratos
+  return !isPedidoExtraCozinha(p);
 }
 
 function diaAtual(){
@@ -570,9 +592,11 @@ async function sincronizar(){
       const nome  = String(getNome(p) || "").trim();
       const opcao = String(itemValor(p,"Opcao","opcao") || "").trim();
       const status = normalizar(itemValor(p,"Status","status") || "");
-      const quebrado = !nome && !opcao;
+      const prato = String(itemValor(p,"Nome_Prato","nome_prato") || "").trim();
+      const quebrado = (!nome && !opcao) || (normalizar(nome) === "pedido" && !prato);
       const cancelado = ["cancelado", "bloqueado", "travado"].includes(status);
-      return okDia && !quebrado && !cancelado;
+      const extraAdmin = isPedidoExtraCozinha(p);
+      return okDia && !quebrado && !cancelado && !extraAdmin;
     });
 
     const hoje = new Date().toISOString().slice(0,10);
