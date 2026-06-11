@@ -205,7 +205,16 @@ const AdminDashboard = window.AdminDashboard = {
     return `nome:${this._norm(nome)}`;
   },
 
+  _pedidoTemConteudo(p) {
+    const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title");
+    const dia = this._pick(p, "Dia");
+    const opcao = this._pick(p, "Opcao");
+    const prato = this._pick(p, "Nome_Prato");
+    return !!(String(nome || "").trim() || String(dia || "").trim() || String(opcao || "").trim() || String(prato || "").trim());
+  },
+
   _isPedidoProd(p) {
+    if (!this._pedidoTemConteudo(p)) return false;
     const s = this._norm(this._pick(p, "Status") || "");
     return ["confirmado", "extra", "aprovado", "travado"].includes(s) ||
            (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")));
@@ -331,6 +340,7 @@ const AdminDashboard = window.AdminDashboard = {
     ]);
 
     const pedidosDaSemana = pedidos.filter(p => {
+      if (!this._pedidoTemConteudo(p)) return false;
       const semana = this._pick(p, "Semana_id", "Semana");
       if (semana && semana === semanaId) return true;
       const d = this._dataPedido(p, semanaId);
@@ -410,6 +420,27 @@ const AdminDashboard = window.AdminDashboard = {
       setoresHojeMap.set(setor, (setoresHojeMap.get(setor) || 0) + 1);
     });
 
+    // Garante que extras lançados no módulo Extras apareçam no setor correto
+    // mesmo quando ainda não existe pedido espelho válido em Pedidos.
+    const extraJaExisteNoPedidoHoje = e => {
+      const nomeExtra = this._norm(this._pick(e, "Nome", "Title"));
+      const tipoExtra = this._norm(this._pick(e, "tipo", "Tipo"));
+      return pedidosHojeProd.some(p => {
+        const nomePedido = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
+        const origemPedido = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+        if (!nomePedido) return false;
+        if (nomeExtra && nomePedido === nomeExtra) return true;
+        if (nomeExtra && nomePedido.includes(nomeExtra)) return true;
+        return tipoExtra && origemPedido.includes(tipoExtra) && nomePedido.includes(tipoExtra);
+      });
+    };
+
+    const extrasHojeSemPedido = extrasHoje.filter(e => !extraJaExisteNoPedidoHoje(e));
+    extrasHojeSemPedido.forEach(() => {
+      const setor = "120602 - PORTARIA";
+      setoresHojeMap.set(setor, (setoresHojeMap.get(setor) || 0) + 1);
+    });
+
     const ausenciasHojeComPedidos = [
       ...ausenciasHojeLista.map(a => ({
         nome: this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—",
@@ -444,7 +475,7 @@ const AdminDashboard = window.AdminDashboard = {
       pedidosConfirmadosSemana,
       pedidosPendentesSemana: pendentesSemanaFinal,
       totalPedidosSemana: pedidosProdComExtras.length,
-      totalPedidosHoje: pedidosHojeProd.length,
+      totalPedidosHoje: pedidosHojeProd.length + extrasHojeSemPedido.length,
       checkinsHoje: this._num(base.checkinsHoje),
       extrasAtivos: extrasAtivos.length || this._num(base.extrasAtivos),
       extrasSemana: extrasAtivos.length,
@@ -876,13 +907,20 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   _centroCustoPedido(p) {
-    const raw = this._pick(p, "Centro_Custo", "Setor", "Departamento");
+    const raw = this._pick(p, "Centro_Custo", "CentroCusto", "Setor", "Departamento");
     const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo") || "");
     const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome") || "");
-    const isExtra = this._isExtraPedido(p) || origem.includes("guarda") || origem.includes("extra") || nome.includes("guarda") || nome.includes("refeicao extra");
-    if ((!raw || String(raw).trim() === "—" || this._norm(raw).includes("sem")) && isExtra) {
-      return "120602 - PORTARIA";
+    const obs = this._pick(p, "Observacao", "Observação") || "";
+    const isExtra = this._isExtraPedido(p) || origem.includes("guarda") || origem.includes("extra") ||
+                    origem.includes("visitante") || origem.includes("prestador") || origem.includes("motorista") ||
+                    nome.includes("guarda") || nome.includes("refeicao extra");
+
+    if ((!raw || String(raw).trim() === "—" || this._norm(raw).includes("sem")) && obs) {
+      const m = String(obs).match(/(\d{6})(?:\s*-\s*([A-Za-zÀ-ÿ\s/.-]+))?/);
+      if (m) return this._formatarCC(m[0]);
     }
+
+    if ((!raw || String(raw).trim() === "—" || this._norm(raw).includes("sem")) && isExtra) return "120602 - PORTARIA";
     if (origem.includes("guarda") || nome.includes("guarda")) return "120602 - PORTARIA";
     return raw || "Sem setor";
   },
@@ -908,9 +946,9 @@ const AdminDashboard = window.AdminDashboard = {
     const acumulado = new Map();
     base.forEach(item => {
       const { setor, total } = this._extrairSetorTotal(item);
-      const s = String(setor || "Sem setor").trim() || "Sem setor";
       const qtd = this._num(total);
       if (qtd <= 0) return;
+      const s = this._formatarCC(String(setor || "Sem setor").trim() || "Sem setor");
       acumulado.set(s, (acumulado.get(s) || 0) + qtd);
     });
 
