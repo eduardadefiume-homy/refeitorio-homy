@@ -1,30 +1,38 @@
 // admin-dashboard.js — Dashboard do Admin Homy
-// Versão corrigida: fix setoresHoje object/array + render defensivo
-// Data: 2026-06-10
+// Versão limpa: métricas por colaborador, ausências por lista, travamento por colaboradores pendentes e setores resilientes
 
 const AdminDashboard = window.AdminDashboard = {
-
   _prazoTimer: null,
+  _cache: null,
 
   async load(semanaId) {
     try {
       await SP.init();
+      this._ensureStatsLayout();
+      this._ensurePrazoPainel();
 
-      const resumo = await SP.getDashboardResumo(semanaId);
-      const r = resumo || {};
+      const base = typeof SP.getDashboardResumo === "function"
+        ? await SP.getDashboardResumo(semanaId).catch(e => {
+            console.warn("[Dashboard] getDashboardResumo falhou, usando cálculo local.", e);
+            return {};
+          })
+        : {};
 
-      this._renderCards(r);
+      const resumo = await this._montarResumoDashboard(semanaId, base || {});
+      this._cache = resumo;
 
-      await this._safeRender("toggle-status",     () => this._renderToggleStatus(r));
-      await this._safeRender("extras-hoje",       () => this._renderExtrasHoje(r, semanaId));
-      await this._safeRender("semana-table",      () => this._renderSemanaTable(r));
-      await this._safeRender("ausencias",         () => this._renderAusencias(r, semanaId));
-      await this._safeRender("operacao-dia",      () => this._renderOperacaoDia(r, semanaId));
-      await this._safeRender("gerencial",         () => this._renderGerencial(r));
-      await this._safeRender("setores",           () => this._renderSetores(r));
-      await this._safeRender("proximos-dias",     () => this._renderProximosDias(r));
-      await this._safeRender("alertas",           () => this._renderAlertas(r));
-      await this._safeRender("prazo",             () => this._carregarPrazo(semanaId, r));
+      this._renderCards(resumo);
+
+      await this._safeRender("toggle-status", () => this._renderToggleStatus(resumo));
+      await this._safeRender("extras-hoje", () => this._renderExtrasHoje(resumo, semanaId));
+      await this._safeRender("semana-table", () => this._renderSemanaTable(resumo));
+      await this._safeRender("ausencias", () => this._renderAusencias(resumo, semanaId));
+      await this._safeRender("operacao-dia", () => this._renderOperacaoDia(resumo, semanaId));
+      await this._safeRender("gerencial", () => this._renderGerencial(resumo));
+      await this._safeRender("setores", () => this._renderSetores(resumo));
+      await this._safeRender("proximos-dias", () => this._renderProximosDias(resumo));
+      await this._safeRender("alertas", () => this._renderAlertas(resumo));
+      await this._safeRender("prazo", () => this._carregarPrazo(semanaId, resumo));
 
       AdminUtils.setTxt("semanaLabel", AdminState.getSemanaLabel());
     } catch (e) {
@@ -34,9 +42,8 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   async _safeRender(nome, fn) {
-    try {
-      return await fn();
-    } catch (e) {
+    try { return await fn(); }
+    catch (e) {
       console.error(`[Dashboard/${nome}]`, e);
       AdminUtils.toast(`Erro no bloco ${nome}: ` + (e.message || e), "error");
       return null;
@@ -46,13 +53,10 @@ const AdminDashboard = window.AdminDashboard = {
   _num(v, fallback = 0) {
     if (v === null || v === undefined || v === "") return fallback;
     if (typeof v === "number") return Number.isFinite(v) ? v : fallback;
-
     let s = String(v).trim();
     if (!s) return fallback;
-
     if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
     s = s.replace(/[^0-9.-]/g, "");
-
     const n = Number(s);
     return Number.isFinite(n) ? n : fallback;
   },
@@ -62,8 +66,46 @@ const AdminDashboard = window.AdminDashboard = {
     return Number.isInteger(n) ? String(n) : n.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
   },
 
+  _norm(v) {
+    return String(v || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  },
+
+  _pick(obj, ...keys) {
+    for (const k of keys) {
+      const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
+      if (v !== undefined && v !== null && String(v) !== "") return v;
+    }
+    return "";
+  },
+
+  _dateISO(v) {
+    if (!v) return "";
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+  },
+
+  _brDate(iso) {
+    const d = this._dateISO(iso);
+    if (!d) return "—";
+    const [a, m, dia] = d.split("-");
+    return `${dia}/${m}/${a}`;
+  },
+
   _diaHoje(r) {
-    return r?.diaHoje || (typeof AdminUtils.DIA_HOJE === "function" ? AdminUtils.DIA_HOJE() : "segunda");
+    return r?.diaHoje || (typeof AdminUtils.DIA_HOJE === "function" ? AdminUtils.DIA_HOJE() : this._diaDaSemana(new Date()));
+  },
+
+  _diaDaSemana(date) {
+    const dias = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+    const d = date instanceof Date ? date : new Date(date);
+    const dia = dias[d.getDay()] || "segunda";
+    return ["sabado", "domingo"].includes(dia) ? "segunda" : dia;
   },
 
   _inputDateLocal(date) {
@@ -81,32 +123,380 @@ const AdminDashboard = window.AdminDashboard = {
     return `${h}:${m}`;
   },
 
-  _renderCards(r) {
-    const setoresNormalizados = this._normalizarSetores(r?.setoresHoje);
+  _ensureStatsLayout() {
+    const grid = document.querySelector("#mod-dashboard .stats-grid");
+    if (!grid || grid.dataset.dashboardLayoutV2) return;
 
-    AdminUtils.setTxt("stat-colab",        this._num(r?.colaboradoresAtivos));
-    AdminUtils.setTxt("stat-confirmados",  this._num(r?.pedidosConfirmadosColaboradores));
-    AdminUtils.setTxt("stat-pendentes",    this._num(r?.pendentesColaboradores));
-    AdminUtils.setTxt("stat-checkin",      this._num(r?.checkinsHoje));
-    AdminUtils.setTxt("dashExtrasAtivos",  this._num(r?.extrasAtivos));
-    AdminUtils.setTxt("dashTotalHoje",     this._num(r?.totalPedidosHoje));
-    AdminUtils.setTxt("dashAusenciasHoje", this._num(r?.ausenciasHoje));
-    AdminUtils.setTxt("dashTotalSemana",   this._num(r?.totalPedidosSemana));
-    AdminUtils.setTxt("dashPrincipalHoje", this._num(r?.principalHoje));
-    AdminUtils.setTxt("dashLightHoje",     this._num(r?.lightHoje));
-    AdminUtils.setTxt("dashOutrasHoje",    this._num(r?.outrasHoje));
-    AdminUtils.setTxt("dashSetoresHoje",   setoresNormalizados.length);
+    grid.dataset.dashboardLayoutV2 = "1";
+    grid.innerHTML = `
+      <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-value" id="stat-colab">—</div><div class="stat-label">Colaboradores ativos</div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" id="stat-confirmados">—</div><div class="stat-label">Colaboradores confirmados</div></div>
+      <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-value" id="stat-pendentes">—</div><div class="stat-label">Colaboradores pendentes</div></div>
+      <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-value" id="dashPedidosConfirmadosSemana">—</div><div class="stat-label">Pedidos confirmados da semana</div></div>
+      <div class="stat-card"><div class="stat-icon">⌛</div><div class="stat-value" id="dashPedidosPendentesSemana">—</div><div class="stat-label">Pedidos pendentes da semana</div></div>
+      <div class="stat-card"><div class="stat-icon">➕</div><div class="stat-value" id="dashExtrasAtivos">—</div><div class="stat-label">Extras ativos</div></div>
+      <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-value" id="dashExtrasSemana">—</div><div class="stat-label">Extras da semana</div></div>
+      <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-value" id="dashAusenciasSemana">—</div><div class="stat-label">Ausências da semana</div></div>
+      <div class="stat-card"><div class="stat-icon">🛑</div><div class="stat-value" id="dashAusenciasHoje">—</div><div class="stat-label">Ausências hoje</div></div>
+      <div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="stat-checkin">—</div><div class="stat-label">Check-ins hoje</div></div>
+      <div class="stat-card"><div class="stat-icon">🧾</div><div class="stat-value" id="dashExtrasDia">—</div><div class="stat-label">Extras do dia</div></div>
+      <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value" id="dashTotalHoje">—</div><div class="stat-label">Total de pedidos hoje</div></div>`;
+  },
+
+  _ensurePrazoPainel() {
+    if (document.getElementById("dashPainelPrazo")) return;
+    const box = document.querySelector("#mod-dashboard .prazo-box");
+    if (!box) return;
+    const painel = document.createElement("div");
+    painel.id = "dashPainelPrazo";
+    painel.style.marginTop = ".8rem";
+    box.appendChild(painel);
+  },
+
+  _getSemanaDatas(semanaId) {
+    if (SP.getWeekDates) return SP.getWeekDates(semanaId).map(d => this._dateISO(d));
+    const [year, week] = semanaId.split("-W").map(Number);
+    const jan4 = new Date(year, 0, 4);
+    const start = new Date(jan4);
+    start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (week - 1) * 7);
+    return Array.from({ length: 5 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return this._inputDateLocal(d);
+    });
+  },
+
+  _getSemanaRange(semanaId) {
+    const datas = this._getSemanaDatas(semanaId);
+    return { ini: datas[0], fim: datas[4], datas };
+  },
+
+  _dataPorDia(semanaId, dia) {
+    if (SP.getDataRefBySemanaDia) return SP.getDataRefBySemanaDia(semanaId, dia);
+    const idx = { segunda: 0, terca: 1, terça: 1, quarta: 2, quinta: 3, sexta: 4 }[this._norm(dia)];
+    return this._getSemanaDatas(semanaId)[idx ?? 0];
+  },
+
+  _isAtivoColaborador(c) {
+    const ativo = this._pick(c, "Ativo", "ativo");
+    if (ativo === "") return true;
+    return SP.isTrue ? SP.isTrue(ativo) : !!ativo;
+  },
+
+  _colabKeyFromColaborador(c) {
+    const id = this._pick(c, "id", "ID", "Colaborador_id", "ColaboradorId");
+    if (id) return `id:${String(id)}`;
+    const nome = this._pick(c, "Nome", "Title", "Colaborador_nome", "Colaborador");
+    return `nome:${this._norm(nome)}`;
+  },
+
+  _colabNome(c) {
+    return this._pick(c, "Nome", "Title", "Colaborador_nome", "Colaborador") || "Sem nome";
+  },
+
+  _colabSetor(c) {
+    return this._pick(c, "Centro_Custo", "Setor", "Departamento") || "—";
+  },
+
+  _colabKeyFromPedido(p) {
+    const id = this._pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId");
+    if (id) return `id:${String(id)}`;
+    const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title");
+    return `nome:${this._norm(nome)}`;
+  },
+
+  _isPedidoProd(p) {
+    const s = this._norm(this._pick(p, "Status") || "");
+    return ["confirmado", "extra", "aprovado", "travado"].includes(s) ||
+           (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")));
+  },
+
+  _isPedidoAusencia(p) {
+    const s = this._norm(this._pick(p, "Status") || "");
+    return ["cancelado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar", "bloqueado", "travado", "atestado", "licenca", "licença"].includes(s);
+  },
+
+  _isExtraPedido(p) {
+    if (SP.isExtraPedido) return SP.isExtraPedido(p);
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo") || "");
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome") || "");
+    return origem.includes("extra") || origem.includes("investigador") || origem.includes("guarda") || nome.includes("refeicao extra");
+  },
+
+  _dataPedido(p, semanaId) {
+    const direta = this._dateISO(this._pick(p, "Data_Hora", "Data", "Data_Referencia"));
+    if (direta) return direta;
+    const semana = this._pick(p, "Semana_id", "Semana") || semanaId;
+    const dia = this._pick(p, "Dia");
+    if (semana && dia) return this._dataPorDia(semana, dia);
+    return "";
+  },
+
+  _ausenciaAtiva(a) {
+    const ativo = this._pick(a, "Ativo", "ativo");
+    const status = this._norm(this._pick(a, "Status", "status"));
+    if (["inativo", "cancelado", "false", "nao", "não", "0"].includes(status)) return false;
+    if (ativo === "") return true;
+    return SP.isTrue ? SP.isTrue(ativo) : !!ativo;
+  },
+
+  _ausenciaInicio(a) {
+    return this._dateISO(this._pick(a, "Data_Inicio", "Inicio", "DataInicio", "Data"));
+  },
+
+  _ausenciaFim(a) {
+    return this._dateISO(this._pick(a, "Data_Fim", "Fim", "DataFim", "Data")) || this._ausenciaInicio(a);
+  },
+
+  _ausenciaKey(a) {
+    const id = this._pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId");
+    if (id) return `id:${String(id)}`;
+    const nome = this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title");
+    return `nome:${this._norm(nome)}`;
+  },
+
+  _periodosSobrepoem(iniA, fimA, iniB, fimB) {
+    if (!iniA || !fimA || !iniB || !fimB) return false;
+    return iniA <= fimB && fimA >= iniB;
+  },
+
+  async _buscarPedidos(semanaId) {
+    try {
+      if (typeof SP.getPedidos === "function") return await SP.getPedidos(semanaId);
+      const todos = await SP.getItems("Pedidos");
+      return todos.filter(p => this._pick(p, "Semana_id", "Semana") === semanaId);
+    } catch (e) {
+      console.warn("[Dashboard] Não foi possível carregar pedidos.", e);
+      return [];
+    }
+  },
+
+  async _buscarColaboradores() {
+    try {
+      const lista = typeof SP.getTodosColaboradores === "function"
+        ? await SP.getTodosColaboradores()
+        : await SP.getColaboradores();
+      return (lista || []).filter(c => this._isAtivoColaborador(c));
+    } catch (e) {
+      console.warn("[Dashboard] Não foi possível carregar colaboradores.", e);
+      return [];
+    }
+  },
+
+  async _buscarExtras(semanaId) {
+    try {
+      if (typeof SP.getExtras === "function") return await SP.getExtras(semanaId);
+      const todos = await SP.getItems("Extras");
+      return todos.filter(e => this._pick(e, "Semana_id", "Semana") === semanaId);
+    } catch (e) {
+      console.warn("[Dashboard] Não foi possível carregar extras.", e);
+      return [];
+    }
+  },
+
+  async _buscarAusencias() {
+    try {
+      if (typeof SP.getAusencias === "function") return await SP.getAusencias(false);
+    } catch (e) {
+      console.warn("[Dashboard] SP.getAusencias falhou. Tentando nomes alternativos.", e);
+    }
+
+    const nomes = [
+      "Ausencias do Refeitorio",
+      "Ausências do Refeitório",
+      "Ausencias_Refeitorio",
+      "Ausências_Refeitorio",
+      "Ausencias",
+      "Ausências"
+    ];
+
+    for (const nome of nomes) {
+      try {
+        return await SP.getItems(nome);
+      } catch (_) {}
+    }
+    return [];
+  },
+
+  async _montarResumoDashboard(semanaId, base) {
+    const { ini, fim, datas } = this._getSemanaRange(semanaId);
+    const diaHoje = base.diaHoje || this._diaHoje(base);
+    const dataHoje = this._dataPorDia(semanaId, diaHoje);
+
+    const [pedidos, colaboradoresAtivos, extras, ausenciasRaw] = await Promise.all([
+      this._buscarPedidos(semanaId),
+      this._buscarColaboradores(),
+      this._buscarExtras(semanaId),
+      this._buscarAusencias()
+    ]);
+
+    const pedidosDaSemana = pedidos.filter(p => {
+      const semana = this._pick(p, "Semana_id", "Semana");
+      if (semana && semana === semanaId) return true;
+      const d = this._dataPedido(p, semanaId);
+      return d && d >= ini && d <= fim;
+    });
+
+    const pedidosProd = pedidosDaSemana.filter(p => this._isPedidoProd(p) && !this._isExtraPedido(p));
+    const pedidosProdComExtras = pedidosDaSemana.filter(p => this._isPedidoProd(p));
+    const pedidosHoje = pedidosDaSemana.filter(p => this._norm(this._pick(p, "Dia")) === this._norm(diaHoje) || this._dataPedido(p, semanaId) === dataHoje);
+    const pedidosHojeProd = pedidosHoje.filter(p => this._isPedidoProd(p));
+
+    const confirmadosKeys = new Set();
+    pedidosProd.forEach(p => {
+      const k = this._colabKeyFromPedido(p);
+      if (!k.endsWith("nome:")) confirmadosKeys.add(k);
+    });
+
+    const ausenciasAtivas = (ausenciasRaw || []).filter(a => this._ausenciaAtiva(a));
+    const ausenciasSemana = ausenciasAtivas.filter(a => this._periodosSobrepoem(this._ausenciaInicio(a), this._ausenciaFim(a), ini, fim));
+    const ausenciasHojeLista = ausenciasAtivas.filter(a => this._periodosSobrepoem(this._ausenciaInicio(a), this._ausenciaFim(a), dataHoje, dataHoje));
+    const ausentesSemanaKeys = new Set(ausenciasSemana.map(a => this._ausenciaKey(a)));
+
+    const pedidosAusenciaHoje = pedidosHoje.filter(p => this._isPedidoAusencia(p));
+    const pedidosAusenciaSemana = pedidosDaSemana.filter(p => this._isPedidoAusencia(p));
+
+    const colaboradoresPendentesLista = colaboradoresAtivos
+      .filter(c => {
+        const k = this._colabKeyFromColaborador(c);
+        return !confirmadosKeys.has(k) && !ausentesSemanaKeys.has(k);
+      })
+      .sort((a, b) => this._colabNome(a).localeCompare(this._colabNome(b), "pt-BR"))
+      .map(c => ({
+        id: this._pick(c, "id", "ID") || "",
+        nome: this._colabNome(c),
+        setor: this._colabSetor(c),
+        key: this._colabKeyFromColaborador(c)
+      }));
+
+    const expectedSemana = colaboradoresAtivos.length * 5;
+    const pedidosConfirmadosSemana = pedidosProd.length;
+    const pedidosPendentesSemana = this._num(base.pendentesPedidosSemana ?? base.pedidosPendentesSemana ?? base.pendentesColaboradores, NaN);
+    const pendentesSemanaFinal = Number.isFinite(pedidosPendentesSemana)
+      ? pedidosPendentesSemana
+      : Math.max(0, expectedSemana - pedidosConfirmadosSemana);
+
+    const extrasAtivos = extras.filter(e => {
+      const ativo = this._pick(e, "Ativo", "ativo", "Status");
+      if (ativo === "") return true;
+      return SP.isTrue ? SP.isTrue(ativo) || this._norm(ativo) === "confirmado" : !!ativo;
+    });
+
+    const extrasHoje = extrasAtivos.filter(e => {
+      const dia = this._norm(this._pick(e, "Dia"));
+      const data = this._dateISO(this._pick(e, "Data", "Data_Hora", "Data_Referencia"));
+      return dia === this._norm(diaHoje) || data === dataHoje;
+    });
+
+    const porDia = {};
+    AdminUtils.DIAS.forEach(dia => {
+      const listaDia = pedidosDaSemana.filter(p => this._norm(this._pick(p, "Dia")) === this._norm(dia) || this._dataPedido(p, semanaId) === this._dataPorDia(semanaId, dia));
+      const prodDia = listaDia.filter(p => this._isPedidoProd(p));
+      const totalDia = prodDia.length;
+      porDia[dia] = {
+        total: totalDia,
+        principal: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "principal").length,
+        light: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "light").length,
+        carne: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "carne").length,
+        massa: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "massa").length,
+        lanche: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "lanche").length,
+        pendentes: Math.max(0, colaboradoresAtivos.length - new Set(prodDia.filter(p => !this._isExtraPedido(p)).map(p => this._colabKeyFromPedido(p))).size)
+      };
+    });
+
+    const setoresHojeMap = new Map();
+    pedidosHojeProd.forEach(p => {
+      const setor = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem setor";
+      setoresHojeMap.set(setor, (setoresHojeMap.get(setor) || 0) + 1);
+    });
+
+    const ausenciasHojeComPedidos = [
+      ...ausenciasHojeLista.map(a => ({
+        nome: this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—",
+        setor: this._pick(a, "Centro_Custo", "Setor", "Departamento") || "—",
+        status: this._pick(a, "Motivo", "Status") || "Ausente",
+        origem: "Ausências"
+      })),
+      ...pedidosAusenciaHoje.map(p => ({
+        nome: this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—",
+        setor: this._pick(p, "Centro_Custo", "Setor", "Departamento") || "—",
+        status: this._pick(p, "Status") || "Ausente",
+        origem: "Pedidos"
+      }))
+    ];
+
+    const uniqueAusHoje = new Map();
+    ausenciasHojeComPedidos.forEach(a => {
+      const key = `${this._norm(a.nome)}|${this._norm(a.status)}`;
+      if (!uniqueAusHoje.has(key)) uniqueAusHoje.set(key, a);
+    });
+
+    return {
+      ...base,
+      semanaId,
+      diaHoje,
+      dataHoje,
+      colaboradoresAtivos: colaboradoresAtivos.length,
+      colaboradoresConfirmados: confirmadosKeys.size,
+      colaboradoresPendentes: colaboradoresPendentesLista.length,
+      pedidosConfirmadosColaboradores: confirmadosKeys.size,
+      pendentesColaboradores: colaboradoresPendentesLista.length,
+      pedidosConfirmadosSemana,
+      pedidosPendentesSemana: pendentesSemanaFinal,
+      totalPedidosSemana: pedidosProdComExtras.length,
+      totalPedidosHoje: pedidosHojeProd.length,
+      checkinsHoje: this._num(base.checkinsHoje),
+      extrasAtivos: extrasAtivos.length || this._num(base.extrasAtivos),
+      extrasSemana: extrasAtivos.length,
+      extrasDia: extrasHoje.length,
+      extrasConfirmados: extrasAtivos.filter(e => ["confirmado", "aprovado", "extra", ""].includes(this._norm(this._pick(e, "Status")))).length,
+      extrasPendentes: extrasAtivos.filter(e => this._norm(this._pick(e, "Status")) === "pendente").length,
+      ausenciasSemana: ausenciasSemana.length + pedidosAusenciaSemana.length,
+      ausenciasHoje: uniqueAusHoje.size,
+      principalHoje: pedidosHojeProd.filter(p => this._norm(this._pick(p, "Opcao")) === "principal").length,
+      lightHoje: pedidosHojeProd.filter(p => this._norm(this._pick(p, "Opcao")) === "light").length,
+      outrasHoje: pedidosHojeProd.filter(p => !["principal", "light"].includes(this._norm(this._pick(p, "Opcao")))).length,
+      porDia: { ...(base.porDia || {}), ...porDia },
+      setoresHoje: Array.from(setoresHojeMap.entries()),
+      _pedidosSemana: pedidosDaSemana,
+      _pedidosHoje: pedidosHoje,
+      _colaboradoresPendentesLista: colaboradoresPendentesLista,
+      _ausenciasHojeLista: Array.from(uniqueAusHoje.values()),
+      _ausenciasSemanaLista: ausenciasSemana,
+      _extrasSemanaLista: extrasAtivos,
+      _extrasHojeLista: extrasHoje
+    };
+  },
+
+  _renderCards(r) {
+    AdminUtils.setTxt("stat-colab", this._num(r.colaboradoresAtivos));
+    AdminUtils.setTxt("stat-confirmados", this._num(r.colaboradoresConfirmados));
+    AdminUtils.setTxt("stat-pendentes", this._num(r.colaboradoresPendentes));
+    AdminUtils.setTxt("dashPedidosConfirmadosSemana", this._num(r.pedidosConfirmadosSemana));
+    AdminUtils.setTxt("dashPedidosPendentesSemana", this._num(r.pedidosPendentesSemana));
+    AdminUtils.setTxt("dashExtrasAtivos", this._num(r.extrasAtivos));
+    AdminUtils.setTxt("dashExtrasSemana", this._num(r.extrasSemana));
+    AdminUtils.setTxt("dashAusenciasSemana", this._num(r.ausenciasSemana));
+    AdminUtils.setTxt("dashAusenciasHoje", this._num(r.ausenciasHoje));
+    AdminUtils.setTxt("stat-checkin", this._num(r.checkinsHoje));
+    AdminUtils.setTxt("dashExtrasDia", this._num(r.extrasDia));
+    AdminUtils.setTxt("dashTotalHoje", this._num(r.totalPedidosHoje));
+
+    // Compatibilidade com IDs antigos fora do grid.
+    AdminUtils.setTxt("dashTotalSemana", this._num(r.totalPedidosSemana));
+    AdminUtils.setTxt("dashPrincipalHoje", this._num(r.principalHoje));
+    AdminUtils.setTxt("dashLightHoje", this._num(r.lightHoje));
+    AdminUtils.setTxt("dashOutrasHoje", this._num(r.outrasHoje));
+    AdminUtils.setTxt("dashSetoresHoje", this._normalizarSetores(r.setoresHoje).length);
   },
 
   async _renderToggleStatus() {
-    const liberado  = await SP.isCardapioLiberado().catch(() => false);
-    const cardapio  = await SP.getConfig("cardapio_visivel").catch(() => null);
+    const liberado = await SP.isCardapioLiberado().catch(() => false);
+    const cardapio = await SP.getConfig("cardapio_visivel").catch(() => null);
     const cardapioV = SP.isTrue(cardapio);
 
     const tMarcacao = document.getElementById("toggleMarcacao");
     const tCardapio = document.getElementById("toggleCardapio");
-
-    // Atualiza o estado visual sempre que o dashboard recarregar.
     if (tMarcacao) tMarcacao.checked = !!liberado;
     if (tCardapio) tCardapio.checked = !!cardapioV;
 
@@ -138,11 +528,10 @@ const AdminDashboard = window.AdminDashboard = {
       });
     }
 
-    AdminUtils.setTxt("dashMarcacaoStatus", liberado  ? "Aberta"   : "Fechada");
+    AdminUtils.setTxt("dashMarcacaoStatus", liberado ? "Aberta" : "Fechada");
     AdminUtils.setTxt("dashCardapioStatus", cardapioV ? "Liberado" : "Bloqueado");
   },
 
-  // ── Prazo + Painel de Travamento ──────────────────────────────
   async _carregarPrazo(semanaId, resumo) {
     const prazo = await SP.getPrazoMarcacao().catch(() => null);
 
@@ -152,7 +541,7 @@ const AdminDashboard = window.AdminDashboard = {
       AdminUtils.setVal("prazoHora", this._inputTimeLocal(dt));
     }
 
-    this._atualizarPainelPrazo(prazo, this._num(resumo?.pendentesColaboradores));
+    this._atualizarPainelPrazo(prazo, this._num(resumo.colaboradoresPendentes));
 
     const btnSalvar = document.getElementById("btnSalvarPrazo");
     if (btnSalvar && !btnSalvar.dataset.bound) {
@@ -160,19 +549,12 @@ const AdminDashboard = window.AdminDashboard = {
       btnSalvar.addEventListener("click", async () => {
         const data = AdminUtils.getVal("prazoData");
         const hora = AdminUtils.getVal("prazoHora") || "18:00";
-
-        if (!data) {
-          AdminUtils.toast("Informe a data limite.", "error");
-          return;
-        }
-
+        if (!data) { AdminUtils.toast("Informe a data limite.", "error"); return; }
         const valor = `${data}T${hora}:00`;
-
         try {
           await SP.setPrazoMarcacao(valor);
           AdminUtils.toast("✅ Prazo salvo.", "success");
-          const r = await SP.getDashboardResumo(AdminState.getSemanaId()).catch(() => ({}));
-          this._atualizarPainelPrazo(valor, this._num(r?.pendentesColaboradores));
+          await AdminDashboard.load(AdminState.getSemanaId());
         } catch (e) {
           AdminUtils.toast("Erro ao salvar prazo: " + (e.message || e), "error");
         }
@@ -180,14 +562,14 @@ const AdminDashboard = window.AdminDashboard = {
     }
   },
 
-  _atualizarPainelPrazo(prazoISO, pendentes) {
+  _atualizarPainelPrazo(prazoISO, pendentesColaboradores) {
     const el = document.getElementById("dashPainelPrazo");
     if (!el) return;
 
-    const agora   = new Date();
-    const dt      = prazoISO ? new Date(prazoISO) : null;
+    const agora = new Date();
+    const dt = prazoISO ? new Date(prazoISO) : null;
     const vencido = dt && !isNaN(dt) && agora > dt;
-    const qtdPend = this._num(pendentes);
+    const qtdPend = this._num(pendentesColaboradores);
 
     const fmtDt = dt && !isNaN(dt)
       ? dt.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" }) +
@@ -195,8 +577,8 @@ const AdminDashboard = window.AdminDashboard = {
       : null;
 
     let alertClass = "alert-info";
-    let icone      = "⏱️";
-    let statusTxt  = "";
+    let icone = "⏱️";
+    let statusTxt = "";
 
     if (!dt || isNaN(dt)) {
       statusTxt = "Nenhum prazo definido para esta semana.";
@@ -206,8 +588,8 @@ const AdminDashboard = window.AdminDashboard = {
       alertClass = "alert-red";
       icone = "🔒";
       statusTxt = qtdPend > 0
-        ? `Prazo encerrado em ${fmtDt}. ${qtdPend} colaborador(es) não marcaram.`
-        : `Prazo encerrado em ${fmtDt}. Todos marcaram.`;
+        ? `Prazo encerrado em ${fmtDt}. ${qtdPend} colaborador(es) ainda não marcaram.`
+        : `Prazo encerrado em ${fmtDt}. Todos os colaboradores marcaram ou estão ausentes.`;
     } else {
       const msRestante = dt - agora;
       const horas = Math.floor(msRestante / 3600000);
@@ -218,7 +600,7 @@ const AdminDashboard = window.AdminDashboard = {
 
     const btnHtml = qtdPend > 0
       ? `<button id="btnTravarPendentes" class="btn-primary" style="flex-shrink:0;font-size:.82rem;padding:.5rem 1rem;margin-top:.5rem">
-           🔒 Travar ${qtdPend} pendente(s) como Principal
+           🔒 Travar ${qtdPend} colaborador(es) pendente(s) como Principal
          </button>`
       : "";
 
@@ -226,100 +608,129 @@ const AdminDashboard = window.AdminDashboard = {
       <div class="alert ${alertClass}" style="display:flex;flex-direction:column;gap:.5rem">
         <span>${icone} ${AdminUtils.esc(statusTxt)}</span>
         ${btnHtml}
-      </div>
-    `;
+      </div>`;
 
     const btnTravar = document.getElementById("btnTravarPendentes");
     if (btnTravar && !btnTravar.dataset.bound) {
       btnTravar.dataset.bound = "1";
-      btnTravar.addEventListener("click", () =>
-        this._confirmarTravamento(AdminState.getSemanaId(), qtdPend)
-      );
+      btnTravar.addEventListener("click", () => this._confirmarTravamento(AdminState.getSemanaId(), qtdPend));
     }
   },
 
-  async _confirmarTravamento(semanaId, qtd) {
-    if (typeof SP.travarPendentesComoPrincipal !== "function") {
-      AdminUtils.toast("Função SP.travarPendentesComoPrincipal não encontrada no sharepoint.js.", "error");
-      return;
+  _pratoPrincipalPorDia(cardapio, dia) {
+    const item = (cardapio || []).find(c =>
+      this._norm(this._pick(c, "Dia")) === this._norm(dia) &&
+      this._norm(this._pick(c, "Opcao", "Opção")) === "principal"
+    );
+    return this._pick(item, "Nome_Prato", "Descricao", "Descrição", "Title") || "Principal";
+  },
+
+  async _travarColaboradoresPendentesComoPrincipal(semanaId, pendentes) {
+    const listaPendentes = Array.isArray(pendentes) ? pendentes : (this._cache?._colaboradoresPendentesLista || []);
+    if (!listaPendentes.length) return { colaboradores: 0, pedidosCriados: 0 };
+
+    const [pedidosSemana, cardapio] = await Promise.all([
+      this._buscarPedidos(semanaId),
+      typeof SP.getCardapio === "function" ? SP.getCardapio(semanaId).catch(() => []) : Promise.resolve([])
+    ]);
+
+    const existentes = new Set(pedidosSemana.map(p => `${this._colabKeyFromPedido(p)}|${this._norm(this._pick(p, "Dia"))}`));
+    let pedidosCriados = 0;
+
+    for (const colab of listaPendentes) {
+      const colaboradorId = colab.id || String(colab.key || "").replace(/^id:/, "");
+      const colaboradorNome = colab.nome || "Colaborador";
+      const centroCusto = colab.setor || "";
+      const key = colab.key || (colaboradorId ? `id:${colaboradorId}` : `nome:${this._norm(colaboradorNome)}`);
+
+      for (const dia of AdminUtils.DIAS) {
+        const chave = `${key}|${this._norm(dia)}`;
+        if (existentes.has(chave)) continue;
+
+        const nomePrato = this._pratoPrincipalPorDia(cardapio, dia);
+        await SP.savePedido(semanaId, colaboradorId || this._norm(colaboradorNome), colaboradorNome, dia, "principal", nomePrato, {
+          confirmado: true,
+          status: "Travado",
+          centroCusto,
+          origem: "Travamento automático",
+          observacao: "Marcado automaticamente — prazo encerrado",
+          alteradoPor: SP.getUserName ? SP.getUserName() : "Admin"
+        });
+        existentes.add(chave);
+        pedidosCriados++;
+      }
     }
 
-    const resumo = await SP.getDashboardResumo(semanaId).catch(() => ({}));
-    const total  = this._num(qtd ?? resumo?.pendentesColaboradores);
+    return { colaboradores: listaPendentes.length, pedidosCriados };
+  },
 
+  async _confirmarTravamento(semanaId, qtd) {
+    const pendentes = this._cache?._colaboradoresPendentesLista || [];
+    const total = this._num(qtd ?? pendentes.length ?? this._cache?.colaboradoresPendentes);
     if (total <= 0) {
-      AdminUtils.toast("✅ Todos os colaboradores já marcaram.", "success");
+      AdminUtils.toast("✅ Todos os colaboradores já marcaram ou estão ausentes.", "success");
       return;
     }
 
     const confirmar = window.confirm(
-      `Confirmar travamento?\n\n` +
-      `${total} colaborador(es) não marcaram no prazo.\n` +
-      `Todos serão marcados como PRINCIPAL em todos os dias desta semana.\n\n` +
-      `A observação "Marcado automaticamente — prazo encerrado" será registrada para auditoria.\n\n` +
+      `Confirmar travamento?
+
+` +
+      `${total} colaborador(es) ainda não marcaram a refeição.
+` +
+      `Será criado pedido PRINCIPAL para esses colaboradores nos dias sem pedido desta semana.
+
+` +
+      `A observação "Marcado automaticamente — prazo encerrado" será registrada para auditoria.
+
+` +
       `Esta ação não pode ser desfeita.`
     );
     if (!confirmar) return;
 
     const btn = document.getElementById("btnTravarPendentes");
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "⏳ Travando...";
-    }
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Travando..."; }
 
     try {
-      const resultado = await SP.travarPendentesComoPrincipal(semanaId);
-      const travados = this._num(resultado?.travados, total);
-
-      AdminUtils.toast(`✅ ${travados} colaboradores travados como Principal.`, "success");
-
-      await SP.setMarcacaoLiberada(false).catch(e => {
-        console.warn("[Dashboard] não foi possível bloquear marcação após travamento:", e);
-        AdminUtils.toast("Travamento concluído, mas não consegui bloquear a marcação automaticamente.", "error");
-      });
-
+      const resultado = await this._travarColaboradoresPendentesComoPrincipal(semanaId, pendentes);
+      AdminUtils.toast(
+        `✅ Travamento concluído: ${resultado.colaboradores} colaborador(es), ${resultado.pedidosCriados} pedido(s) criados.`,
+        "success"
+      );
+      await SP.setMarcacaoLiberada(false).catch(() => null);
       await AdminDashboard.load(semanaId);
     } catch (e) {
       AdminUtils.toast("Erro ao travar: " + (e.message || e), "error");
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = "🔒 Travar pendentes como Principal";
-      }
+      if (btn) { btn.disabled = false; btn.textContent = `🔒 Travar ${total} colaborador(es) pendente(s) como Principal`; }
     }
   },
 
-  // ── Extras do Dia ─────────────────────────────────────────────
-  async _renderExtrasHoje(r, semanaId) {
-    AdminUtils.setTxt("dashExtrasSolicitados", this._num(r?.extrasAtivos));
-    AdminUtils.setTxt("dashExtrasConfirmados", this._num(r?.extrasConfirmados));
-    AdminUtils.setTxt("dashExtrasPendentes",   this._num(r?.extrasPendentes));
+  async _renderExtrasHoje(r) {
+    AdminUtils.setTxt("dashExtrasSolicitados", this._num(r.extrasDia));
+    AdminUtils.setTxt("dashExtrasConfirmados", this._num(r.extrasConfirmados));
+    AdminUtils.setTxt("dashExtrasPendentes", this._num(r.extrasPendentes));
 
     const tbody = document.getElementById("dashExtrasTable");
     if (!tbody) return;
-
-    const diaHoje = this._diaHoje(r);
-    const extras = await SP.getExtras(semanaId, diaHoje).catch(() => []);
-
+    const extras = r._extrasHojeLista || [];
     if (!extras.length) {
       tbody.innerHTML = `<tr><td colspan="4" class="empty-cell">Nenhum extra para hoje.</td></tr>`;
       return;
     }
-
     tbody.innerHTML = extras.slice(0, 12).map(e => `
       <tr>
-        <td>${AdminUtils.esc(SP.pick(e, "Nome", "Title") || "—")}</td>
-        <td>${AdminUtils.esc(SP.pick(e, "tipo", "Tipo") || "Extra")}</td>
-        <td>${AdminUtils.esc(SP.pick(e, "Opcao") || "—")}</td>
-        <td>${AdminUtils.badge(SP.pick(e, "Status") || "Confirmado")}</td>
+        <td>${AdminUtils.esc(this._pick(e, "Nome", "Title") || "Extra")}</td>
+        <td>${AdminUtils.esc(this._pick(e, "tipo", "Tipo") || "Extra")}</td>
+        <td>${AdminUtils.esc(this._pick(e, "Opcao") || "—")}</td>
+        <td>${AdminUtils.badge(this._pick(e, "Status") || "Confirmado")}</td>
       </tr>`).join("");
   },
 
   _renderSemanaTable(r) {
     const tbody = document.getElementById("dashSemanaTable");
     if (!tbody) return;
-
     tbody.innerHTML = AdminUtils.DIAS.map(dia => {
-      const d = r?.porDia?.[dia] || {};
+      const d = r.porDia?.[dia] || {};
       return `<tr>
         <td>${AdminUtils.DIA_LABEL[dia]}</td>
         <td>${this._num(d.total)}</td>
@@ -330,51 +741,37 @@ const AdminDashboard = window.AdminDashboard = {
     }).join("");
   },
 
-  // ── Ausências ────────────────────────────────────────────────
-  async _renderAusencias(r, semanaId) {
-    AdminUtils.setTxt("dashNaoMarcaram", this._num(r?.pendentesColaboradores));
-    AdminUtils.setTxt("dashCancelados",  this._num(r?.ausenciasHoje));
-    AdminUtils.setTxt("dashTravados",    this._num(r?.travadosHoje ?? r?.travadosSemana ?? 0));
+  async _renderAusencias(r) {
+    AdminUtils.setTxt("dashNaoMarcaram", this._num(r.colaboradoresPendentes));
+    AdminUtils.setTxt("dashCancelados", this._num(r.ausenciasHoje));
+    AdminUtils.setTxt("dashTravados", this._num(r.travadosHoje ?? r.travadosSemana ?? 0));
 
     const tbody = document.getElementById("dashAusenciasTable");
     if (!tbody) return;
 
-    const diaHoje = this._diaHoje(r);
-    const pedidos = await SP.getPedidos(semanaId).catch(() => []);
-    const norm    = v => AdminUtils.norm(v);
-
-    const ausentes = pedidos.filter(p =>
-      norm(SP.pick(p, "Dia")) === norm(diaHoje) &&
-      ["cancelado", "afastado", "ferias", "nao vai almocar", "bloqueado", "travado"]
-        .includes(norm(SP.pick(p, "Status") || ""))
-    );
-
+    const ausentes = r._ausenciasHojeLista || [];
     if (!ausentes.length) {
       tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Nenhuma ausência hoje.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = ausentes.slice(0, 14).map(p => `
+    tbody.innerHTML = ausentes.slice(0, 14).map(a => `
       <tr>
-        <td>${AdminUtils.esc(SP.pick(p, "Colaborador_nome", "Title", "Nome") || "—")}</td>
-        <td>${AdminUtils.esc(SP.pick(p, "Centro_Custo", "Setor", "Departamento") || "—")}</td>
-        <td>${AdminUtils.badge(SP.pick(p, "Status") || "Pendente")}</td>
+        <td>${AdminUtils.esc(a.nome || "—")}</td>
+        <td>${AdminUtils.esc(this._formatarCC(a.setor || "—"))}</td>
+        <td>${AdminUtils.badge(a.status || "Ausente")}</td>
       </tr>`).join("");
   },
 
-  // ── Operação do Dia ──────────────────────────────────────────
   async _renderOperacaoDia(r, semanaId) {
-    const diaHoje = this._diaHoje(r);
+    const diaHoje = r.diaHoje || this._diaHoje(r);
     const sel = document.getElementById("dashOperacaoDia");
 
     if (sel) {
       if (!sel.value) sel.value = diaHoje;
-
       if (!sel.dataset.bound) {
         sel.dataset.bound = "1";
-        sel.addEventListener("change", () =>
-          this._carregarOperacaoTabela(AdminState.getSemanaId(), sel.value)
-        );
+        sel.addEventListener("change", () => this._carregarOperacaoTabela(AdminState.getSemanaId(), sel.value));
       }
     }
 
@@ -390,13 +787,11 @@ const AdminDashboard = window.AdminDashboard = {
   async _carregarOperacaoTabela(semanaId, dia) {
     const tbody = document.getElementById("dashOperacaoTable");
     if (!tbody) return;
-
     tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Carregando...</td></tr>`;
 
-    const pedidos = await SP.getPedidos(semanaId).catch(() => []);
-    const norm = v => AdminUtils.norm(v);
-    const diaNorm = norm(dia);
-    const lista = pedidos.filter(p => norm(SP.pick(p, "Dia")) === diaNorm);
+    const pedidos = this._cache?._pedidosSemana || await this._buscarPedidos(semanaId);
+    const diaNorm = this._norm(dia);
+    const lista = pedidos.filter(p => this._norm(this._pick(p, "Dia")) === diaNorm);
 
     if (!lista.length) {
       tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Nenhum pedido para este dia.</td></tr>`;
@@ -404,13 +799,12 @@ const AdminDashboard = window.AdminDashboard = {
     }
 
     tbody.innerHTML = lista.slice(0, 60).map(p => {
-      const id     = AdminUtils.esc(p.id || "");
-      const nome   = AdminUtils.esc(SP.pick(p, "Colaborador_nome", "Title", "Nome") || "—");
-      const setor  = AdminUtils.esc(this._formatarCC(SP.pick(p, "Centro_Custo", "Setor", "Departamento") || "—"));
-      const opcao  = AdminUtils.esc(SP.pick(p, "Opcao") || "—");
-      const prato  = AdminUtils.esc(SP.pick(p, "Nome_Prato", "Descricao") || "—");
-      const status = SP.pick(p, "Status") || "Pendente";
-
+      const id = AdminUtils.esc(p.id || "");
+      const nome = AdminUtils.esc(this._pick(p, "Colaborador_nome", "Title", "Nome") || "—");
+      const setor = AdminUtils.esc(this._formatarCC(this._pick(p, "Centro_Custo", "Setor", "Departamento") || "—"));
+      const opcao = AdminUtils.esc(this._pick(p, "Opcao") || "—");
+      const prato = AdminUtils.esc(this._pick(p, "Nome_Prato", "Descricao") || "—");
+      const status = this._pick(p, "Status") || "Pendente";
       return `<tr>
         <td>${nome}</td>
         <td>${setor}</td>
@@ -426,26 +820,21 @@ const AdminDashboard = window.AdminDashboard = {
     }).join("");
   },
 
-  // ── Resumo Gerencial ─────────────────────────────────────────
   _renderGerencial(r) {
     const el = document.getElementById("dashGerencialList");
     if (!el) return;
-
     el.innerHTML = [
-      ["Consumo da semana",    `${this._num(r?.totalPedidosSemana)} refeições`],
-      ["Pendências da semana", `${this._num(r?.pendentesColaboradores)} registros`],
-      ["Extras confirmados",   `${this._num(r?.extrasConfirmados)} extras`],
-      ["Ausências hoje",       `${this._num(r?.ausenciasHoje)} registros`]
+      ["Consumo da semana", `${this._num(r.totalPedidosSemana)} refeições`],
+      ["Pedidos pendentes", `${this._num(r.pedidosPendentesSemana)} refeições`],
+      ["Colaboradores pendentes", `${this._num(r.colaboradoresPendentes)} colaboradores`],
+      ["Extras da semana", `${this._num(r.extrasSemana)} extras`],
+      ["Ausências da semana", `${this._num(r.ausenciasSemana)} registros`]
     ].map(([a, b]) => `
       <div class="dashboard-list-item">
-        <div>
-          <div class="dashboard-list-main">${AdminUtils.esc(a)}</div>
-          <div class="dashboard-list-sub">${AdminUtils.esc(b)}</div>
-        </div>
+        <div><div class="dashboard-list-main">${AdminUtils.esc(a)}</div><div class="dashboard-list-sub">${AdminUtils.esc(b)}</div></div>
       </div>`).join("");
   },
 
-  // Mapa código → nome de centro de custo.
   _CC_MAPA: {
     "110101":"DIRETORIA PRESIDENCIAL","110201":"DIRETORIA ADMINISTRATIVA",
     "110202":"DIRETORIA DE PRODUTOS","120101":"ADM GERAL","120102":"CUSTOS",
@@ -467,101 +856,51 @@ const AdminDashboard = window.AdminDashboard = {
 
   _formatarCC(valor) {
     if (!valor) return "Sem setor";
-
     const v = String(valor).trim();
     if (!v || v === "—") return "Sem setor";
-
-    // Já está formatado.
     if (v.includes(" - ")) return v;
-
-    // É só o código numérico.
     if (/^\d+$/.test(v)) {
       const nome = this._CC_MAPA[v];
       return nome ? `${v} - ${nome}` : v;
     }
-
     return v;
   },
 
   _extrairSetorTotal(item) {
-    if (Array.isArray(item)) {
-      return {
-        setor: item[0] ?? "Sem setor",
-        total: this._num(item[1])
-      };
-    }
-
+    if (Array.isArray(item)) return { setor: item[0] ?? "Sem setor", total: this._num(item[1]) };
     if (item && typeof item === "object") {
       const entries = Object.entries(item);
-
-      // Exemplo aceito: { "120501": 3 }
-      if (entries.length === 1 && typeof entries[0][1] !== "object") {
-        return {
-          setor: entries[0][0] || "Sem setor",
-          total: this._num(entries[0][1])
-        };
-      }
-
-      const setor = SP.pick(
-        item,
-        "setor", "Setor",
-        "centroCusto", "CentroCusto", "Centro_Custo",
-        "departamento", "Departamento",
-        "nome", "Nome", "label", "Label", "key", "Key"
-      );
-
-      const total = SP.pick(
-        item,
-        "total", "Total",
-        "quantidade", "Quantidade",
-        "qtd", "Qtd",
-        "count", "Count",
-        "valor", "Valor"
-      );
-
-      return {
-        setor: setor || "Sem setor",
-        total: this._num(total)
-      };
+      if (entries.length === 1 && typeof entries[0][1] !== "object") return { setor: entries[0][0] || "Sem setor", total: this._num(entries[0][1]) };
+      const setor = this._pick(item, "setor", "Setor", "centroCusto", "CentroCusto", "Centro_Custo", "departamento", "Departamento", "nome", "Nome", "label", "Label", "key", "Key");
+      const total = this._pick(item, "total", "Total", "quantidade", "Quantidade", "qtd", "Qtd", "count", "Count", "valor", "Valor");
+      return { setor: setor || "Sem setor", total: this._num(total) };
     }
-
     return { setor: "Sem setor", total: 0 };
   },
 
   _normalizarSetores(raw) {
     let base = [];
-
-    if (Array.isArray(raw)) {
-      base = raw;
-    } else if (raw instanceof Map) {
-      base = Array.from(raw.entries());
-    } else if (raw && typeof raw === "object") {
-      base = Object.entries(raw);
-    }
+    if (Array.isArray(raw)) base = raw;
+    else if (raw instanceof Map) base = Array.from(raw.entries());
+    else if (raw && typeof raw === "object") base = Object.entries(raw);
 
     const acumulado = new Map();
-
     base.forEach(item => {
       const { setor, total } = this._extrairSetorTotal(item);
-      const setorLimpo = String(setor || "Sem setor").trim() || "Sem setor";
+      const s = String(setor || "Sem setor").trim() || "Sem setor";
       const qtd = this._num(total);
-
       if (qtd <= 0) return;
-
-      acumulado.set(setorLimpo, (acumulado.get(setorLimpo) || 0) + qtd);
+      acumulado.set(s, (acumulado.get(s) || 0) + qtd);
     });
 
-    return Array.from(acumulado.entries())
-      .map(([setor, total]) => ({ setor, total }))
+    return Array.from(acumulado.entries()).map(([setor, total]) => ({ setor, total }))
       .sort((a, b) => b.total - a.total || String(a.setor).localeCompare(String(b.setor)));
   },
 
   _renderSetores(r) {
     const el = document.getElementById("dashSetoresList");
     if (!el) return;
-
-    const setores = this._normalizarSetores(r?.setoresHoje).slice(0, 8);
-
+    const setores = this._normalizarSetores(r.setoresHoje).slice(0, 8);
     el.innerHTML = setores.length
       ? setores.map(({ setor, total }) => `
           <div class="dashboard-list-item">
@@ -577,9 +916,8 @@ const AdminDashboard = window.AdminDashboard = {
   _renderProximosDias(r) {
     const el = document.getElementById("dashProximosDias");
     if (!el) return;
-
     el.innerHTML = AdminUtils.DIAS.map(dia => {
-      const d = r?.porDia?.[dia] || {};
+      const d = r.porDia?.[dia] || {};
       return `<div class="dashboard-list-item">
         <div>
           <div class="dashboard-list-main">${AdminUtils.esc(AdminUtils.DIA_LABEL[dia] || dia)}</div>
@@ -593,26 +931,34 @@ const AdminDashboard = window.AdminDashboard = {
     const el = document.getElementById("dashAlertas");
     if (!el) return;
 
+    const pendentes = r._colaboradoresPendentesLista || [];
+    const extrasPendentes = this._num(r.extrasPendentes);
     const itens = [];
-    const pendentes = this._num(r?.pendentesColaboradores);
-    const extrasPendentes = this._num(r?.extrasPendentes);
 
-    if (pendentes > 0) {
-      itens.push(`⚠️ ${pendentes} colaboradores ainda não marcaram.`);
+    if (pendentes.length > 0) {
+      const nomes = pendentes.slice(0, 18).map(c => `
+        <div style="display:flex;justify-content:space-between;gap:.7rem;padding:.35rem 0;border-top:1px solid rgba(255,255,255,.06)">
+          <span>${AdminUtils.esc(c.nome)}</span>
+          <span style="color:rgba(143,170,210,.65);text-align:right">${AdminUtils.esc(this._formatarCC(c.setor))}</span>
+        </div>`).join("");
+      const mais = pendentes.length > 18
+        ? `<div style="padding-top:.35rem;color:rgba(143,170,210,.7)">+ ${pendentes.length - 18} colaborador(es) na lista completa.</div>`
+        : "";
+      itens.push(`<div class="dashboard-alert-item">
+        ⚠️ <b>${pendentes.length}</b> colaborador(es) ainda não marcaram a refeição.
+        <div style="margin-top:.5rem">${nomes}${mais}</div>
+      </div>`);
     }
 
     if (extrasPendentes > 0) {
-      itens.push(`⚠️ ${extrasPendentes} extras aguardando confirmação.`);
+      itens.push(`<div class="dashboard-alert-item">⚠️ ${extrasPendentes} extras aguardando confirmação.</div>`);
     }
 
     if (!itens.length) {
-      itens.push("✅ Operação sem alertas críticos no momento.");
+      itens.push(`<div class="dashboard-alert-item ok">✅ Operação sem alertas críticos no momento.</div>`);
     }
 
-    el.innerHTML = itens.map(x =>
-      `<div class="dashboard-alert-item ${x.startsWith("✅") ? "ok" : ""}">${AdminUtils.esc(x)}</div>`
-    ).join("");
-
-    AdminUtils.setTxt("dashAlteracoesManuais", this._num(r?.alteracoesManuais ?? 0));
+    el.innerHTML = itens.join("");
+    AdminUtils.setTxt("dashAlteracoesManuais", this._num(r.alteracoesManuais ?? 0));
   }
 };
