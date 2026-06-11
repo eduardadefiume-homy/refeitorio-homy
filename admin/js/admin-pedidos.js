@@ -4,6 +4,14 @@ const AdminPedidos = window.AdminPedidos = {
 
   _lista: [],
 
+  _pedidoTemConteudo(p) {
+    const nome = SP.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title");
+    const dia = SP.pick(p, "Dia");
+    const opcao = SP.pick(p, "Opcao");
+    const prato = SP.pick(p, "Nome_Prato");
+    return !!(String(nome || "").trim() || String(dia || "").trim() || String(opcao || "").trim() || String(prato || "").trim());
+  },
+
   async load(semanaId) {
     await this._buscar(semanaId);
     this._bindFiltros();
@@ -17,7 +25,7 @@ const AdminPedidos = window.AdminPedidos = {
 
     try {
       await SP.init();
-      this._lista = await SP.getPedidos(semanaId);
+      this._lista = (await SP.getPedidos(semanaId)).filter(p => this._pedidoTemConteudo(p));
       this._render();
       this._atualizarInfo(`Exibindo pedidos da semana ${semanaId}.`);
     } catch (e) {
@@ -34,6 +42,7 @@ const AdminPedidos = window.AdminPedidos = {
       await SP.init();
       const todos = await SP.getItems("Pedidos");
       this._lista = todos.filter(p => {
+        if (!this._pedidoTemConteudo(p)) return false;
         const d = String(SP.pick(p, "Data_Hora") || "").slice(0, 10);
         return d && d >= ini && d <= fim;
       });
