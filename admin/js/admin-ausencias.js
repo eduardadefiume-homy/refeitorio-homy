@@ -1,61 +1,202 @@
-// admin-ausencias.js — Gestão de Ausências do Admin Homy
+// ============================================================
+// admin-ausencias.js — Férias, afastamentos, ausências e bloqueios
+// Correção: lista SharePoint resiliente + renderização completa
+// ============================================================
 
 const AdminAusencias = window.AdminAusencias = {
-
   _lista: [],
+  _colaboradores: [],
+  _editandoId: null,
+  _listName: null,
+
+  // O erro atual veio porque o código buscava só "Ausencias_Refeitorio".
+  // Aqui tentamos os nomes mais prováveis sem quebrar a tela.
+  LIST_NAMES: [
+    "Ausencias_Refeitorio",
+    "Ausências_Refeitorio",
+    "Ausencias do Refeitorio",
+    "Ausências do Refeitório",
+    "Ausencias do Refeitório",
+    "Ausencias Refeitorio",
+    "Ausências Refeitório",
+    "Ausencias",
+    "Ausências"
+  ],
 
   async load() {
-    this._bindFiltros();
-    this._bindBotoes();
+    this._bindControles();
+    await this._carregarColaboradores();
     await this._carregar();
   },
 
-  async _carregar() {
-    const tbody = document.getElementById("ausenciasTable");
-    if (!tbody) return;
+  // Compatibilidade com códigos antigos que chamavam carregar/salvar/editar
+  async carregar() { await this._carregar(); return this._lista; },
+  async salvar(dados) { return this._salvarDireto(dados); },
+  async editar(id, dados) { return this._updateAusencia(id, dados); },
 
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Carregando...</td></tr>`;
+  async _descobrirLista() {
+    if (this._listName) return this._listName;
 
+    let ultimoErro = null;
+    for (const nome of this.LIST_NAMES) {
+      try {
+        await SP.getListId(nome);
+        this._listName = nome;
+        console.info(`[Ausências] Lista conectada: ${nome}`);
+        return nome;
+      } catch (e) {
+        ultimoErro = e;
+      }
+    }
+
+    throw new Error(
+      "Lista de ausências não encontrada no SharePoint. " +
+      "Crie ou renomeie a lista para 'Ausencias do Refeitorio' ou 'Ausencias_Refeitorio'. " +
+      (ultimoErro?.message || "")
+    );
+  },
+
+  async _getAusencias() {
+    const lista = await this._descobrirLista();
+    return SP.getItems(lista);
+  },
+
+  async _createAusencia(fields) {
+    const lista = await this._descobrirLista();
+    return SP.createItem(lista, fields);
+  },
+
+  async _updateAusencia(id, fields) {
+    const lista = await this._descobrirLista();
+    return SP.updateItem(lista, id, fields);
+  },
+
+  async _deleteAusencia(id) {
+    const lista = await this._descobrirLista();
+    return SP.deleteItem(lista, id);
+  },
+
+  async _carregarColaboradores() {
     try {
       await SP.init();
-
-      const todos = await SP.getAusencias(false);
-
-      todos.sort((a, b) => {
-        const da = new Date(SP.pick(a, "Data_Inicio") || 0);
-        const db = new Date(SP.pick(b, "Data_Inicio") || 0);
-        return db - da;
-      });
-
-      this._lista = todos;
-      this._render();
-
+      if (SP.getTodosColaboradores) this._colaboradores = await SP.getTodosColaboradores();
+      else if (SP.getColaboradores) this._colaboradores = await SP.getColaboradores();
+      else this._colaboradores = [];
+      this._popularSelectColaboradores();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message || e)}</td></tr>`;
+      console.warn("[Ausências] Não foi possível carregar colaboradores:", e);
+      this._colaboradores = [];
     }
   },
 
+  async _carregar() {
+    const tbody = this._tbody();
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Carregando...</td></tr>`;
+
+    try {
+      await SP.init();
+      this._lista = await this._getAusencias();
+      this._render();
+    } catch (e) {
+      console.error("[Ausências]", e);
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message || e)}</td></tr>`;
+      }
+      AdminUtils.toast("Erro ao carregar ausências: " + (e.message || e), "error");
+    }
+  },
+
+  _tbody() {
+    return document.getElementById("ausenciasTable") ||
+           document.getElementById("ausenciasTableBody") ||
+           document.getElementById("ausenciasRefeitorioTable") ||
+           document.querySelector("#mod-ausencias tbody");
+  },
+
+  _getEl(...ids) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) return el;
+    }
+    return null;
+  },
+
+  _val(...ids) {
+    const el = this._getEl(...ids);
+    return (el?.value || "").trim();
+  },
+
+  _setVal(valor, ...ids) {
+    const el = this._getEl(...ids);
+    if (el) el.value = valor ?? "";
+  },
+
+  _pick(obj, ...keys) {
+    for (const k of keys) {
+      const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
+      if (v !== undefined && v !== null && String(v) !== "") return v;
+    }
+    return "";
+  },
+
+  _dateISO(v) {
+    if (!v) return "";
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+  },
+
+  _dateBR(v) {
+    const iso = this._dateISO(v);
+    if (!iso) return "—";
+    const [a, m, d] = iso.split("-");
+    return `${d}/${m}/${a}`;
+  },
+
+  _ativo(item) {
+    const v = this._pick(item, "Ativo", "ativo", "Status");
+    const n = AdminUtils.norm(v);
+    if (["inativo", "cancelado", "excluido", "excluído", "false", "nao", "não", "0"].includes(n)) return false;
+    if (v === false || v === 0) return false;
+    return true;
+  },
+
+  _statusLabel(item) {
+    return this._ativo(item) ? "Ativo" : "Inativo";
+  },
+
   _render() {
-    const tbody = document.getElementById("ausenciasTable");
+    const tbody = this._tbody();
     if (!tbody) return;
 
-    const txt = AdminUtils.norm(AdminUtils.getVal("fAusenciaTexto") || "");
-    const status = AdminUtils.getVal("fAusenciaStatus") || "";
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    const busca = AdminUtils.norm(this._val("fAusenciaTexto", "ausenciaBusca", "searchAusencia", "filtroAusenciaTexto"));
+    const statusFiltro = AdminUtils.norm(this._val("fAusenciaStatus", "ausenciaStatus", "filtroAusenciaStatus"));
 
-    const lista = this._lista.filter(a => {
-      const nome = AdminUtils.norm(SP.pick(a, "Colaborador_nome", "Title") || "");
-      const motivo = AdminUtils.norm(SP.pick(a, "Motivo") || "");
+    let lista = [...this._lista];
 
-      if (txt && !nome.includes(txt) && !motivo.includes(txt)) return false;
+    if (busca) {
+      lista = lista.filter(a => AdminUtils.norm([
+        this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title"),
+        this._pick(a, "Centro_Custo", "Setor", "Departamento"),
+        this._pick(a, "Motivo", "motivo"),
+        this._pick(a, "Observacao", "Observação", "Obs")
+      ].join(" ")).includes(busca));
+    }
 
-      if (status) {
-        const s = this._calcStatus(a, hoje);
-        if (s !== status) return false;
-      }
+    if (statusFiltro && statusFiltro !== "todos") {
+      lista = lista.filter(a => {
+        const ativo = this._ativo(a);
+        if (["ativo", "sim", "true"].includes(statusFiltro)) return ativo;
+        if (["inativo", "cancelado", "nao", "não", "false"].includes(statusFiltro)) return !ativo;
+        return AdminUtils.norm(this._statusLabel(a)) === statusFiltro || AdminUtils.norm(this._pick(a, "Status")) === statusFiltro;
+      });
+    }
 
-      return true;
+    lista.sort((a, b) => {
+      const da = this._dateISO(this._pick(a, "Data_Inicio", "Inicio", "DataInicio"));
+      const db = this._dateISO(this._pick(b, "Data_Inicio", "Inicio", "DataInicio"));
+      return db.localeCompare(da);
     });
 
     if (!lista.length) {
@@ -65,202 +206,233 @@ const AdminAusencias = window.AdminAusencias = {
 
     tbody.innerHTML = lista.map(a => {
       const id = AdminUtils.esc(a.id || "");
-      const nome = AdminUtils.esc(SP.pick(a, "Colaborador_nome", "Title") || "—");
-      const ini = AdminUtils.esc(this._fmtData(SP.pick(a, "Data_Inicio")) || "—");
-      const fim = AdminUtils.esc(this._fmtData(SP.pick(a, "Data_Fim")) || "—");
-      const motivo = AdminUtils.esc(SP.pick(a, "Motivo") || "—");
-      const s = this._calcStatus(a, hoje);
-      const sLabel = { ativa: "Ativa", futura: "Futura", encerrada: "Encerrada" }[s] || s;
-      const sColor = { ativa: "rgba(192,40,28,.7)", futura: "rgba(60,140,255,.6)", encerrada: "rgba(100,100,100,.5)" }[s] || "";
-
+      const nome = AdminUtils.esc(this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—");
+      const ini = this._dateBR(this._pick(a, "Data_Inicio", "Inicio", "DataInicio"));
+      const fim = this._dateBR(this._pick(a, "Data_Fim", "Fim", "DataFim"));
+      const motivo = AdminUtils.esc(this._formatMotivo(this._pick(a, "Motivo", "motivo") || "—"));
+      const ativo = this._ativo(a);
+      const status = ativo ? "Ativo" : "Inativo";
       return `<tr>
-        <td style="font-weight:600">${nome}</td>
+        <td>${nome}</td>
         <td>${ini}</td>
         <td>${fim}</td>
-        <td><span class="badge badge-yellow">${motivo}</span></td>
-        <td><span class="badge" style="background:${sColor};color:#fff;border:none">${sLabel}</span></td>
+        <td>${motivo}</td>
+        <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${status}</span></td>
         <td><div class="table-actions">
-          <button class="btn-icon danger" title="Excluir" onclick="AdminAusencias.excluir('${id}')">🗑️</button>
+          <button class="btn-icon" title="Editar" onclick="AdminAusencias.abrirEdicao('${id}')">✏️</button>
+          ${ativo
+            ? `<button class="btn-icon danger" title="Inativar" onclick="AdminAusencias.inativar('${id}')">🚫</button>`
+            : `<button class="btn-icon" title="Reativar" onclick="AdminAusencias.reativar('${id}')">↩️</button>`}
         </div></td>
       </tr>`;
     }).join("");
   },
 
-  _calcStatus(a, hoje = new Date()) {
-    const ini = new Date(SP.pick(a, "Data_Inicio") || 0);
-    const fim = new Date(SP.pick(a, "Data_Fim") || 0);
-
-    ini.setHours(0, 0, 0, 0);
-    fim.setHours(23, 59, 59, 999);
-
-    const ativoValor = SP.pick(a, "Ativo");
-    const ativo = ativoValor === null || ativoValor === undefined ? true : SP.isTrue(ativoValor);
-
-    if (!ativo) return "encerrada";
-    if (hoje < ini) return "futura";
-    if (hoje > fim) return "encerrada";
-
-    return "ativa";
+  _formatMotivo(v) {
+    const n = AdminUtils.norm(v);
+    const map = {
+      ferias: "Férias",
+      atestado: "Atestado",
+      falta: "Falta",
+      licenca: "Licença",
+      afastamento: "Afastamento",
+      nao_vai_almocar: "Não vai almoçar",
+      "nao vai almocar": "Não vai almoçar",
+      homy_office: "Homy Office",
+      banco_horas: "Banco de horas",
+      outro: "Outro"
+    };
+    return map[n] || v;
   },
 
-  _fmtData(v) {
-    if (!v) return "";
+  _popularSelectColaboradores() {
+    const sel = this._getEl("ausenciaColaborador", "ausenciaColaboradorId", "selectAusenciaColaborador");
+    if (!sel || sel.dataset.populadoAus) return;
 
-    const d = new Date(v);
-    if (isNaN(d)) return v;
+    const opts = this._colaboradores
+      .filter(c => SP.isTrue ? SP.isTrue(this._pick(c, "Ativo")) : true)
+      .sort((a, b) => String(this._pick(a, "Nome", "Title")).localeCompare(String(this._pick(b, "Nome", "Title"))))
+      .map(c => {
+        const id = AdminUtils.esc(c.id || this._pick(c, "ID") || "");
+        const nome = AdminUtils.esc(this._pick(c, "Nome", "Title") || "Sem nome");
+        const cc = AdminUtils.esc(this._pick(c, "Centro_Custo", "Setor", "Departamento") || "");
+        return `<option value="${id}" data-nome="${nome}" data-cc="${cc}">${nome}${cc ? " — " + cc : ""}</option>`;
+      }).join("");
 
-    return d.toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric"
-    });
+    sel.innerHTML = `<option value="">Selecione...</option>${opts}`;
+    sel.dataset.populadoAus = "1";
   },
 
-  async abrirModal() {
-    const sel = document.getElementById("ausenciaColaborador");
+  abrirNovo() {
+    this._editandoId = null;
+    this._setVal("", "ausenciaId", "editAusenciaId");
+    this._setVal("", "ausenciaColaborador", "ausenciaColaboradorId", "selectAusenciaColaborador");
+    this._setVal("", "ausenciaDataInicio", "ausenciaInicio");
+    this._setVal("", "ausenciaDataFim", "ausenciaFim");
+    this._setVal("nao_vai_almocar", "ausenciaMotivo");
+    this._setVal("", "ausenciaObs", "ausenciaObservacao");
 
-    if (sel && sel.options.length <= 1) {
-      try {
-        await SP.init();
+    const t = document.querySelector("#modalAusencia .modal-title, #modalAusenciaRefeitorio .modal-title");
+    if (t) t.textContent = "Nova ausência";
 
-        const colabs = await SP.getColaboradores();
-
-        colabs.sort((a, b) =>
-          (SP.pick(a, "Nome", "Title") || "").localeCompare(SP.pick(b, "Nome", "Title") || "", "pt-BR")
-        );
-
-        sel.innerHTML = '<option value="">Selecione o colaborador...</option>' +
-          colabs.map(c => {
-            const id = AdminUtils.esc(c.id || "");
-            const nome = AdminUtils.esc(SP.pick(c, "Nome", "Title") || "");
-            const cc = AdminUtils.esc(SP.pick(c, "Centro_Custo") || "");
-            return `<option value="${id}" data-nome="${nome}" data-cc="${cc}">${nome}</option>`;
-          }).join("");
-
-      } catch (e) {
-        console.warn("[ausencias] carregar colaboradores:", e);
-      }
-    }
-
-    if (sel) sel.value = "";
-
-    ["ausenciaInicio", "ausenciaFim", "ausenciaObs"].forEach(id => AdminUtils.setVal(id, ""));
-    AdminUtils.setVal("ausenciaMotivo", "ferias");
-
-    AdminUtils.openModal("modalAusencia");
+    if (document.getElementById("modalAusencia")) AdminUtils.openModal("modalAusencia");
+    else if (document.getElementById("modalAusenciaRefeitorio")) AdminUtils.openModal("modalAusenciaRefeitorio");
+    else AdminUtils.toast("Modal de ausência não encontrado no HTML.", "error");
   },
 
-  async salvar() {
-    const sel = document.getElementById("ausenciaColaborador");
-    const colId = sel?.value || "";
-    const colNome = sel?.selectedOptions?.[0]?.dataset?.nome || "";
-    const centroCusto = sel?.selectedOptions?.[0]?.dataset?.cc || "";
-    const inicio = AdminUtils.getVal("ausenciaInicio");
-    const fim = AdminUtils.getVal("ausenciaFim");
-    const motivo = AdminUtils.getVal("ausenciaMotivo") || "ferias";
-    const obs = AdminUtils.getVal("ausenciaObs");
+  abrirEdicao(id) {
+    const item = this._lista.find(a => String(a.id) === String(id));
+    if (!item) { AdminUtils.toast("Ausência não encontrada.", "error"); return; }
 
-    if (!colId) {
-      AdminUtils.toast("Selecione o colaborador.", "error");
-      return;
-    }
+    this._editandoId = id;
+    this._setVal(id, "ausenciaId", "editAusenciaId");
+    this._setVal(this._pick(item, "Colaborador_id", "ColaboradorId") || "", "ausenciaColaborador", "ausenciaColaboradorId", "selectAusenciaColaborador");
+    this._setVal(this._dateISO(this._pick(item, "Data_Inicio", "Inicio", "DataInicio")), "ausenciaDataInicio", "ausenciaInicio");
+    this._setVal(this._dateISO(this._pick(item, "Data_Fim", "Fim", "DataFim")), "ausenciaDataFim", "ausenciaFim");
+    this._setVal(this._pick(item, "Motivo", "motivo") || "nao_vai_almocar", "ausenciaMotivo");
+    this._setVal(this._pick(item, "Observacao", "Observação", "Obs") || "", "ausenciaObs", "ausenciaObservacao");
 
-    if (!inicio) {
-      AdminUtils.toast("Informe a data de início.", "error");
-      return;
-    }
+    const t = document.querySelector("#modalAusencia .modal-title, #modalAusenciaRefeitorio .modal-title");
+    if (t) t.textContent = "Editar ausência";
 
-    if (!fim) {
-      AdminUtils.toast("Informe a data de fim.", "error");
-      return;
-    }
+    if (document.getElementById("modalAusencia")) AdminUtils.openModal("modalAusencia");
+    else if (document.getElementById("modalAusenciaRefeitorio")) AdminUtils.openModal("modalAusenciaRefeitorio");
+  },
 
-    if (new Date(inicio) > new Date(fim)) {
-      AdminUtils.toast("Data de início deve ser anterior ao fim.", "error");
-      return;
-    }
+  async salvarModal() {
+    const colaboradorId = this._val("ausenciaColaborador", "ausenciaColaboradorId", "selectAusenciaColaborador");
+    const sel = this._getEl("ausenciaColaborador", "ausenciaColaboradorId", "selectAusenciaColaborador");
+    const opt = sel?.selectedOptions?.[0];
+    const colab = this._colaboradores.find(c => String(c.id) === String(colaboradorId));
+
+    const colaboradorNome = opt?.dataset?.nome || this._pick(colab, "Nome", "Title") || this._val("ausenciaColaboradorNome", "ausenciaNome");
+    const centroCusto = opt?.dataset?.cc || this._pick(colab, "Centro_Custo", "Setor", "Departamento") || this._val("ausenciaCentroCusto", "ausenciaSetor");
+    const dataInicio = this._val("ausenciaDataInicio", "ausenciaInicio");
+    const dataFim = this._val("ausenciaDataFim", "ausenciaFim");
+    const motivo = this._val("ausenciaMotivo") || "nao_vai_almocar";
+    const obs = this._val("ausenciaObs", "ausenciaObservacao");
+
+    if (!colaboradorNome && !colaboradorId) { AdminUtils.toast("Informe o colaborador.", "error"); return; }
+    if (!dataInicio || !dataFim) { AdminUtils.toast("Informe início e fim.", "error"); return; }
+    if (dataInicio > dataFim) { AdminUtils.toast("Data início maior que data fim.", "error"); return; }
+
+    const fields = {
+      Title: `${colaboradorNome || colaboradorId} - ${this._formatMotivo(motivo)}`,
+      Colaborador_id: String(colaboradorId || ""),
+      Colaborador_nome: colaboradorNome || "",
+      Centro_Custo: centroCusto || "",
+      Data_Inicio: dataInicio,
+      Data_Fim: dataFim,
+      Motivo: motivo,
+      Observacao: obs || "",
+      Ativo: true,
+      Criado_Por: SP.getUserName ? SP.getUserName() : "Admin"
+    };
 
     try {
       await SP.init();
-
-      await SP.createAusencia({
-        colaboradorId: colId,
-        colaboradorNome: colNome,
-        centroCusto,
-        dataInicio: inicio,
-        dataFim: fim,
-        motivo,
-        observacao: obs,
-        ativo: true,
-        criadoPor: SP.getUserName()
-      });
-
-      AdminUtils.closeModal("modalAusencia");
-      AdminUtils.toast("Ausência cadastrada.", "success");
-
-      await this._carregar();
-
-      if (typeof AdminDashboard !== "undefined") {
-        AdminDashboard.load(AdminState.getSemanaId());
+      if (this._editandoId) {
+        await this._updateAusencia(this._editandoId, fields);
+        AdminUtils.toast("Ausência atualizada.", "success");
+      } else {
+        await this._createAusencia(fields);
+        AdminUtils.toast("Ausência cadastrada.", "success");
       }
 
+      if (document.getElementById("modalAusencia")) AdminUtils.closeModal("modalAusencia");
+      if (document.getElementById("modalAusenciaRefeitorio")) AdminUtils.closeModal("modalAusenciaRefeitorio");
+      this._editandoId = null;
+      await this._carregar();
     } catch (e) {
-      AdminUtils.toast("Erro ao salvar: " + (e.message || e), "error");
+      AdminUtils.toast("Erro ao salvar ausência: " + (e.message || e), "error");
+    }
+  },
+
+  async _salvarDireto(dados) {
+    const fields = {
+      Title: dados.Title || `${dados.colaboradorNome || dados.Colaborador_nome || "Ausência"} - ${dados.motivo || dados.Motivo || ""}`,
+      Colaborador_id: String(dados.colaboradorId || dados.Colaborador_id || ""),
+      Colaborador_nome: dados.colaboradorNome || dados.Colaborador_nome || dados.Nome || "",
+      Centro_Custo: dados.centroCusto || dados.Centro_Custo || "",
+      Data_Inicio: dados.dataInicio || dados.Data_Inicio,
+      Data_Fim: dados.dataFim || dados.Data_Fim,
+      Motivo: dados.motivo || dados.Motivo || "nao_vai_almocar",
+      Observacao: dados.observacao || dados.Observacao || "",
+      Ativo: dados.ativo ?? dados.Ativo ?? true,
+      Criado_Por: dados.criadoPor || dados.Criado_Por || (SP.getUserName ? SP.getUserName() : "Admin")
+    };
+    return this._createAusencia(fields);
+  },
+
+  async inativar(id) {
+    if (!confirm("Inativar esta ausência?")) return;
+    try {
+      await this._updateAusencia(id, { Ativo: false, Status: "Inativo" });
+      AdminUtils.toast("Ausência inativada.", "success");
+      await this._carregar();
+    } catch (e) {
+      AdminUtils.toast("Erro ao inativar: " + (e.message || e), "error");
+    }
+  },
+
+  async reativar(id) {
+    try {
+      await this._updateAusencia(id, { Ativo: true, Status: "Ativo" });
+      AdminUtils.toast("Ausência reativada.", "success");
+      await this._carregar();
+    } catch (e) {
+      AdminUtils.toast("Erro ao reativar: " + (e.message || e), "error");
     }
   },
 
   async excluir(id) {
-    if (!confirm("Excluir esta ausência?")) return;
-
+    if (!confirm("Excluir definitivamente esta ausência?")) return;
     try {
-      await SP.init();
-      await SP.deleteAusencia(id);
-
-      this._lista = this._lista.filter(a => String(a.id) !== String(id));
-      this._render();
-
-      AdminUtils.toast("Ausência removida.", "success");
-
+      await this._deleteAusencia(id);
+      AdminUtils.toast("Ausência excluída.", "success");
+      await this._carregar();
     } catch (e) {
       AdminUtils.toast("Erro ao excluir: " + (e.message || e), "error");
     }
   },
 
-  _bindFiltros() {
-    const bind = (id, ev) => {
+  _bindControles() {
+    const bind = (id, ev, fn) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.boundAus) {
         el.dataset.boundAus = "1";
-        el.addEventListener(ev, () => this._render());
+        el.addEventListener(ev, fn);
       }
     };
 
-    bind("fAusenciaTexto", "input");
-    bind("fAusenciaStatus", "change");
+    ["fAusenciaTexto", "ausenciaBusca", "searchAusencia", "filtroAusenciaTexto"].forEach(id => {
+      bind(id, "input", () => this._render());
+    });
+    ["fAusenciaStatus", "ausenciaStatus", "filtroAusenciaStatus"].forEach(id => {
+      bind(id, "change", () => this._render());
+    });
 
-    const btnLimpar = document.getElementById("btnLimparAusencias");
-    if (btnLimpar && !btnLimpar.dataset.boundAus) {
-      btnLimpar.dataset.boundAus = "1";
-      btnLimpar.addEventListener("click", () => {
-        AdminUtils.setVal("fAusenciaTexto", "");
-        AdminUtils.setVal("fAusenciaStatus", "");
+    ["btnLimparAusencias", "limparAusencias", "btnLimparFiltroAusencias"].forEach(id => {
+      bind(id, "click", () => {
+        this._setVal("", "fAusenciaTexto", "ausenciaBusca", "searchAusencia", "filtroAusenciaTexto");
+        this._setVal("", "fAusenciaStatus", "ausenciaStatus", "filtroAusenciaStatus");
         this._render();
       });
-    }
-  },
+    });
 
-  _bindBotoes() {
-    const bindBtn = (id, fn) => {
-      const el = document.getElementById(id);
-      if (el && !el.dataset.boundAusBtn) {
-        el.dataset.boundAusBtn = "1";
-        el.addEventListener("click", fn);
-      }
-    };
+    ["btnNovaAusencia", "btnNovaAusenciaRefeitorio", "btnAdicionarAusencia"].forEach(id => {
+      bind(id, "click", () => this.abrirNovo());
+    });
 
-    bindBtn("btnAdicionarAusencia", () => this.abrirModal());
-    bindBtn("salvarAusencia", () => this.salvar());
-    bindBtn("cancelModalAusencia", () => AdminUtils.closeModal("modalAusencia"));
-    bindBtn("closeModalAusencia", () => AdminUtils.closeModal("modalAusencia"));
+    ["salvarAusencia", "btnSalvarAusencia", "salvarAusenciaRefeitorio"].forEach(id => {
+      bind(id, "click", () => this.salvarModal());
+    });
+
+    ["cancelarAusencia", "btnCancelarAusencia"].forEach(id => {
+      bind(id, "click", () => {
+        if (document.getElementById("modalAusencia")) AdminUtils.closeModal("modalAusencia");
+        if (document.getElementById("modalAusenciaRefeitorio")) AdminUtils.closeModal("modalAusenciaRefeitorio");
+      });
+    });
   }
 };
