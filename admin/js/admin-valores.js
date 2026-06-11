@@ -1,11 +1,12 @@
 // admin-valores.js — Valores de Refeição + NF Vascon
-// Correções: botão de upload, valor unitário automático e reconciliação por período
+// Versão limpa: colunas SharePoint dinâmicas, desconto funcionário correto, upload local e reconciliação
 
 const AdminValores = window.AdminValores = {
   _lista: [],
   _pedidosPeriodo: [],
   _editandoId: null,
   _nfFile: null,
+  _cols: null,
 
   COL_DESCONTO: "Valor_Desconto_Funcionário",
   COL_DESCONTO_ASCII: "Valor_Desconto_Funcionario",
@@ -44,8 +45,16 @@ const AdminValores = window.AdminValores = {
     return (el?.value || "").trim();
   },
 
+  _norm(v) {
+    return String(v || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  },
+
   _pick(obj, ...keys) {
-    for (const k of keys) {
+    for (const k of keys.filter(Boolean)) {
       const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
       if (v !== undefined && v !== null && String(v) !== "") return v;
     }
@@ -88,8 +97,94 @@ const AdminValores = window.AdminValores = {
     return n === null ? 0 : n;
   },
 
+  async _resolverColunasValores() {
+    if (this._cols) return this._cols;
+
+    const fallback = {
+      titulo: "Title",
+      inicio: this.COL_INICIO,
+      fim: this.COL_FIM,
+      vascon: this.COL_VASCON,
+      desconto: this.COL_DESCONTO,
+      obs: this.COL_OBS,
+      ativo: this.COL_ATIVO
+    };
+
+    try {
+      // Usa o resolvedor oficial quando existir, mas complementa com busca fuzzy abaixo.
+      const spCols = typeof SP._resolveColunasValores === "function"
+        ? await SP._resolveColunasValores().catch(() => ({}))
+        : {};
+
+      const siteId = await SP.getSiteId();
+      const listId = await SP.getListId("Valores de Refeição");
+      const data = await SP.graph("GET", `/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`);
+      const cols = data?.value || [];
+
+      const byExact = (...cands) => {
+        const normCands = cands.filter(Boolean).map(x => this._norm(x));
+        const found = cols.find(c => normCands.includes(this._norm(c.name)) || normCands.includes(this._norm(c.displayName)));
+        return found?.name || null;
+      };
+
+      const byIncludes = (...terms) => {
+        const nt = terms.map(t => this._norm(t)).filter(Boolean);
+        const found = cols.find(c => {
+          const n = this._norm(`${c.name} ${c.displayName}`);
+          return nt.every(t => n.includes(t));
+        });
+        return found?.name || null;
+      };
+
+      // Prioriza a leitura direta das colunas do Graph, porque o nome interno real
+      // pode ser codificado pelo SharePoint quando há acento no nome exibido.
+      // Só depois usa o resolvedor do SP como fallback.
+      this._cols = {
+        titulo: byExact("Title", "Título", "Titulo") || spCols.titulo || fallback.titulo,
+        inicio: byExact("Data_Inicio", "Data Inicio", "Data início", "Inicio", "Início") || byIncludes("data", "inicio") || spCols.inicio || fallback.inicio,
+        fim: byExact("Data_Fim", "Data Fim", "Fim") || byIncludes("data", "fim") || spCols.fim || fallback.fim,
+        vascon: byExact("Valor_Vascon", "Valor Vascon", "Vascon") || byIncludes("vascon") || spCols.vascon || fallback.vascon,
+        desconto: byExact(
+          "Valor_Desconto_Funcionário",
+          "Valor_Desconto_Funcionario",
+          "Valor Desconto Funcionário",
+          "Valor Desconto Funcionario",
+          "Desconto Funcionário",
+          "Desconto Funcionario"
+        ) || byIncludes("desconto", "funcionario") || spCols.desconto || fallback.desconto,
+        obs: byExact("Observacao", "Observação", "Obs") || byIncludes("observ") || spCols.obs || fallback.obs,
+        ativo: byExact("Ativo", "ativo") || spCols.ativo || fallback.ativo
+      };
+
+      console.info("[Valores] Colunas resolvidas:", this._cols);
+      return this._cols;
+    } catch (e) {
+      console.warn("[Valores] Não foi possível resolver colunas dinamicamente. Usando fallback.", e);
+      this._cols = fallback;
+      return this._cols;
+    }
+  },
+
+  _campo(tipo) {
+    const c = this._cols || {};
+    return c[tipo] || {
+      titulo: "Title",
+      inicio: this.COL_INICIO,
+      fim: this.COL_FIM,
+      vascon: this.COL_VASCON,
+      desconto: this.COL_DESCONTO,
+      obs: this.COL_OBS,
+      ativo: this.COL_ATIVO
+    }[tipo];
+  },
+
+  _valorCampo(item, tipo, ...fallbackKeys) {
+    return this._pick(item, this._campo(tipo), ...fallbackKeys);
+  },
+
   _isAtivo(v) {
-    return SP.isTrue ? SP.isTrue(this._pick(v, this.COL_ATIVO, "Ativo", "ativo")) : !!this._pick(v, this.COL_ATIVO, "Ativo", "ativo");
+    const bruto = this._valorCampo(v, "ativo", "Ativo", "ativo");
+    return SP.isTrue ? SP.isTrue(bruto) : !!bruto;
   },
 
   async _carregar() {
@@ -99,6 +194,7 @@ const AdminValores = window.AdminValores = {
 
     try {
       await SP.init();
+      await this._resolverColunasValores();
       this._lista = await SP.getValoresRefeicao(false);
       this._render();
     } catch (e) {
@@ -117,18 +213,18 @@ const AdminValores = window.AdminValores = {
     }
 
     const lista = [...this._lista].sort((a, b) => {
-      const aa = this._dateISO(this._pick(a, this.COL_INICIO, "DataInicio"));
-      const bb = this._dateISO(this._pick(b, this.COL_INICIO, "DataInicio"));
+      const aa = this._dateISO(this._valorCampo(a, "inicio", "Data_Inicio", "DataInicio"));
+      const bb = this._dateISO(this._valorCampo(b, "inicio", "Data_Inicio", "DataInicio"));
       return bb.localeCompare(aa);
     });
 
     tbody.innerHTML = lista.map(v => {
       const id = AdminUtils.esc(v.id || "");
-      const titulo = AdminUtils.esc(this._pick(v, "Title", "Titulo", "Título") || "—");
-      const inicio = this._dateISO(this._pick(v, this.COL_INICIO, "DataInicio"));
-      const fim = this._dateISO(this._pick(v, this.COL_FIM, "DataFim"));
-      const vascon = this._numValor(v, this.COL_VASCON, "ValorVascon");
-      const desc = this._numValor(v, this.COL_DESCONTO, this.COL_DESCONTO_ASCII, "Valor_Desconto", "Desconto");
+      const titulo = AdminUtils.esc(this._valorCampo(v, "titulo", "Title", "Titulo", "Título") || "—");
+      const inicio = this._dateISO(this._valorCampo(v, "inicio", "Data_Inicio", "DataInicio"));
+      const fim = this._dateISO(this._valorCampo(v, "fim", "Data_Fim", "DataFim"));
+      const vascon = this._numValor(this._valorCampo(v, "vascon", "Valor_Vascon", "ValorVascon"));
+      const desc = this._numValor(this._valorCampo(v, "desconto", this.COL_DESCONTO, this.COL_DESCONTO_ASCII, "Valor_Desconto", "Desconto"));
       const ativo = this._isAtivo(v);
 
       return `<tr>
@@ -151,11 +247,11 @@ const AdminValores = window.AdminValores = {
     if (!v) return null;
     return {
       id: v.id || "",
-      titulo: this._pick(v, "Title", "Titulo", "Título") || "Valor refeição",
-      inicio: this._dateISO(this._pick(v, this.COL_INICIO, "DataInicio")),
-      fim: this._dateISO(this._pick(v, this.COL_FIM, "DataFim")),
-      vascon: this._numValor(v, this.COL_VASCON, "ValorVascon"),
-      desconto: this._numValor(v, this.COL_DESCONTO, this.COL_DESCONTO_ASCII, "Valor_Desconto", "Desconto"),
+      titulo: this._valorCampo(v, "titulo", "Title", "Titulo", "Título") || "Valor refeição",
+      inicio: this._dateISO(this._valorCampo(v, "inicio", "Data_Inicio", "DataInicio")),
+      fim: this._dateISO(this._valorCampo(v, "fim", "Data_Fim", "DataFim")),
+      vascon: this._numValor(this._valorCampo(v, "vascon", "Valor_Vascon", "ValorVascon")),
+      desconto: this._numValor(this._valorCampo(v, "desconto", this.COL_DESCONTO, this.COL_DESCONTO_ASCII, "Valor_Desconto", "Desconto")),
       ativo: this._isAtivo(v),
       raw: v
     };
@@ -201,12 +297,12 @@ const AdminValores = window.AdminValores = {
     const v = this._lista.find(x => String(x.id) === String(id));
     if (!v) { AdminUtils.toast("Valor não encontrado.", "error"); return; }
 
-    AdminUtils.setVal("valorTitulo", this._pick(v, "Title", "Titulo", "Título") || "");
-    AdminUtils.setVal("valorDataInicio", this._dateISO(this._pick(v, this.COL_INICIO, "DataInicio")));
-    AdminUtils.setVal("valorDataFim", this._dateISO(this._pick(v, this.COL_FIM, "DataFim")));
-    AdminUtils.setVal("valorVascon", String(this._numValor(v, this.COL_VASCON, "ValorVascon")).replace(".", ","));
-    AdminUtils.setVal("valorDesconto", String(this._numValor(v, this.COL_DESCONTO, this.COL_DESCONTO_ASCII, "Valor_Desconto", "Desconto")).replace(".", ","));
-    AdminUtils.setVal("valorObs", this._pick(v, this.COL_OBS, "Observação", "Obs") || "");
+    AdminUtils.setVal("valorTitulo", this._valorCampo(v, "titulo", "Title", "Titulo", "Título") || "");
+    AdminUtils.setVal("valorDataInicio", this._dateISO(this._valorCampo(v, "inicio", "Data_Inicio", "DataInicio")));
+    AdminUtils.setVal("valorDataFim", this._dateISO(this._valorCampo(v, "fim", "Data_Fim", "DataFim")));
+    AdminUtils.setVal("valorVascon", String(this._numValor(this._valorCampo(v, "vascon", "Valor_Vascon", "ValorVascon"))).replace(".", ","));
+    AdminUtils.setVal("valorDesconto", String(this._numValor(this._valorCampo(v, "desconto", this.COL_DESCONTO, this.COL_DESCONTO_ASCII, "Valor_Desconto", "Desconto"))).replace(".", ","));
+    AdminUtils.setVal("valorObs", this._valorCampo(v, "obs", "Observacao", "Observação", "Obs") || "");
     AdminUtils.setVal("valorAtivo", this._isAtivo(v) ? "sim" : "nao");
 
     const t = document.querySelector("#modalValorRefeicao .modal-title");
@@ -220,9 +316,39 @@ const AdminValores = window.AdminValores = {
     AdminUtils.setVal("valorAtivo", "sim");
   },
 
+  _montarFieldsValor({ titulo, inicio, fim, vascon, desconto, obs, ativo }) {
+    const fields = {};
+    if (this._campo("titulo")) fields[this._campo("titulo")] = titulo;
+    if (this._campo("inicio")) fields[this._campo("inicio")] = inicio;
+    if (this._campo("fim")) fields[this._campo("fim")] = fim;
+    if (this._campo("vascon")) fields[this._campo("vascon")] = Number(vascon);
+    if (this._campo("desconto")) fields[this._campo("desconto")] = Number(desconto);
+    if (this._campo("obs")) fields[this._campo("obs")] = obs;
+    if (this._campo("ativo")) fields[this._campo("ativo")] = !!ativo;
+    return fields;
+  },
+
+  async _salvarValorSharePoint(id, dados) {
+    await this._resolverColunasValores();
+
+    const fields = this._montarFieldsValor(dados);
+    if (!this._campo("desconto")) {
+      throw new Error("Coluna de desconto do funcionário não encontrada na lista Valores de Refeição.");
+    }
+
+    if (id) return SP.updateItem("Valores de Refeição", id, fields);
+    return SP.createItem("Valores de Refeição", fields);
+  },
+
   async _desativarOutrosAtivos(idAtual = null) {
+    await this._resolverColunasValores();
     const ativos = this._lista.filter(v => this._isAtivo(v) && String(v.id) !== String(idAtual || ""));
-    await Promise.all(ativos.map(v => SP.updateItem("Valores de Refeição", v.id, { [this.COL_ATIVO]: false, Ativo: false }).catch(() => null)));
+    const campoAtivo = this._campo("ativo");
+    if (!campoAtivo) return;
+    await Promise.all(ativos.map(v => SP.updateItem("Valores de Refeição", v.id, { [campoAtivo]: false }).catch(e => {
+      console.warn("[Valores] Falha ao desativar valor antigo", v.id, e);
+      return null;
+    })));
   },
 
   async salvar() {
@@ -246,33 +372,21 @@ const AdminValores = window.AdminValores = {
       return;
     }
 
-    const fields = {
-      Title: titulo,
-      [this.COL_INICIO]: inicio,
-      [this.COL_FIM]: fim,
-      [this.COL_VASCON]: vascon,
-      [this.COL_DESCONTO]: desconto,
-      [this.COL_OBS]: obs,
-      [this.COL_ATIVO]: ativo
-    };
-
     try {
       await SP.init();
+      await this._resolverColunasValores();
       if (ativo) await this._desativarOutrosAtivos(this._editandoId);
 
-      if (this._editandoId) {
-        await SP.updateItem("Valores de Refeição", this._editandoId, fields);
-        AdminUtils.toast("Valor atualizado.", "success");
-      } else {
-        await SP.createItem("Valores de Refeição", fields);
-        AdminUtils.toast("Valor criado.", "success");
-      }
+      await this._salvarValorSharePoint(this._editandoId, { titulo, inicio, fim, vascon, desconto, obs, ativo });
+      AdminUtils.toast(this._editandoId ? "Valor atualizado." : "Valor criado.", "success");
 
       AdminUtils.closeModal("modalValorRefeicao");
       this._editandoId = null;
+      this._cols = null; // força nova leitura caso SharePoint tenha alterado algo
       await this._carregar();
       await this._preencherPainelNFPadrao();
     } catch (e) {
+      console.error("[Valores] salvar", e);
       AdminUtils.toast("Erro ao salvar: " + (e.message || e), "error");
     }
   },
@@ -305,6 +419,8 @@ const AdminValores = window.AdminValores = {
     const iniEl = this._getEl("nfInicio");
     const fimEl = this._getEl("nfFim");
     if (!iniEl && !fimEl && !this._getEl("nfVasconUnit")) return;
+
+    if (!this._lista.length) return;
 
     const hoje = new Date().toISOString().slice(0, 10);
     const valor = this._valorParaPeriodo(iniEl?.value || hoje, fimEl?.value || hoje) || this._valorParaPeriodo();
@@ -398,7 +514,10 @@ const AdminValores = window.AdminValores = {
 
     try {
       await SP.init();
-      if (!this._lista.length) this._lista = await SP.getValoresRefeicao(false);
+      if (!this._lista.length) {
+        await this._resolverColunasValores();
+        this._lista = await SP.getValoresRefeicao(false);
+      }
 
       const valor = this._valorParaPeriodo(ini, fim);
       if (!valor) {
