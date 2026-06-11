@@ -1,8 +1,7 @@
 // admin-operacao-dia.js — Operação do Dia do Admin Homy
-// Correções: centro de custo no padrão "120501 - TI" + extras/guarda aparecem no dia correto.
+// Versão limpa: mantém funcionamento original e sincroniza extras/guarda/prestador com Pedidos.
 
 const AdminOperacao = window.AdminOperacao = {
-
   _lista: [],
 
   PORTARIA_CC: "120602 - PORTARIA",
@@ -32,17 +31,13 @@ const AdminOperacao = window.AdminOperacao = {
   },
 
   _norm(v) {
-    return String(v || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
+    return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   },
 
   _pick(obj, ...keys) {
     for (const k of keys) {
       const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
-      if (v !== undefined && v !== null && String(v) !== "") return v;
+      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
     }
     return "";
   },
@@ -55,43 +50,63 @@ const AdminOperacao = window.AdminOperacao = {
     if (!valor) return "Sem setor";
     const v = String(valor).replace(/[–—]/g, " - ").trim();
     if (!v || v === "—") return "Sem setor";
-
     const match = v.match(/(\d{6})/);
     const codigo = match ? match[1] : "";
-    if (codigo) {
-      const nomeMapa = this._CC_MAPA[codigo];
-      if (nomeMapa) return `${codigo} - ${nomeMapa}`;
-
-      const partes = v.split(" - ").map(x => x.trim()).filter(Boolean);
-      const nome = partes.find(x => !/^\d{6}$/.test(x));
-      return nome ? `${codigo} - ${nome}` : codigo;
-    }
-
+    if (codigo) return `${codigo} - ${this._CC_MAPA[codigo] || this._nomeNoValor(v) || "SETOR"}`;
     return v;
+  },
+
+  _nomeNoValor(valor) {
+    const partes = String(valor || "").split(" - ").map(x => x.trim()).filter(Boolean);
+    return partes.find(x => !/^\d{6}$/.test(x)) || "";
+  },
+
+  _isExtraPedido(p) {
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
+    return origem.includes("extra") || origem.includes("guarda") || origem.includes("investigador") ||
+           origem.includes("visitante") || origem.includes("motorista") || origem.includes("prestador") ||
+           origem.includes("marmita") || nome.includes("refeicao extra") || nome.includes("guarda") ||
+           nome.includes("investigador");
+  },
+
+  _isExtraAutomatico(p) {
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
+    const obs = this._norm(this._pick(p, "Observacao", "Observação"));
+    return nome.includes("refeicao extra") || origem.includes("extra automatica") || obs.includes("extra automatica");
   },
 
   _centroCustoPedido(p) {
     const raw = this._pick(p, "Centro_Custo", "CentroCusto", "Setor", "Departamento");
     const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
-    const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome"));
-    const extraPortaria = origem.includes("guarda") || nome.includes("guarda") || origem.includes("visitante") || origem.includes("motorista") || origem.includes("prestador");
-    if (extraPortaria) return this.PORTARIA_CC;
-    if ((!raw || this._norm(raw).includes("sem setor")) && (origem.includes("extra") || nome.includes("refeicao extra"))) return this.PORTARIA_CC;
-    return this._formatarCC(raw || "Sem setor");
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
+    const obs = this._pick(p, "Observacao", "Observação");
+
+    // Extras sem CC, guarda e refeições extras entram na Portaria.
+    const extraPortaria = origem.includes("guarda") || origem.includes("extra") || nome.includes("guarda") || nome.includes("refeicao extra");
+    if (extraPortaria && (!raw || this._norm(raw).includes("sem setor") || raw === "—")) return this.PORTARIA_CC;
+
+    // Se a observação trouxe um CC explícito, usa ele.
+    const ccObs = String(obs || "").match(/(\d{6})\s*-?\s*([A-Za-zÀ-ÿ\s/.-]+)?/);
+    if ((!raw || raw === "—") && ccObs) return this._formatarCC(ccObs[0]);
+
+    return this._formatarCC(raw || (extraPortaria ? this.PORTARIA_CC : "Sem setor"));
   },
 
-  _isExtraPedido(p) {
-    if (SP.isExtraPedido) return SP.isExtraPedido(p);
-    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
-    const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome"));
-    return origem.includes("extra") || origem.includes("guarda") || origem.includes("investigador") || origem.includes("visitante") || nome.includes("refeicao extra") || nome.includes("guarda");
+  _pedidoTemConteudo(p) {
+    const nome = this._pick(p, "Colaborador_nome", "Nome", "Title");
+    const dia = this._pick(p, "Dia");
+    const opcao = this._pick(p, "Opcao");
+    const prato = this._pick(p, "Nome_Prato");
+    return !!(String(nome || "").trim() || String(dia || "").trim() || String(opcao || "").trim() || String(prato || "").trim());
   },
 
-  _isExtraAutomatico(p) {
-    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
-    const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome"));
-    const obs = this._norm(this._pick(p, "Observacao", "Observação"));
-    return nome.includes("refeicao extra") || origem.includes("extra automatica") || obs.includes("extra automatica");
+  _dataHoraDoDia(semanaId, dia) {
+    try {
+      if (typeof SP.getDataRefBySemanaDia === "function") return `${SP.getDataRefBySemanaDia(semanaId, dia)}T12:00:00`;
+    } catch (_) {}
+    return new Date().toISOString();
   },
 
   async _pratoPorOpcao(semanaId, dia, opcao) {
@@ -108,104 +123,145 @@ const AdminOperacao = window.AdminOperacao = {
     }
   },
 
-  _extraJaTemPedido(extra, pedidos, dia) {
-    const nome = this._norm(this._pick(extra, "Nome", "Title"));
-    const tipo = this._norm(this._pick(extra, "tipo", "Tipo", "Origem"));
-    return pedidos.some(p => {
-      const pDia = this._norm(this._pick(p, "Dia"));
-      const pNome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome"));
-      const pOrigem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
-      if (pDia !== this._norm(dia)) return false;
-      if (nome && pNome === nome) return true;
-      if (nome && pNome.includes(nome)) return true;
-      if (tipo && pOrigem.includes(tipo) && pNome.includes(tipo)) return true;
-      return false;
-    });
+  _extrairCentroExtra(extra) {
+    const raw = this._pick(extra, "Centro_Custo", "CentroCusto", "Setor", "Departamento");
+    if (raw) return this._formatarCC(raw);
+    const obs = this._pick(extra, "Observacao", "Observação");
+    const m = String(obs || "").match(/(\d{6})(?:\s*-\s*([A-Za-zÀ-ÿ\s/.-]+))?/);
+    if (m) return this._formatarCC(m[0]);
+    return this.PORTARIA_CC;
   },
 
-  async _criarPedidoDoExtra(semanaId, dia, extra) {
-    const nome = this._pick(extra, "Nome", "Title") || "Refeição Extra";
-    const tipo = this._pick(extra, "tipo", "Tipo") || "Extra";
-    const opcao = this._pick(extra, "Opcao", "Opção") || "principal";
-    const obs = this._pick(extra, "Observacao", "Observação") || "Criado automaticamente a partir do módulo Extras";
-    const centroCusto = this.PORTARIA_CC;
-    const nomePrato = await this._pratoPorOpcao(semanaId, dia, opcao);
-    const colabId = `extra-${this._norm(tipo || nome)}-${extra.id || Date.now()}`;
+  _extraDia(extra) {
+    return this._pick(extra, "Dia") || "";
+  },
 
-    if (typeof SP.savePedido === "function") {
-      return SP.savePedido(semanaId, colabId, nome, dia, opcao, nomePrato, {
-        confirmado: true,
-        status: "Confirmado",
-        centroCusto,
-        origem: tipo,
-        observacao: obs,
-        alteradoPor: SP.getUserName ? SP.getUserName() : "Admin"
-      });
+  _extraNome(extra) {
+    return this._pick(extra, "Nome", "Title") || "Refeição Extra";
+  },
+
+  _extraTipo(extra) {
+    return this._pick(extra, "tipo", "Tipo", "Origem") || "Extra";
+  },
+
+  _extraOpcao(extra) {
+    return this._pick(extra, "Opcao", "Opção") || "principal";
+  },
+
+  _pedidoCorrespondeExtra(p, extra, dia) {
+    if (this._norm(this._pick(p, "Dia")) !== this._norm(dia)) return false;
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
+    if (!nome) return false;
+    const extraNome = this._norm(this._extraNome(extra));
+    const tipo = this._norm(this._extraTipo(extra));
+    const obs = this._norm(this._pick(p, "Observacao", "Observação"));
+
+    if (extra.id && obs.includes(`extraid:${String(extra.id).toLowerCase()}`)) return true;
+    if (extraNome && nome === extraNome) return true;
+    if (extraNome && nome.includes(extraNome)) return true;
+    if (tipo && nome.includes(tipo)) return true;
+    return false;
+  },
+
+  async _criarOuAtualizarPedidoDoExtra(semanaId, dia, extra, pedidos) {
+    const nome = this._extraNome(extra);
+    const tipo = this._extraTipo(extra);
+    const opcao = this._extraOpcao(extra);
+    const centroCusto = this._extrairCentroExtra(extra);
+    const nomePrato = await this._pratoPorOpcao(semanaId, dia, opcao);
+    const obsBase = this._pick(extra, "Observacao", "Observação") || "Criado a partir do módulo Extras";
+    const observacao = [obsBase, extra.id ? `ExtraID:${extra.id}` : ""].filter(Boolean).join(" | ");
+    const dataHora = this._dataHoraDoDia(semanaId, dia);
+    const colabId = extra.id ? `extra-${extra.id}` : `extra-${this._norm(tipo)}-${this._norm(nome)}-${this._norm(dia)}`;
+
+    const existente = (pedidos || []).find(p => this._pedidoCorrespondeExtra(p, extra, dia));
+
+    const campos = {
+      Colaborador_id: colabId,
+      colaboradorId: colabId,
+      Colaborador_nome: nome,
+      colaboradorNome: nome,
+      Dia: dia,
+      dia,
+      Opcao: opcao,
+      opcao,
+      Nome_Prato: nomePrato,
+      nomePrato,
+      Confirmado: true,
+      confirmado: true,
+      Data_Hora: dataHora,
+      dataHora,
+      Centro_Custo: centroCusto,
+      centroCusto,
+      Status: "Confirmado",
+      status: "Confirmado",
+      Observacao: observacao,
+      observacao,
+      Origem: tipo,
+      origem: tipo,
+      Alterado_Por: SP.getUserName ? SP.getUserName() : "Admin",
+      alteradoPor: SP.getUserName ? SP.getUserName() : "Admin"
+    };
+
+    if (existente?.id && typeof SP.updatePedido === "function") {
+      await SP.updatePedido(existente.id, campos).catch(e => console.warn("[Operação] Falha ao atualizar pedido espelho", e));
+      return { ...existente, ...campos, id: existente.id };
     }
 
-    return SP.createItem("Pedidos", {
-      Title: `${semanaId}-${colabId}-${dia}`,
-      Semana_id: semanaId,
-      Colaborador_id: colabId,
-      Colaborador_nome: nome,
-      Dia: dia,
-      Opcao: opcao,
-      Nome_Prato: nomePrato,
-      Confirmado: true,
-      Data_Hora: new Date().toISOString(),
-      Centro_Custo: centroCusto,
-      Status: "Confirmado",
-      Observacao: obs,
-      Origem: tipo,
-      Alterado_Por: SP.getUserName ? SP.getUserName() : "Admin"
-    });
-  },
+    try {
+      if (typeof SP.savePedido === "function") {
+        const r = await SP.savePedido(semanaId, colabId, nome, dia, opcao, nomePrato, {
+          confirmado: true,
+          status: "Confirmado",
+          dataHora,
+          centroCusto,
+          origem: tipo,
+          observacao,
+          alteradoPor: SP.getUserName ? SP.getUserName() : "Admin"
+        });
+        return { id: r?.id || "", Semana_id: semanaId, Colaborador_id: colabId, Colaborador_nome: nome, Dia: dia, Opcao: opcao, Nome_Prato: nomePrato, Confirmado: true, Data_Hora: dataHora, Centro_Custo: centroCusto, Status: "Confirmado", Observacao: observacao, Origem: tipo };
+      }
 
-  _pedidoVirtualExtra(semanaId, dia, extra) {
-    const nome = this._pick(extra, "Nome", "Title") || "Refeição Extra";
-    const tipo = this._pick(extra, "tipo", "Tipo") || "Extra";
-    const opcao = this._pick(extra, "Opcao", "Opção") || "principal";
-    return {
-      id: "",
-      _virtualExtra: true,
-      Semana_id: semanaId,
-      Colaborador_nome: nome,
-      Dia: dia,
-      Opcao: opcao,
-      Nome_Prato: "Cardápio do Dia",
-      Confirmado: true,
-      Centro_Custo: this.PORTARIA_CC,
-      Status: "Confirmado",
-      Origem: tipo,
-      Observacao: this._pick(extra, "Observacao", "Observação") || "Extra ainda sem pedido espelho"
-    };
+      const r = await SP.createItem("Pedidos", {
+        Title: `${semanaId}-${colabId}-${dia}`,
+        Semana_id: semanaId,
+        Colaborador_id: colabId,
+        Colaborador_nome: nome,
+        Dia: dia,
+        Opcao: opcao,
+        Nome_Prato: nomePrato,
+        Confirmado: true,
+        Data_Hora: dataHora,
+        Centro_Custo: centroCusto,
+        Status: "Confirmado",
+        Observacao: observacao,
+        Origem: tipo,
+        Alterado_Por: SP.getUserName ? SP.getUserName() : "Admin"
+      });
+      return { id: r?.id || "", Semana_id: semanaId, Colaborador_id: colabId, Colaborador_nome: nome, Dia: dia, Opcao: opcao, Nome_Prato: nomePrato, Confirmado: true, Data_Hora: dataHora, Centro_Custo: centroCusto, Status: "Confirmado", Observacao: observacao, Origem: tipo };
+    } catch (e) {
+      console.warn("[Operação] Não foi possível criar pedido espelho; usando linha virtual.", e);
+      return { _virtualExtra: true, Semana_id: semanaId, Colaborador_id: colabId, Colaborador_nome: nome, Dia: dia, Opcao: opcao, Nome_Prato: nomePrato, Confirmado: true, Data_Hora: dataHora, Centro_Custo: centroCusto, Status: "Confirmado", Observacao: observacao, Origem: tipo };
+    }
   },
 
   async _sincronizarExtrasParaPedidos(semanaId, dia, pedidos) {
     if (typeof SP.getExtras !== "function") return pedidos;
 
-    const extras = await SP.getExtras(semanaId, dia).catch(() => []);
-    if (!extras.length) return pedidos;
+    const todosExtras = await SP.getExtras(semanaId).catch(() => []);
+    const extrasDoDia = (todosExtras || []).filter(e => this._norm(this._extraDia(e)) === this._norm(dia));
+    if (!extrasDoDia.length) return pedidos;
 
-    const pendentes = extras.filter(e => !this._extraJaTemPedido(e, pedidos, dia));
-    if (!pendentes.length) return pedidos;
+    const resultado = [...(pedidos || [])];
 
-    const virtuais = [];
-    for (const extra of pendentes) {
-      try {
-        await this._criarPedidoDoExtra(semanaId, dia, extra);
-      } catch (e) {
-        console.warn("[Operação] Não foi possível criar pedido espelho do extra", extra, e);
-        virtuais.push(this._pedidoVirtualExtra(semanaId, dia, extra));
-      }
+    for (const extra of extrasDoDia) {
+      const espelho = await this._criarOuAtualizarPedidoDoExtra(semanaId, dia, extra, resultado);
+      const idx = resultado.findIndex(p => this._pedidoCorrespondeExtra(p, extra, dia));
+      if (idx >= 0) resultado[idx] = { ...resultado[idx], ...espelho };
+      else resultado.push(espelho);
     }
 
-    try {
-      const atualizados = await SP.getPedidos(semanaId);
-      return [...atualizados, ...virtuais];
-    } catch (_) {
-      return [...pedidos, ...virtuais];
-    }
+    return resultado;
   },
 
   async _carregar(semanaId) {
@@ -221,10 +277,10 @@ const AdminOperacao = window.AdminOperacao = {
 
       const seenAuto = new Set();
       this._lista = (pedidos || []).filter(p => {
+        if (!this._pedidoTemConteudo(p)) return false;
         if (this._norm(this._pick(p, "Dia")) !== this._norm(dia)) return false;
 
-        // Deduplica somente a refeição extra automática do sistema.
-        // Não remove Guarda, Investigador, Visitante ou outros extras manuais.
+        // Deduplica só a refeição extra automática. Guarda/prestador/investigador continuam visíveis.
         if (this._isExtraAutomatico(p)) {
           const k = `auto-${this._norm(dia)}`;
           if (seenAuto.has(k)) return false;
@@ -272,13 +328,11 @@ const AdminOperacao = window.AdminOperacao = {
 
     let lista = this._lista;
     if (statusFiltro) lista = lista.filter(p => this._norm(this._pick(p, "Status") || "") === statusFiltro);
-    if (busca) lista = lista.filter(p =>
-      this._norm([
-        this._pick(p, "Colaborador_nome", "Title", "Nome"),
-        this._centroCustoPedido(p),
-        this._pick(p, "Origem", "tipo", "Tipo")
-      ].join(" ")).includes(busca)
-    );
+    if (busca) lista = lista.filter(p => this._norm([
+      this._pick(p, "Colaborador_nome", "Title", "Nome"),
+      this._centroCustoPedido(p),
+      this._pick(p, "Origem", "tipo", "Tipo")
+    ].join(" ")).includes(busca));
 
     if (!lista.length) {
       tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Nenhum pedido encontrado.</td></tr>`;
@@ -320,8 +374,7 @@ const AdminOperacao = window.AdminOperacao = {
       await SP.updatePedido(id, {
         Status: status,
         Confirmado: ["Confirmado", "Extra"].includes(status),
-        Alterado_Por: SP.getUserName(),
-        Origem: "Admin"
+        Alterado_Por: SP.getUserName()
       });
       const p = this._lista.find(x => String(x.id) === String(id));
       if (p) { p.Status = status; p.Confirmado = ["Confirmado", "Extra"].includes(status); }
