@@ -147,11 +147,12 @@ const AdminValores = window.AdminValores = {
         desconto: byExact(
           "Valor_Desconto_Funcionário",
           "Valor_Desconto_Funcionario",
+          "Valor_Desconto_Funcion_x00e1_rio",
           "Valor Desconto Funcionário",
           "Valor Desconto Funcionario",
           "Desconto Funcionário",
           "Desconto Funcionario"
-        ) || byIncludes("desconto", "funcionario") || spCols.desconto || fallback.desconto,
+        ) || byIncludes("desconto", "funcion") || spCols.desconto || fallback.desconto,
         obs: byExact("Observacao", "Observação", "Obs") || byIncludes("observ") || spCols.obs || fallback.obs,
         ativo: byExact("Ativo", "ativo") || spCols.ativo || fallback.ativo
       };
@@ -178,8 +179,48 @@ const AdminValores = window.AdminValores = {
     }[tipo];
   },
 
+  _normCampo(v) {
+    return this._norm(String(v || "").replace(/_x00e1_/gi, "a").replace(/_x00e7_/gi, "c").replace(/_x00e3_/gi, "a"));
+  },
+
+  _campoCombina(tipo, key) {
+    const k = this._normCampo(key);
+    if (!k || k.startsWith("@odata")) return false;
+    if (tipo === "titulo") return k === "title" || k === "titulo";
+    if (tipo === "inicio") return k.includes("data") && k.includes("inicio");
+    if (tipo === "fim") return k.includes("data") && k.includes("fim");
+    if (tipo === "vascon") return k.includes("vascon");
+    if (tipo === "desconto") return k.includes("desconto") && (k.includes("funcion") || k.includes("func"));
+    if (tipo === "obs") return k.includes("observ") || k === "obs";
+    if (tipo === "ativo") return k === "ativo" || k.endsWith("ativo");
+    return false;
+  },
+
+  _acharCampoNoItem(item, tipo) {
+    if (!item || typeof item !== "object") return null;
+    return Object.keys(item).find(k => this._campoCombina(tipo, k)) || null;
+  },
+
+  _calibrarColunasPorItens(lista = this._lista) {
+    if (!this._cols) this._cols = {};
+    const tipos = ["titulo", "inicio", "fim", "vascon", "desconto", "obs", "ativo"];
+    for (const item of lista || []) {
+      for (const tipo of tipos) {
+        const k = this._acharCampoNoItem(item, tipo);
+        if (k) this._cols[tipo] = k;
+      }
+    }
+    return this._cols;
+  },
+
   _valorCampo(item, tipo, ...fallbackKeys) {
-    return this._pick(item, this._campo(tipo), ...fallbackKeys);
+    const direto = this._pick(item, this._campo(tipo), ...fallbackKeys);
+    if (direto !== "") return direto;
+
+    const dinamico = this._acharCampoNoItem(item, tipo);
+    if (dinamico) return item[dinamico];
+
+    return "";
   },
 
   _isAtivo(v) {
@@ -196,6 +237,7 @@ const AdminValores = window.AdminValores = {
       await SP.init();
       await this._resolverColunasValores();
       this._lista = await SP.getValoresRefeicao(false);
+      this._calibrarColunasPorItens(this._lista);
       this._render();
     } catch (e) {
       console.error("[Valores]", e);
@@ -331,13 +373,35 @@ const AdminValores = window.AdminValores = {
   async _salvarValorSharePoint(id, dados) {
     await this._resolverColunasValores();
 
+    // Ao editar, o item já carregado revela o nome interno real do SharePoint.
+    // Isso cobre colunas com acento codificadas como _x00e1_.
+    if (id) {
+      const atual = this._lista.find(v => String(v.id) === String(id));
+      if (atual) this._calibrarColunasPorItens([atual]);
+    }
+
     const fields = this._montarFieldsValor(dados);
     if (!this._campo("desconto")) {
       throw new Error("Coluna de desconto do funcionário não encontrada na lista Valores de Refeição.");
     }
 
-    if (id) return SP.updateItem("Valores de Refeição", id, fields);
-    return SP.createItem("Valores de Refeição", fields);
+    try {
+      if (id) return await SP.updateItem("Valores de Refeição", id, fields);
+      return await SP.createItem("Valores de Refeição", fields);
+    } catch (e) {
+      const msg = String(e?.message || e);
+      if (!msg.includes("Field") && !msg.includes("not recognized")) throw e;
+
+      // Última defesa: remove qualquer campo não encontrado e tenta salvar com os
+      // campos descobertos a partir do item atual. Evita perder Vascon/desconto.
+      if (id) {
+        const atual = this._lista.find(v => String(v.id) === String(id));
+        if (atual) this._calibrarColunasPorItens([atual]);
+        const retry = this._montarFieldsValor(dados);
+        return await SP.updateItem("Valores de Refeição", id, retry);
+      }
+      throw e;
+    }
   },
 
   async _desativarOutrosAtivos(idAtual = null) {
