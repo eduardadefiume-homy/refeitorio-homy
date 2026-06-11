@@ -17,6 +17,7 @@ const AdminValores = window.AdminValores = {
   COL_ATIVO: "Ativo",
 
   async load() {
+    this._ensureResponsiveStyles();
     this._bindBotoes();
     await this._carregar();
     await this._preencherPainelNFPadrao();
@@ -566,6 +567,37 @@ const AdminValores = window.AdminValores = {
     AdminUtils.toast("PDF selecionado para auditoria.", "success");
   },
 
+  _renderTabelaReconciliacao({ ini, fim, qtd, vascon, esperado, totalNF, unitNF, diferenca, pdfNome }) {
+    const cls = Math.abs(diferenca) < 0.01 ? "ok" : "warn";
+    const status = Math.abs(diferenca) < 0.01 ? "Conferido" : "Divergente";
+    return `
+      <div class="nf-recon-card ${cls}">
+        <div class="nf-recon-head">
+          <div>
+            <div class="nf-recon-title">Reconciliação Vascon</div>
+            <div class="nf-recon-sub">Período ${this._brDate(ini)} a ${this._brDate(fim)}</div>
+          </div>
+          <span class="nf-recon-badge">${status}</span>
+        </div>
+        <div class="nf-recon-table-wrap">
+          <table class="table nf-recon-table">
+            <thead>
+              <tr><th>Indicador</th><th>Valor</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Refeições confirmadas no sistema</td><td>${qtd}</td></tr>
+              <tr><td>Valor unitário cadastrado Vascon</td><td>${this._money(vascon)}</td></tr>
+              <tr><td>Total esperado pelo sistema</td><td>${this._money(esperado)}</td></tr>
+              <tr><td>Total informado na NF</td><td>${this._money(totalNF)}</td></tr>
+              <tr><td>Valor unitário calculado pela NF</td><td>${this._money(unitNF)}</td></tr>
+              <tr><td>Diferença NF x sistema</td><td>${this._money(diferenca)}</td></tr>
+              ${pdfNome ? `<tr><td>PDF anexado para auditoria</td><td>${AdminUtils.esc(pdfNome)}</td></tr>` : ""}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  },
+
   async reconciliar() {
     const ini = this._valAny("nfInicio");
     const fim = this._valAny("nfFim");
@@ -581,6 +613,7 @@ const AdminValores = window.AdminValores = {
       if (!this._lista.length) {
         await this._resolverColunasValores();
         this._lista = await SP.getValoresRefeicao(false);
+        this._calibrarColunasPorItens(this._lista);
       }
 
       const valor = this._valorParaPeriodo(ini, fim);
@@ -597,26 +630,22 @@ const AdminValores = window.AdminValores = {
       const esperado = qtd * valor.vascon;
       const unitNF = qtd > 0 ? totalNF / qtd : 0;
       const diferenca = totalNF - esperado;
-      const cls = Math.abs(diferenca) < 0.01 ? "alert-info" : "alert-warning";
-      const pdfTxt = this._nfFile ? `<br>📎 PDF: <b>${AdminUtils.esc(this._nfFile.name)}</b>` : "";
 
       if (out) {
-        out.innerHTML = `
-          <div class="alert ${cls}" style="line-height:1.7">
-            <b>Reconciliação concluída</b><br>
-            Período: <b>${this._brDate(ini)} a ${this._brDate(fim)}</b><br>
-            Refeições confirmadas no sistema: <b>${qtd}</b><br>
-            Valor unitário cadastrado Vascon: <b>${this._money(valor.vascon)}</b><br>
-            Total esperado pelo sistema: <b>${this._money(esperado)}</b><br>
-            Total informado na NF: <b>${this._money(totalNF)}</b><br>
-            Valor unitário calculado pela NF: <b>${this._money(unitNF)}</b><br>
-            Diferença NF x sistema: <b>${this._money(diferenca)}</b>
-            ${pdfTxt}
-          </div>`;
+        out.innerHTML = this._renderTabelaReconciliacao({
+          ini, fim, qtd,
+          vascon: valor.vascon,
+          esperado,
+          totalNF,
+          unitNF,
+          diferenca,
+          pdfNome: this._nfFile?.name || ""
+        });
       }
 
       AdminUtils.toast("Reconciliação calculada.", "success");
     } catch (e) {
+      console.error("[Valores] reconciliar", e);
       AdminUtils.toast("Erro ao reconciliar: " + (e.message || e), "error");
     }
   },
