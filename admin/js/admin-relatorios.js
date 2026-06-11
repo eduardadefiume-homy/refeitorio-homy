@@ -210,7 +210,8 @@ const AdminRelatorios = window.AdminRelatorios = {
   async _carregarValorReferencia(ini, fim) {
     try {
       await this._resolverColunasValores();
-      const valores = await SP.getValoresRefeicao(false);
+      let valores = await SP.getValoresRefeicao(false).catch(() => []);
+      if ((!valores || !valores.length) && window.AdminValores?._lista?.length) valores = window.AdminValores._lista;
       this._calibrarColunasPorItens(valores);
 
       const norm = valores.map(v => ({
@@ -322,11 +323,19 @@ const AdminRelatorios = window.AdminRelatorios = {
     return String(valor || "Sem CC");
   },
 
+  _centroCustoPedido(p) {
+    const raw = this._pick(p, "Centro_Custo", "Setor", "Departamento");
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo") || "");
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome") || "");
+    const isExtra = origem.includes("extra") || origem.includes("guarda") || origem.includes("visitante") || origem.includes("motorista") || nome.includes("guarda") || nome.includes("refeicao extra");
+    if ((!raw || String(raw).trim() === "—" || this._norm(raw).includes("sem")) && isExtra) return "120602 - PORTARIA";
+    if (origem.includes("guarda") || nome.includes("guarda")) return "120602 - PORTARIA";
+    return raw || "Sem CC";
+  },
   _agruparPorCC(conf) {
     const mapa = {};
     conf.forEach(p => {
-      const ccRaw = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC";
-      const cc = this._formatarCC(ccRaw);
+      const cc = this._formatarCC(this._centroCustoPedido(p));
       if (!mapa[cc]) mapa[cc] = [];
       mapa[cc].push(p);
     });
@@ -416,7 +425,7 @@ const AdminRelatorios = window.AdminRelatorios = {
   _renderPorCCFunc(conf, wrap) {
     const mapa = {};
     conf.forEach(p => {
-      const cc = this._formatarCC(this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC");
+      const cc = this._formatarCC(this._centroCustoPedido(p));
       const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Desconhecido";
       const key = `${cc}||${nome}`;
       if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
@@ -479,7 +488,7 @@ const AdminRelatorios = window.AdminRelatorios = {
 
     const mapa = {};
     conf.forEach(p => {
-      const cc = this._formatarCC(this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC");
+      const cc = this._formatarCC(this._centroCustoPedido(p));
       const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Desconhecido";
       const key = `${cc}||${nome}`;
       if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
@@ -735,6 +744,13 @@ const AdminRelatorios = window.AdminRelatorios = {
 
       if (ini !== this._periodo.ini || fim !== this._periodo.fim) await this._buscar(ini, fim);
       else await this._carregarValorReferencia(this._periodo.ini, this._periodo.fim);
+      if ((!this._valorRef || !this._valorRef.vascon) && window.AdminValores?._valorParaPeriodo) {
+        try {
+          if (!window.AdminValores._lista?.length) await window.AdminValores._carregar?.();
+          const v = window.AdminValores._valorParaPeriodo(this._periodo.ini, this._periodo.fim);
+          if (v?.vascon) this._valorRef = { ...this._valorRef, ...v };
+        } catch (_) {}
+      }
 
       const conf = this._conf();
       const tipo = this._valAny("relTipo") || "dia";
