@@ -8,30 +8,26 @@
 <link rel="icon" type="image/png" href="../favicon.png">
 
 <!-- Dependências externas -->
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"
-  onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js';document.head.appendChild(s)">
-</script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 
 <!-- Camada de dados (sempre primeiro) -->
-<script src="../sharepoint.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="../sharepoint.js"></script>
 
 <!-- Módulos admin (ordem importa) -->
-<script src="js/admin-utils.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-state.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-core.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-dashboard.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-cardapio.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-pedidos.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-operacao-dia.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-colaboradores.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-extras.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-valores.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-relatorios.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-ausencias.js?v=homy-admin-index-fix-20260610-1"></script>
-<script src="js/admin-configuracoes.js?v=homy-admin-index-fix-20260610-1"></script>
+<script src="js/admin-utils.js"></script>
+<script src="js/admin-state.js"></script>
+<script src="js/admin-core.js"></script>
+<script src="js/admin-dashboard.js?v=final-cc-alerta-20260611-3"></script>
+<script src="js/admin-cardapio.js"></script>
+<script src="js/admin-pedidos.js"></script>
+<script src="js/admin-operacao-dia.js"></script>
+<script src="js/admin-colaboradores.js"></script>
+<script src="js/admin-extras.js?v=final-portaria-20260611-3"></script>
+<script src="js/admin-valores.js?v=final-nf-responsive-20260611-3"></script>
+<script src="js/admin-relatorios.js?v=final-rateio-homy-20260611-3"></script>
+<script src="js/admin-configuracoes.js"></script>
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -44,7 +40,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 .login-circle{width:200px;height:200px;border-radius:50%;background:radial-gradient(circle at 40% 35%,rgba(40,80,200,.32) 0%,rgba(20,50,140,.2) 55%,transparent 100%);border:1.5px solid rgba(60,140,255,.28);display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 0 50px rgba(40,100,255,.16);animation:logo-float 3.6s ease-in-out infinite}
 .login-circle::before{content:"";position:absolute;inset:-10px;border-radius:50%;border:1.5px solid transparent;border-top-color:rgba(60,160,255,.75);animation:spin 4s linear infinite}
 .login-circle::after{content:"";position:absolute;inset:-20px;border-radius:50%;border:1px solid transparent;border-bottom-color:rgba(192,40,28,.55);animation:spin 7s linear infinite reverse}
-.login-circle img{width:160px;height:160px;object-fit:contain;image-rendering:auto}
+.login-circle img{width:150px;height:150px;object-fit:contain}
 @keyframes logo-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-20px)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 .login-text-block{display:flex;flex-direction:column;align-items:center;margin-top:1.6rem}
@@ -64,7 +60,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 /* SIDEBAR */
 .sidebar{width:220px;min-height:100vh;background:rgba(5,12,28,.98);border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:50}
 .sidebar-header{padding:1.2rem 1rem 1rem;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:.7rem}
-.sidebar-logo{width:28px;height:28px;object-fit:contain;image-rendering:auto;border-radius:4px}
+.sidebar-logo{width:28px;height:28px;object-fit:contain}
 .sidebar-title{font-family:"Barlow Condensed",sans-serif;font-size:.95rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;line-height:1}
 .sidebar-sub{font-size:.58rem;color:rgba(143,170,210,.45);letter-spacing:.1em;text-transform:uppercase}
 .sidebar-nav{flex:1;padding:.8rem .6rem;display:flex;flex-direction:column;gap:.2rem}
@@ -180,7 +176,6 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 /* ALERT */
 .alert{padding:.8rem 1rem;border-radius:10px;font-size:.82rem;line-height:1.5;margin-bottom:1rem;display:flex;gap:.6rem;align-items:flex-start}
 .alert-info{background:rgba(26,58,110,.3);border:1px solid rgba(60,140,255,.2);color:rgba(140,200,255,.85)}
-.alert-red{background:rgba(192,40,28,.15);border:1px solid rgba(192,40,28,.35);color:rgba(255,160,140,.9)}
 .alert-success{background:rgba(64,208,144,.1);border:1px solid rgba(64,208,144,.25);color:rgba(80,220,160,.9)}
 .alert-warning{background:rgba(255,180,0,.08);border:1px solid rgba(255,180,0,.2);color:rgba(255,200,80,.85)}
 
@@ -230,6 +225,65 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
   .sidebar-footer{display:none}
   .dashboard-grid-2,.dashboard-grid-3{grid-template-columns:1fr}
 }
+
+
+/* ===== HOMY ADMIN RESPONSIVO — PC / TABLET / CELULAR ===== */
+.main{min-width:0}
+.content{max-width:100%;overflow-x:hidden}
+.table-wrap,.dashboard-table-scroll{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
+.table{min-width:680px}
+.dashboard-panel{min-width:0}
+.dashboard-list-item{min-width:0}
+.dashboard-list-main,.dashboard-list-sub{overflow-wrap:anywhere}
+.dashboard-alert-list .table-wrap{max-height:360px}
+.modal-box{max-width:min(92vw,720px);max-height:88vh;overflow:auto}
+.form-input,.form-select,.form-textarea{min-width:0}
+.nf-recon-card{margin-top:1rem;border:1px solid rgba(255,190,60,.28);background:rgba(255,180,0,.055);border-radius:14px;padding:1rem;max-width:100%;overflow:hidden}
+.nf-recon-card.ok{border-color:rgba(64,208,144,.28);background:rgba(64,208,144,.055)}
+.nf-recon-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.8rem;flex-wrap:wrap}
+.nf-recon-title{font-family:"Barlow Condensed",sans-serif;font-weight:700;text-transform:uppercase;color:#fff;font-size:1.05rem}
+.nf-recon-sub{font-size:.78rem;color:rgba(255,220,120,.82);margin-top:2px}
+.nf-recon-badge{font-size:.65rem;font-weight:700;text-transform:uppercase;border-radius:999px;padding:5px 10px;background:rgba(255,180,0,.13);border:1px solid rgba(255,180,0,.28);color:#ffd45a}
+.nf-recon-card.ok .nf-recon-badge{background:rgba(64,208,144,.12);border-color:rgba(64,208,144,.28);color:#40d090}
+.nf-recon-table-wrap{max-width:100%;overflow:auto;border-radius:12px;border:1px solid rgba(255,255,255,.08)}
+.nf-recon-table{min-width:520px}
+.nf-recon-table td:last-child{font-weight:700;color:#fff;text-align:right}
+@media(max-width:1180px){
+  .stats-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .dashboard-grid-2,.dashboard-grid-3{grid-template-columns:1fr}
+  .content{padding:1rem}
+}
+@media(max-width:768px){
+  body{overflow-x:hidden}
+  #app.show{display:block}
+  .sidebar{position:sticky;top:0;width:100%;min-height:auto;max-height:none;z-index:80}
+  .sidebar-header{padding:.65rem .8rem}
+  .sidebar-nav{display:flex;flex-direction:row;gap:.35rem;overflow-x:auto;flex-wrap:nowrap;padding:.45rem .55rem;scrollbar-width:none}
+  .sidebar-nav::-webkit-scrollbar{display:none}
+  .nav-item{flex:0 0 auto;padding:.55rem .75rem}
+  .nav-label{display:inline;font-size:.76rem}
+  .main{margin-left:0;width:100%}
+  .topbar{position:sticky;top:0;padding:.7rem .85rem;gap:.6rem;align-items:flex-start}
+  .topbar-right{gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
+  .content{padding:.85rem .75rem 2rem}
+  .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem}
+  .stat-card{padding:.85rem}.stat-value{font-size:1.6rem}.stat-label{font-size:.6rem}
+  .dashboard-mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .homy-filter-box,.form-grid{display:grid;grid-template-columns:1fr!important}
+  .homy-filter-box .form-group{min-width:0;width:100%}
+  .action-group{width:100%;justify-content:flex-start}
+  .btn-primary,.btn-secondary,.btn-success,.btn-danger{white-space:normal}
+  .modal-overlay{padding:.75rem}.modal-box{width:96vw;max-height:88vh}
+  .table{min-width:620px}
+}
+@media(max-width:420px){
+  .stats-grid,.dashboard-mini-grid{grid-template-columns:1fr}
+  .topbar{flex-direction:column}
+  .topbar-right{width:100%;justify-content:space-between}
+  .nav-label{display:none}
+  .table{min-width:560px}
+}
+
 </style>
 </head>
 <body>
@@ -270,7 +324,6 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="nav-item" data-module="operacao">            <span class="nav-icon">👨‍🍳</span><span class="nav-label">Operação do Dia</span></div>
       <div class="nav-item" data-module="colaboradores">       <span class="nav-icon">👥</span><span class="nav-label">Colaboradores</span></div>
       <div class="nav-item" data-module="extras">              <span class="nav-icon">➕</span><span class="nav-label">Extras</span></div>
-      <div class="nav-item" data-module="ausencias">            <span class="nav-icon">🚫</span><span class="nav-label">Ausências</span></div>
       <div class="nav-item" data-module="valores">             <span class="nav-icon">💰</span><span class="nav-label">Valores</span></div>
       <div class="nav-item" data-module="relatorios">          <span class="nav-icon">📈</span><span class="nav-label">Relatórios</span></div>
       <div class="nav-item" data-module="configuracoes">       <span class="nav-icon">⚙️</span><span class="nav-label">Configurações</span></div>
@@ -328,8 +381,6 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
             <div class="form-group"><label class="form-label">Horário</label><input type="time" class="form-input" id="prazoHora" value="10:00"></div>
             <button class="btn-primary" id="btnSalvarPrazo">💾 Salvar prazo</button>
           </div>
-          <!-- Painel de status e travamento — preenchido pelo JS -->
-          <div id="dashPainelPrazo" style="margin-top:.75rem"></div>
         </div>
 
         <div class="alert alert-info">Semana: <strong id="semanaLabel">—</strong></div>
@@ -550,38 +601,8 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
         <div class="alert alert-warning">⚠️ Extras são refeições fora do quadro de colaboradores.</div>
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Nome</th><th>Tipo</th><th>Dia</th><th>Opção</th><th>Centro Custo</th><th>Observação</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Nome</th><th>Tipo</th><th>Dia</th><th>Opção</th><th>Observação</th><th>Ações</th></tr></thead>
             <tbody id="extrasTable"><tr><td colspan="6" class="empty-cell">Carregando...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-
-
-      <!-- ══ AUSÊNCIAS ══ -->
-      <div class="module" id="mod-ausencias">
-        <div class="section-header">
-          <div class="section-title">🚫 Ausências</div>
-          <button class="btn-primary" id="btnAdicionarAusencia">+ Nova ausência</button>
-        </div>
-        <div class="homy-filter-box">
-          <div class="form-group"><label class="form-label">Pesquisar</label><input class="form-input" id="fAusenciaTexto" placeholder="Nome ou motivo"></div>
-          <div class="form-group"><label class="form-label">Status</label>
-            <select class="form-select" id="fAusenciaStatus">
-              <option value="">Todos</option>
-              <option value="ativa">Ativa (hoje)</option>
-              <option value="futura">Futura</option>
-              <option value="encerrada">Encerrada</option>
-            </select>
-          </div>
-          <div style="display:flex;gap:.5rem;align-items:flex-end">
-            <button class="btn-secondary" id="btnLimparAusencias">Limpar</button>
-          </div>
-        </div>
-        <div class="alert alert-info">ℹ️ Ausências ativas travam a refeição do colaborador na cozinha durante o período cadastrado.</div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Colaborador</th><th>Início</th><th>Fim</th><th>Motivo</th><th>Status</th><th>Ações</th></tr></thead>
-            <tbody id="ausenciasTable"><tr><td colspan="6" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -782,15 +803,12 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="extraNome" placeholder="Nome do visitante / prestador"></div>
+        <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="extraNome" placeholder="Nome do visitante"></div>
         <div class="form-group"><label class="form-label">Tipo</label>
           <select class="form-select" id="extraTipo">
-            <option value="visitante">Visitante</option>
-            <option value="motorista">Motorista</option>
-            <option value="prestador">Prestador de Serviço</option>
-            <option value="investigador">Investigador</option>
-            <option value="guarda">Guarda</option>
-            <option value="marmita">Marmita</option>
+            <option value="visitante">Visitante</option><option value="motorista">Motorista</option>
+            <option value="investigador">Investigador</option><option value="guarda">Guarda</option>
+            <option value="prestador">Prestador</option><option value="marmita">Marmita</option>
           </select>
         </div>
         <div class="form-group"><label class="form-label">Dia</label>
@@ -804,15 +822,6 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
             <option value="principal">Principal</option><option value="light">Light</option>
             <option value="carne">Carne</option><option value="massa">Massa</option>
           </select>
-        </div>
-        <div class="form-group" id="extraCCGroup" style="grid-column:1/-1">
-          <label class="form-label">Centro de Custo <span style="color:rgba(192,40,28,.9)">*</span></label>
-          <input class="form-input" id="extraCC" list="extraCCList" placeholder="Digite ou selecione o CC...">
-          <datalist id="extraCCList"></datalist>
-          <div style="font-size:.72rem;color:rgba(143,170,210,.5);margin-top:.3rem">
-            Para Guarda/Investigador o CC é preenchido automaticamente como <b>Portaria</b>.<br>
-            Para Visitante/Motorista é preenchido como <b>ADM Geral</b>.
-          </div>
         </div>
         <div class="form-group" style="grid-column:1/-1"><label class="form-label">Observação</label><textarea class="form-textarea" id="extraObs" placeholder="Informações adicionais..."></textarea></div>
       </div>
@@ -914,110 +923,6 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 </div>
 
 <div id="toast"></div>
-
-
-<!-- Modal Ausência -->
-<div class="modal-overlay" id="modalAusencia">
-  <div class="modal-box">
-    <div class="modal-header">
-      <div class="modal-title">Nova Ausência</div>
-      <div class="modal-close" id="closeModalAusencia">✕</div>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Colaborador <span style="color:rgba(192,40,28,.9)">*</span></label>
-          <select class="form-select" id="ausenciaColaborador">
-            <option value="">Selecione o colaborador...</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Motivo</label>
-          <select class="form-select" id="ausenciaMotivo">
-            <option value="ferias">Férias</option>
-            <option value="atestado">Atestado médico</option>
-            <option value="falta">Falta</option>
-            <option value="licenca">Licença</option>
-            <option value="afastamento">Afastamento</option>
-            <option value="outro">Outro</option>
-          </select>
-        </div>
-        <div class="form-group"><!-- spacer --></div>
-        <div class="form-group">
-          <label class="form-label">Data início <span style="color:rgba(192,40,28,.9)">*</span></label>
-          <input type="date" class="form-input" id="ausenciaInicio">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Data fim <span style="color:rgba(192,40,28,.9)">*</span></label>
-          <input type="date" class="form-input" id="ausenciaFim">
-        </div>
-        <div class="form-group" style="grid-column:1/-1">
-          <label class="form-label">Observação</label>
-          <textarea class="form-textarea" id="ausenciaObs" placeholder="Informações adicionais..."></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-secondary" id="cancelModalAusencia">Cancelar</button>
-      <button class="btn-primary"   id="salvarAusencia">💾 Salvar</button>
-    </div>
-  </div>
-</div>
-
-
-
-<!-- Admin boot scripts -->
-<script>
-(function(){
-  const statusEl = document.getElementById("loginStatus");
-  function setStatus(msg){ if(statusEl) statusEl.textContent = msg || ""; }
-
-  window.AdminBoot = {
-    async waitFor(name, timeoutMs){
-      const started = Date.now();
-      while(Date.now() - started < timeoutMs){
-        if(window[name]) return window[name];
-        await new Promise(r => setTimeout(r, 50));
-      }
-      return null;
-    },
-
-    async start(){
-      try{
-        setStatus("Carregando dependências...");
-
-        const msalOk = await this.waitFor("msal", 10000);
-        if(!msalOk) throw new Error("MSAL não carregou. Verifique internet/CDN ou bloqueio do navegador.");
-
-        const spOk = await this.waitFor("SP", 10000);
-        if(!spOk) throw new Error("SP is not defined. Verifique se ../sharepoint.js existe na raiz e carregou sem erro.");
-
-        if(window.HOMY_SP_READY){
-          await window.HOMY_SP_READY.catch(e => { console.warn("[AdminBoot] HOMY_SP_READY", e); return false; });
-        }
-
-        const coreOk = await this.waitFor("AdminCore", 10000);
-        if(!coreOk) throw new Error("AdminCore não carregou. Verifique js/admin-core.js.");
-
-        setStatus("");
-        await AdminCore.init();
-      }catch(e){
-        console.error("[AdminBoot]", e);
-        setStatus("Erro: " + (e.message || e));
-        if(window.AdminUtils && AdminUtils.toast){
-          AdminUtils.toast("Erro no login: " + (e.message || e), "error");
-        }
-      }
-    }
-  };
-
-  if(document.readyState === "loading"){
-    document.addEventListener("DOMContentLoaded", () => AdminBoot.start());
-  }else{
-    AdminBoot.start();
-  }
-})();
-</script>
 
 </body>
 </html>
