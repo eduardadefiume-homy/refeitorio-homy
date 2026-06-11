@@ -6,11 +6,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#040c1a">
-<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
-<link rel="icon" type="image/png" sizes="64x64" href="icon-cozinha-64.png?v=cozinha-blue-20260611">
-<link rel="apple-touch-icon" sizes="180x180" href="icon-cozinha-180.png?v=cozinha-blue-20260611">
-<link rel="manifest" href="manifest-cozinha.json?v=cozinha-blue-20260611">
-<meta name="theme-color" content="#031b3d">
+<link rel="icon" type="image/png" sizes="64x64" href="icon-cozinha-64.png?v=cozinha-solid-red-20260611">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-cozinha-180.png?v=cozinha-solid-red-20260611">
+<link rel="manifest" href="manifest-cozinha.json?v=cozinha-solid-red-20260611">
+<meta name="theme-color" content="#B31717">
 <title>Cozinha · Homy Química</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -876,7 +875,6 @@ async function salvarCheckInCozinha(semanaId, pedido, dia, quem){
     Semana_id:             semanaId,
     Colaborador_id:        String(cid),
     Colaborador_nome:      nome,
-    Pedido_id:             String(getPedidoId(pedido) || ""),
     Dia:                   dia,
     Retirou:               true,
     Data_Hora_Retirada:    new Date().toISOString(),
