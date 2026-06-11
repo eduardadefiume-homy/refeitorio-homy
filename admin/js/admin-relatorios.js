@@ -1,897 +1,553 @@
-// ============================================================
-// admin-relatorios.js
-// Versão: 2026-06-10
-// Melhorias:
-//  - CC exibido como "120501 - TI" (busca Departamento do colaborador)
-//  - Coluna Conta_Contabil no relatório de CC (vem da lista Colaboradores)
-//  - Desconto por colaborador calculado sobre qtd real de refeições
-//  - Aba Rateio Vascon no Excel no padrão enviado pela Luana
-//  - Exportação com duas abas: Relatório Principal + Rateio Vascon
-// ============================================================
+// admin-relatorios.js — Relatórios gerenciais + rateio Vascon automático
+// Correções: load garantido, valor Vascon detectado da lista Valores de Refeição e Excel com aba Rateio Vascon
 
-(function () {
+const AdminRelatorios = window.AdminRelatorios = {
+  _pedidos: [],
+  _periodo: { ini: "", fim: "" },
+  _valorRef: { vascon: 0, desconto: 0, titulo: "", inicio: "", fim: "" },
 
-  // ── Mapa completo CC → { descricao, conta } ─────────────────────────────────
-  // Fonte: modelo de rateio fornecido pela Luana. Conta_Contabil vem do SharePoint
-  // se preenchida; caso não esteja, usamos este fallback.
-  const CC_MAP = {
-    "110101": { descricao: "DIRETORIA PRESIDENCIAL",                  conta: "51101015" },
-    "110201": { descricao: "DIRETORIA ADMINISTRATIVA",                conta: "51101015" },
-    "110202": { descricao: "DIRETORIA DE PRODUTOS",                   conta: "51101015" },
-    "120101": { descricao: "ADM GERAL",                               conta: "51101015" },
-    "120102": { descricao: "CUSTOS",                                  conta: "51101015" },
-    "120103": { descricao: "LEGALIZAÇÃO",                             conta: "51101015" },
-    "120201": { descricao: "CONTABILIDADE",                           conta: "51101015" },
-    "120202": { descricao: "FISCAL",                                  conta: "51101015" },
-    "120301": { descricao: "FINANCEIRO",                              conta: "51101015" },
-    "120401": { descricao: "RECURSOS HUMANOS",                        conta: "51101015" },
-    "120402": { descricao: "DEPARTAMENTO PESSOAL",                    conta: "51101015" },
-    "120501": { descricao: "TI",                                      conta: "51101015" },
-    "120601": { descricao: "RECEPÇÃO",                                conta: "51101015" },
-    "120602": { descricao: "PORTARIA",                                conta: "51101015" },
-    "120603": { descricao: "ASSEIO E CONSERVAÇÃO",                    conta: "51101015" },
-    "120604": { descricao: "JARDINAGEM",                              conta: "51101015" },
-    "150101": { descricao: "SUPRIMENTOS",                             conta: "51101015" },
-    "160101": { descricao: "CONTROLADORIA E COMPLIANCE",              conta: "51101015" },
-    "160102": { descricao: "ADM CONTRATOS",                           conta: "51101015" },
-    "170101": { descricao: "SGI",                                     conta: "51101015" },
-    "180101": { descricao: "P&D",                                     conta: "51101015" },
-    "190101": { descricao: "PATIO EXTERNO",                           conta: "51101015" },
-    "220101": { descricao: "ADM VENDAS",                              conta: "51101015" },
-    "220201": { descricao: "COML INTERNO - SUPORTE",                  conta: "51101015" },
-    "220202": { descricao: "COML INTERNO - ATIVO",                    conta: "51101015" },
-    "220301": { descricao: "COML EXTERNO - CLT",                      conta: "51101015" },
-    "220302": { descricao: "COML EXTERNO - REPRESENTANTE",            conta: "51101015" },
-    "230101": { descricao: "SUPORTE TECNICO INDUSTRIAL",              conta: "51101015" },
-    "230102": { descricao: "SUPORTE TECNICO OBRAS/INFRA",             conta: "51101015" },
-    "240101": { descricao: "MARKETING",                               conta: "51101015" },
-    "250101": { descricao: "FATURAMENTO",                             conta: "51101015" },
-    "250102": { descricao: "LOGISTICA",                               conta: "51101015" },
-    "250103": { descricao: "EXPEDIÇÃO",                               conta: "51101015" },
-    "320101": { descricao: "PRODUÇÃO",                                conta: "42101015" },
-    "320201": { descricao: "ENVASE MANUAL",                           conta: "42101015" },
-    "320202": { descricao: "ENVASE AUTOMATICO",                       conta: "42101015" },
-    "320301": { descricao: "LABORATORIO E CONTROLE QUALIDADE",        conta: "42101015" },
-    "360101": { descricao: "APOIO A PRODUÇÃO",                        conta: "42101015" },
-    "360102": { descricao: "PCP",                                     conta: "42101015" },
-    "360201": { descricao: "MANUTENÇÃO",                              conta: "42101015" },
-    "360301": { descricao: "ALMOXARIFADO DE INSUMOS",                 conta: "42101015" }
-  };
+  async load(semanaId) {
+    try {
+      await SP.init();
 
-  // Retorna "120501 - TI" ou só "120501" se não encontrado
-  function ccComNome(cc, colaboradorData) {
-    const cod = String(cc || "").trim();
-    if (!cod) return "Sem CC";
+      const datas = SP.getWeekDates(semanaId);
+      const ini = datas[0].toISOString().slice(0, 10);
+      const fim = datas[4].toISOString().slice(0, 10);
 
-    // Tenta pegar departamento do colaborador (mais preciso)
-    if (colaboradorData) {
-      const dept = colaboradorData.Departamento || colaboradorData.departamento || "";
-      if (dept) return `${cod} - ${dept.toUpperCase()}`;
+      this._setValAny(ini, "relDataIni");
+      this._setValAny(fim, "relDataFim");
+      this._bindControles();
+
+      await this._carregarValorReferencia(ini, fim);
+      await this._buscar(ini, fim);
+    } catch (e) {
+      console.error("[Relatórios] load", e);
+      AdminUtils.toast("Erro ao carregar Relatórios: " + (e.message || e), "error");
     }
+  },
 
-    // Fallback no mapa
-    const info = CC_MAP[cod];
-    return info ? `${cod} - ${info.descricao}` : cod;
-  }
-
-  function contaContabil(cc, colaboradorData) {
-    const cod = String(cc || "").trim();
-    // Tenta pegar Conta_Contabil do colaborador
-    if (colaboradorData) {
-      const conta = colaboradorData.Conta_Contabil || colaboradorData.conta_contabil || "";
-      if (conta) return String(conta).trim();
-    }
-    const info = CC_MAP[cod];
-    return info ? info.conta : "51101015";
-  }
-
-  const DIA_LABEL = {
-    segunda: "Segunda-feira",
-    terca:   "Terça-feira",
-    quarta:  "Quarta-feira",
-    quinta:  "Quinta-feira",
-    sexta:   "Sexta-feira",
-    sabado:  "Sábado",
-    domingo: "Domingo"
-  };
-
-  const TIPOS = {
-    "resumo-dia":   "Resumo por dia",
-    "centro-custo": "Valor total por centro de custo",
-    "colaborador":  "Quantidade por colaborador"
-  };
-
-  const COLUNAS_TIPO = {
-    "resumo-dia":   ["Dia", "Data", "Principal", "Light", "Carne", "Massa", "Lanche", "Total"],
-    "centro-custo": ["Centro de custo", "Descrição", "Quantidade", "Valor Vascon", "Desconto funcionários", "Rateio NF"],
-    "colaborador":  ["Colaborador", "Centro de custo", "Quantidade", "Valor unitário desconto", "Total desconto em folha", "Valor Vascon estimado"]
-  };
-
-  const state = {
-    pedidos:       [],
-    colaboradores: [],
-    valores:       [],
-    resultado:     null
-  };
-
-  // ── Cache de colaboradores por id e por nome ──────────────────────────────
-  let _colabById   = {};
-  let _colabByNome = {};
-
-  function buildColabCache() {
-    _colabById   = {};
-    _colabByNome = {};
-    (state.colaboradores || []).forEach(c => {
-      const id   = String(c.id || c.ID || "");
-      const nome = normalizar(c.Nome || c.Title || "");
-      if (id)   _colabById[id]   = c;
-      if (nome) _colabByNome[nome] = c;
-    });
-  }
-
-  function getColabData(pedido) {
-    const id   = String(pedido.Colaborador_id || pedido.colaborador_id || "");
-    const nome = normalizar(pedido.Colaborador_nome || pedido.colaborador_nome || "");
-    return _colabById[id] || _colabByNome[nome] || null;
-  }
-
-  function $(id) { return document.getElementById(id); }
-
-  function normalizar(valor) {
-    return String(valor || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
-  }
-
-  function moeda(valor) {
-    return Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  }
-
-  function dataBR(data) {
-    if (!data) return "";
-    if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
-      const [ano, mes, dia] = data.split("-");
-      return `${dia}/${mes}/${ano}`;
-    }
-    const d = new Date(data);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleDateString("pt-BR");
-  }
-
-  function toInputDate(data) {
-    const d = new Date(data);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  }
-
-  function slug(valor) {
-    return normalizar(valor).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  }
-
-  function isTrue(valor) {
-    if (window.SP && typeof SP.isTrue === "function") return SP.isTrue(valor);
-    return ["true", "sim", "1", "yes"].includes(normalizar(valor));
-  }
-
-  function semanaAtualFallback() {
-    if (typeof window.getSemanaIdAtualSelecionada === "function") return window.getSemanaIdAtualSelecionada();
-    if (window.AdminState && AdminState.getSemanaId) return AdminState.getSemanaId();
-    const d = new Date(); d.setHours(0,0,0,0);
-    d.setDate(d.getDate()+3-((d.getDay()+6)%7));
-    const w1 = new Date(d.getFullYear(),0,4);
-    const wn = 1+Math.round(((d-w1)/86400000-3+((w1.getDay()+6)%7))/7);
-    return `${d.getFullYear()}-W${String(wn).padStart(2,"0")}`;
-  }
-
-  function inicioSemanaISO(ano, semana) {
-    const jan4  = new Date(ano, 0, 4);
-    const start = new Date(jan4);
-    start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (semana-1)*7);
-    return start;
-  }
-
-  function diaSemanaCompleto(d) {
-    return ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"][d.getDay()];
-  }
-
-  function dataPedido(pedido) {
-    const dh = pedido.Data_Hora || pedido.data_hora || pedido.DataHora;
-    if (dh) {
-      const d = new Date(dh);
-      if (!Number.isNaN(d.getTime())) return d;
-    }
-
-    const semId  = pedido.Semana_id || pedido.semana_id || "";
-    const dia    = pedido.Dia || pedido.dia || "";
-    const match  = semId.match(/(\d{4})-W(\d{1,2})/i);
-
-    if (match && dia) {
-      const segunda = inicioSemanaISO(Number(match[1]), Number(match[2]));
-      const mapa = { segunda:0, terca:1, "terça":1, quarta:2, quinta:3, sexta:4, sabado:5, "sábado":5, domingo:6 };
-      const idx  = mapa[normalizar(dia)];
-      if (idx !== undefined) {
-        const d = new Date(segunda);
-        d.setDate(d.getDate() + idx);
-        return d;
-      }
+  _getEl(...ids) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) return el;
     }
     return null;
-  }
+  },
 
-  function diaChave(data) {
-    return ["domingo","segunda","terca","quarta","quinta","sexta","sabado"][new Date(data).getDay()];
-  }
+  _setValAny(valor, ...ids) {
+    const el = this._getEl(...ids);
+    if (el) el.value = valor ?? "";
+  },
 
-  function getStatusPedido(pedido) {
-    return normalizar(pedido.Status || pedido.status || "");
-  }
+  _valAny(...ids) {
+    const el = this._getEl(...ids);
+    return (el?.value || "").trim();
+  },
 
-  function pedidoConta(pedido) {
-    const status = getStatusPedido(pedido);
-    if (["cancelado","bloqueado","afastado","ferias","férias","nao vai almocar","não vai almoçar"].includes(status)) return false;
-    if (pedido.Confirmado === false || pedido.confirmado === false) return false;
-    return true;
-  }
+  _setTxtAny(valor, ...ids) {
+    const el = this._getEl(...ids);
+    if (el) el.textContent = valor ?? "—";
+  },
 
-  function getOpcao(pedido) {
-    const raw = normalizar(pedido.Opcao || pedido.opcao || pedido.Nome_Prato || pedido.nomePrato || "");
-    if (raw.includes("principal")) return "principal";
-    if (raw.includes("light") || raw.includes("ligth")) return "light";
-    if (raw.includes("carne")) return "carne";
-    if (raw.includes("massa")) return "massa";
-    if (raw.includes("lanche")) return "lanche";
-    return raw || "principal";
-  }
-
-  function getNomeColaborador(pedido) {
-    return pedido.Colaborador_nome || pedido.colaborador_nome || pedido.Colaborador || pedido.colaborador || pedido.Title || "Sem nome";
-  }
-
-  function getColaboradorId(pedido) {
-    return String(pedido.Colaborador_id || pedido.colaborador_id || pedido.ColaboradorId || pedido.colaboradorId || "");
-  }
-
-  function getCentroCustoRaw(pedido) {
-    const direto = pedido.Centro_Custo || pedido.centro_custo || pedido.CentroCusto || pedido.centroCusto;
-    if (direto) return String(direto).trim();
-    const colab = getColabData(pedido);
-    return String(colab?.Centro_Custo || colab?.centro_custo || "").trim() || "Sem CC";
-  }
-
-  function valorNumero(valor) {
-    return Number(String(valor || "0").replace(",", ".")) || 0;
-  }
-
-  async function safe(fn, fallback = []) {
-    try { return await fn(); }
-    catch (erro) { console.warn("Falha no relatório:", erro); return fallback; }
-  }
-
-  async function carregarDados(semanaId) {
-    if (!window.SP) throw new Error("SP não carregado.");
-
-    state.colaboradores = await safe(() =>
-      SP.getTodosColaboradores ? SP.getTodosColaboradores() : SP.getColaboradores(), []
-    );
-
-    buildColabCache();
-
-    if (SP.getItems) {
-      state.pedidos = await safe(() => SP.getItems("Pedidos"), []);
-    } else {
-      state.pedidos = await safe(() => SP.getPedidos(semanaId || semanaAtualFallback()), []);
+  _pick(obj, ...keys) {
+    for (const k of keys) {
+      const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
+      if (v !== undefined && v !== null && String(v) !== "") return v;
     }
+    return "";
+  },
 
-    if (SP.getValoresRefeicao) {
-      state.valores = await safe(() => SP.getValoresRefeicao(), []);
-    } else if (SP.getItems) {
-      state.valores = await safe(() => SP.getItems("Valores de Refeição"), []);
-    } else {
-      state.valores = [];
+  _dateISO(v) {
+    if (!v) return "";
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+  },
+
+  _brDate(iso) {
+    const d = this._dateISO(iso);
+    if (!d) return "—";
+    const [a, m, dia] = d.split("-");
+    return `${dia}/${m}/${a}`;
+  },
+
+  _money(v) {
+    const n = Number(v || 0);
+    return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  },
+
+  _moeda(v) {
+    if (AdminUtils.moeda) return AdminUtils.moeda(v);
+    if (v === null || v === undefined || String(v).trim() === "") return null;
+    let s = String(v).replace(/R\$/gi, "").replace(/\s/g, "").trim();
+    if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+    s = s.replace(/[^0-9.-]/g, "");
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  },
+
+  _num(v) {
+    const n = this._moeda(v);
+    return n === null ? 0 : n;
+  },
+
+  _periodosSobrepoem(iniA, fimA, iniB, fimB) {
+    if (!iniA || !fimA || !iniB || !fimB) return false;
+    return iniA <= fimB && fimA >= iniB;
+  },
+
+  async _carregarValorReferencia(ini, fim) {
+    try {
+      const valores = await SP.getValoresRefeicao(false);
+      const norm = valores.map(v => ({
+        raw: v,
+        id: v.id || "",
+        titulo: this._pick(v, "Title", "Titulo", "Título") || "Valor refeição",
+        inicio: this._dateISO(this._pick(v, "Data_Inicio", "DataInicio")),
+        fim: this._dateISO(this._pick(v, "Data_Fim", "DataFim")),
+        vascon: this._num(this._pick(v, "Valor_Vascon", "ValorVascon")),
+        desconto: this._num(this._pick(v, "Valor_Desconto_Funcionário", "Valor_Desconto_Funcionario", "Valor_Desconto", "Desconto")),
+        ativo: SP.isTrue ? SP.isTrue(this._pick(v, "Ativo")) : !!this._pick(v, "Ativo")
+      }));
+
+      const escolhido =
+        norm.find(v => v.ativo && this._periodosSobrepoem(ini, fim, v.inicio, v.fim)) ||
+        norm.find(v => this._periodosSobrepoem(ini, fim, v.inicio, v.fim)) ||
+        norm.find(v => v.ativo) ||
+        norm[0] ||
+        { vascon: 0, desconto: 0, titulo: "Sem valor cadastrado", inicio: "", fim: "" };
+
+      this._valorRef = escolhido;
+      this._setTxtAny(this._money(escolhido.vascon), "relValorVascon", "relVasconUnit", "relValorUnitarioVascon");
+    } catch (e) {
+      console.warn("[Relatórios] Não foi possível buscar valor Vascon:", e);
+      this._valorRef = { vascon: 0, desconto: 0, titulo: "Sem valor cadastrado", inicio: "", fim: "" };
     }
-  }
+  },
 
-  function obterValorPeriodo(dataInicio, dataFim) {
-    const ini = new Date(`${dataInicio}T00:00:00`);
-    const fim = new Date(`${dataFim}T23:59:59`);
+  _dataPedido(p) {
+    const direta = this._dateISO(this._pick(p, "Data_Hora", "Data", "Data_Referencia"));
+    if (direta) return direta;
 
-    const ativos = (state.valores || []).filter(v => {
-      const ativo = v.Ativo === undefined ? true : isTrue(v.Ativo);
-      const vi = v.Data_Inicio ? new Date(v.Data_Inicio) : null;
-      const vf = v.Data_Fim    ? new Date(v.Data_Fim)    : null;
-      if (!ativo) return false;
-      if (!vi || !vf) return true;
-      return vi <= fim && vf >= ini;
-    });
+    const semana = this._pick(p, "Semana_id", "Semana");
+    const dia = this._pick(p, "Dia");
+    if (semana && dia && SP.getDataRefBySemanaDia) return SP.getDataRefBySemanaDia(semana, dia);
 
-    const v = ativos[0] || state.valores[0] || {};
-    return {
-      valorVascon:   valorNumero(v.Valor_Vascon   || v.valorVascon),
-      valorDesconto: valorNumero(v.Valor_Desconto_Funcionario || v.valorDescontoFuncionario || v.valorDesconto)
-    };
-  }
+    return "";
+  },
 
-  function filtrarPedidos(filtros) {
-    const ini = new Date(`${filtros.dataInicio}T00:00:00`);
-    const fim = new Date(`${filtros.dataFim}T23:59:59`);
-    return (state.pedidos || []).filter(p => {
-      if (!pedidoConta(p)) return false;
-      const data = dataPedido(p);
-      return data && data >= ini && data <= fim;
-    });
-  }
+  async _buscar(ini, fim) {
+    this._periodo = { ini, fim };
+    const wrap = document.getElementById("relConteudo");
+    if (wrap) wrap.innerHTML = `<div class="alert alert-info">Carregando...</div>`;
 
-  function montarResumoDia(filtros, pedidos) {
-    const linhas = [];
-    const ini = new Date(`${filtros.dataInicio}T00:00:00`);
-    const fim = new Date(`${filtros.dataFim}T00:00:00`);
+    try {
+      await SP.init();
+      await this._carregarValorReferencia(ini, fim);
+      const todos = await SP.getItems("Pedidos");
 
-    for (let d = new Date(ini); d <= fim; d.setDate(d.getDate()+1)) {
-      const chave    = toInputDate(d);
-      const pedidosDia = pedidos.filter(p => {
-        const data = dataPedido(p);
-        return data && toInputDate(data) === chave;
+      this._pedidos = todos.filter(p => {
+        const d = this._dataPedido(p);
+        return d && d >= ini && d <= fim;
       });
-      const cont = { principal:0, light:0, carne:0, massa:0, lanche:0 };
-      pedidosDia.forEach(p => { const op = getOpcao(p); if (cont[op] !== undefined) cont[op]++; });
-      linhas.push({
-        "Dia":       DIA_LABEL[diaChave(d)] || diaSemanaCompleto(d),
-        "Data":      dataBR(d),
-        "Principal": cont.principal,
-        "Light":     cont.light,
-        "Carne":     cont.carne,
-        "Massa":     cont.massa,
-        "Lanche":    cont.lanche,
-        "Total":     pedidosDia.length
-      });
+
+      this._renderCards();
+      this._renderTipo();
+    } catch (e) {
+      console.error("[Relatórios] buscar", e);
+      if (wrap) {
+        wrap.innerHTML = `<div class="alert" style="background:rgba(220,50,50,.1);color:#ff8080">Erro: ${AdminUtils.esc(e.message || e)}</div>`;
+      }
     }
-    return linhas;
-  }
+  },
 
-  function montarCentroCusto(pedidos, valores, nf) {
+  _isConf(p) {
+    const s = AdminUtils.norm(this._pick(p, "Status") || "");
+    return ["confirmado", "extra", "aprovado", "travado"].includes(s) ||
+           (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")));
+  },
+
+  _opcao(p) {
+    return AdminUtils.norm(this._pick(p, "Opcao", "Opção") || "");
+  },
+
+  _countOp(lista, op) {
+    return lista.filter(p => this._opcao(p) === op).length;
+  },
+
+  _nfInformada() {
+    return this._moeda(this._valAny(
+      "relNfVascon",
+      "relNFVascon",
+      "relNfVasconRecebida",
+      "relTotalNFVascon",
+      "relTotalNfVascon",
+      "relTotalNF",
+      "relTotalNf",
+      "nfTotalRelatorio"
+    ));
+  },
+
+  _conf() {
+    return this._pedidos.filter(p => this._isConf(p));
+  },
+
+  _renderCards() {
+    const conf = this._conf();
+    const total = conf.length;
+    const custoVascon = total * (this._valorRef.vascon || 0);
+    const descontoFunc = total * (this._valorRef.desconto || 0);
+    const nf = this._nfInformada();
+    const dif = nf === null ? null : nf - custoVascon;
+
+    this._setTxtAny(this._countOp(conf, "principal"), "rel-principal", "relPrincipal");
+    this._setTxtAny(this._countOp(conf, "light"), "rel-light", "relLight");
+    this._setTxtAny(this._countOp(conf, "carne"), "rel-carne", "relCarne");
+    this._setTxtAny(this._countOp(conf, "massa"), "rel-massa", "relMassa");
+    this._setTxtAny(this._countOp(conf, "lanche"), "rel-lanche", "relLanche");
+    this._setTxtAny(total, "rel-total", "relTotal", "relTotalRefeicoes");
+    this._setTxtAny(this._money(custoVascon), "rel-custo-vascon", "relCustoVascon", "relTotalVascon");
+    this._setTxtAny(this._money(descontoFunc), "rel-desconto", "relDescontoFuncionarios", "relDescontoFuncionario");
+    this._setTxtAny(dif === null ? "—" : this._money(dif), "rel-diferenca-nf", "relDiferencaNF", "relDifNF");
+  },
+
+  _renderTipo() {
+    const tipo = this._valAny("relTipo") || "dia";
+    const wrap = document.getElementById("relConteudo");
+    if (!wrap) return;
+
+    const conf = this._conf();
+    if (tipo === "dia") this._renderPorDia(conf, wrap);
+    else if (tipo === "cc") this._renderPorCC(conf, wrap);
+    else if (tipo === "ccfunc") this._renderPorCCFunc(conf, wrap);
+  },
+
+  _linhaResumoValor() {
+    const v = this._valorRef || {};
+    return `<div class="alert alert-info" style="margin-bottom:.8rem;line-height:1.6">
+      Valor Vascon aplicado no cálculo: <b>${this._money(v.vascon || 0)}</b>
+      ${v.titulo ? ` — ${AdminUtils.esc(v.titulo)}` : ""}
+      ${v.inicio && v.fim ? ` (${this._brDate(v.inicio)} a ${this._brDate(v.fim)})` : ""}.
+    </div>`;
+  },
+
+  _renderPorDia(conf, wrap) {
     const mapa = {};
-
-    pedidos.forEach(p => {
-      const ccRaw   = getCentroCustoRaw(p);
-      const colab   = getColabData(p);
-      const ccLabel = ccComNome(ccRaw, colab);
-      const conta   = contaContabil(ccRaw, colab);
-
-      if (!mapa[ccRaw]) {
-        mapa[ccRaw] = {
-          "_ccRaw":              ccRaw,
-          "_conta":              conta,
-          "Centro de custo":     ccLabel,
-          "Descrição":           (CC_MAP[ccRaw]?.descricao || (colab?.Departamento || "").toUpperCase() || ccRaw),
-          "Quantidade":          0,
-          "Valor Vascon":        0,
-          "Desconto funcionários": 0,
-          "Rateio NF":           0
-        };
-      }
-
-      mapa[ccRaw]["Quantidade"]++;
-      mapa[ccRaw]["Valor Vascon"]        += valores.valorVascon;
-      mapa[ccRaw]["Desconto funcionários"] += valores.valorDesconto;
+    conf.forEach(p => {
+      const d = this._dataPedido(p) || "—";
+      if (!mapa[d]) mapa[d] = [];
+      mapa[d].push(p);
     });
 
-    const total = pedidos.length || 1;
-    Object.values(mapa).forEach(l => {
-      l["Rateio NF"] = nf ? nf * (l["Quantidade"] / total) : 0;
-    });
+    const sorted = Object.entries(mapa).sort(([a], [b]) => a.localeCompare(b));
+    const unit = this._valorRef.vascon || 0;
 
-    return Object.values(mapa).sort((a, b) => String(a._ccRaw).localeCompare(String(b._ccRaw)));
-  }
+    wrap.innerHTML = `
+      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">📅 Resumo por dia — período ${this._brDate(this._periodo.ini)} a ${this._brDate(this._periodo.fim)}</div>
+      ${this._linhaResumoValor()}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th><th>Valor Vascon</th></tr></thead>
+          <tbody>
+            ${sorted.length ? sorted.map(([data, lista]) => `<tr>
+              <td>${this._brDate(data)}</td>
+              <td>${this._countOp(lista, "principal")}</td>
+              <td>${this._countOp(lista, "light")}</td>
+              <td>${this._countOp(lista, "carne")}</td>
+              <td>${this._countOp(lista, "massa")}</td>
+              <td>${this._countOp(lista, "lanche")}</td>
+              <td><strong>${lista.length}</strong></td>
+              <td>${this._money(lista.length * unit)}</td>
+            </tr>`).join("") + `<tr style="border-top:2px solid rgba(255,255,255,.15)">
+              <td><strong>Total</strong></td>
+              <td>${this._countOp(conf, "principal")}</td>
+              <td>${this._countOp(conf, "light")}</td>
+              <td>${this._countOp(conf, "carne")}</td>
+              <td>${this._countOp(conf, "massa")}</td>
+              <td>${this._countOp(conf, "lanche")}</td>
+              <td><strong>${conf.length}</strong></td>
+              <td><strong>${this._money(conf.length * unit)}</strong></td>
+            </tr>` : `<tr><td colspan="8" class="empty-cell">Nenhum pedido no período.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+  },
 
-  function montarColaborador(pedidos, valores) {
+  _renderPorCC(conf, wrap) {
+    const sorted = this._agruparPorCC(conf);
+    const unit = this._valorRef.vascon || 0;
+
+    wrap.innerHTML = `
+      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">🏢 Por centro de custo — período ${this._brDate(this._periodo.ini)} a ${this._brDate(this._periodo.fim)}</div>
+      ${this._linhaResumoValor()}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th><th>Rateio Vascon</th></tr></thead>
+          <tbody>
+            ${sorted.length ? sorted.map(({ cc, lista }) => `<tr>
+              <td>${AdminUtils.esc(cc)}</td>
+              <td>${this._countOp(lista, "principal")}</td>
+              <td>${this._countOp(lista, "light")}</td>
+              <td>${this._countOp(lista, "carne")}</td>
+              <td>${this._countOp(lista, "massa")}</td>
+              <td>${this._countOp(lista, "lanche")}</td>
+              <td><strong>${lista.length}</strong></td>
+              <td>${this._money(lista.length * unit)}</td>
+            </tr>`).join("") : `<tr><td colspan="8" class="empty-cell">Nenhum pedido no período.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+  },
+
+  _renderPorCCFunc(conf, wrap) {
     const mapa = {};
-
-    pedidos.forEach(p => {
-      const nome  = getNomeColaborador(p);
-      const ccRaw = getCentroCustoRaw(p);
-      const colab = getColabData(p);
-      const ccLabel = ccComNome(ccRaw, colab);
-      const key   = `${nome}|${ccRaw}`;
-
-      if (!mapa[key]) {
-        mapa[key] = {
-          "Colaborador":              nome,
-          "Centro de custo":          ccLabel,
-          "Quantidade":               0,
-          "Valor unitário desconto":  valores.valorDesconto,
-          "Total desconto em folha":  0,
-          "Valor Vascon estimado":    0
-        };
-      }
-
-      mapa[key]["Quantidade"]++;
-      mapa[key]["Total desconto em folha"] += valores.valorDesconto;
-      mapa[key]["Valor Vascon estimado"]   += valores.valorVascon;
+    conf.forEach(p => {
+      const cc = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC";
+      const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Desconhecido";
+      const key = `${cc}||${nome}`;
+      if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
+      mapa[key].lista.push(p);
     });
 
-    return Object.values(mapa).sort((a, b) =>
-      String(a["Centro de custo"]).localeCompare(String(b["Centro de custo"])) ||
-      String(a.Colaborador).localeCompare(String(b.Colaborador))
-    );
-  }
+    const sorted = Object.values(mapa).sort((a, b) => a.cc.localeCompare(b.cc) || a.nome.localeCompare(b.nome));
+    const unitDesc = this._valorRef.desconto || 0;
 
-  // ── Rateio Vascon — igual ao modelo impresso ──────────────────────────────
-  function montarRateioVascon(pedidos, valores, nf) {
-    // Monta por CC com conta contábil
-    const mapaCC = {};
-
-    pedidos.forEach(p => {
-      const ccRaw = getCentroCustoRaw(p);
-      const colab = getColabData(p);
-      const info  = CC_MAP[ccRaw];
-      const conta = contaContabil(ccRaw, colab);
-      const descr = info?.descricao || (colab?.Departamento || "").toUpperCase() || ccRaw;
-
-      if (!mapaCC[ccRaw]) {
-        mapaCC[ccRaw] = { conta, cc: ccRaw, descricao: descr, qtde: 0 };
+    let ccAtual = null;
+    const linhas = sorted.map(({ cc, nome, lista }) => {
+      let cabecalho = "";
+      if (cc !== ccAtual) {
+        ccAtual = cc;
+        const totalCC = sorted.filter(x => x.cc === cc).reduce((s, x) => s + x.lista.length, 0);
+        cabecalho = `<tr style="background:rgba(255,255,255,.06)">
+          <td colspan="5" style="font-weight:700;color:#fff">🏢 ${AdminUtils.esc(cc)} — ${totalCC} refeições</td>
+        </tr>`;
       }
-      mapaCC[ccRaw].qtde++;
+      return cabecalho + `<tr>
+        <td style="padding-left:1.5rem">${AdminUtils.esc(nome)}</td>
+        <td>${AdminUtils.esc(cc)}</td>
+        <td>${lista.length}</td>
+        <td>${this._money(lista.length * unitDesc)}</td>
+        <td style="font-size:.78rem;color:rgba(143,170,210,.6)">
+          ${[...new Set(lista.map(p => this._dataPedido(p)).filter(Boolean))].sort().map(d => this._brDate(d)).join(", ")}
+        </td>
+      </tr>`;
+    }).join("");
+
+    wrap.innerHTML = `
+      <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">👤 Por CC e funcionário — período ${this._brDate(this._periodo.ini)} a ${this._brDate(this._periodo.fim)}</div>
+      <div class="alert alert-info" style="margin-bottom:.8rem">Desconto funcionário aplicado: <b>${this._money(unitDesc)}</b> por refeição.</div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Total refeições</th><th>Desconto total</th><th>Datas</th></tr></thead>
+          <tbody>${linhas || `<tr><td colspan="5" class="empty-cell">Nenhum pedido no período.</td></tr>`}</tbody>
+        </table>
+      </div>`;
+  },
+
+  _agruparPorCC(conf) {
+    const mapa = {};
+    conf.forEach(p => {
+      const cc = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC";
+      if (!mapa[cc]) mapa[cc] = [];
+      mapa[cc].push(p);
+    });
+    return Object.entries(mapa)
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([cc, lista]) => ({ cc, lista }));
+  },
+
+  _linhasRelatorio(tipo, conf) {
+    if (tipo === "dia") {
+      const mapa = {};
+      conf.forEach(p => {
+        const d = this._dataPedido(p) || "—";
+        if (!mapa[d]) mapa[d] = [];
+        mapa[d].push(p);
+      });
+      return Object.entries(mapa).sort(([a], [b]) => a.localeCompare(b)).map(([data, lista]) => ({
+        Data: data,
+        Principal: this._countOp(lista, "principal"),
+        Light: this._countOp(lista, "light"),
+        Carne: this._countOp(lista, "carne"),
+        Massa: this._countOp(lista, "massa"),
+        Lanche: this._countOp(lista, "lanche"),
+        Total_Refeicoes: lista.length,
+        Valor_Unitario_Vascon: this._valorRef.vascon || 0,
+        Total_Vascon: lista.length * (this._valorRef.vascon || 0)
+      }));
+    }
+
+    if (tipo === "cc") {
+      return this._agruparPorCC(conf).map(({ cc, lista }) => ({
+        Centro_Custo: cc,
+        Principal: this._countOp(lista, "principal"),
+        Light: this._countOp(lista, "light"),
+        Carne: this._countOp(lista, "carne"),
+        Massa: this._countOp(lista, "massa"),
+        Lanche: this._countOp(lista, "lanche"),
+        Total_Refeicoes: lista.length,
+        Valor_Unitario_Vascon: this._valorRef.vascon || 0,
+        Total_Vascon: lista.length * (this._valorRef.vascon || 0)
+      }));
+    }
+
+    const mapa = {};
+    conf.forEach(p => {
+      const cc = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC";
+      const nome = this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Desconhecido";
+      const key = `${cc}||${nome}`;
+      if (!mapa[key]) mapa[key] = { cc, nome, lista: [] };
+      mapa[key].lista.push(p);
     });
 
-    const total = pedidos.length || 1;
-
-    // Inclui todos os CCs do mapa (mesmo os com 0) para mostrar rateio completo
-    const todos = Object.keys(CC_MAP).reduce((acc, cc) => {
-      if (!acc[cc]) {
-        acc[cc] = {
-          conta:    CC_MAP[cc].conta,
-          cc,
-          descricao: CC_MAP[cc].descricao,
-          qtde:      0
-        };
-      }
-      return acc;
-    }, { ...mapaCC });
-
-    return Object.values(todos).sort((a, b) => String(a.cc).localeCompare(String(b.cc))).map(r => ({
-      conta:    r.conta,
-      cc:       r.cc,
-      descricao: r.descricao,
-      qtde:     r.qtde,
-      soma:     r.qtde * valores.valorVascon,
-      pct:      total > 0 ? (r.qtde / total) : 0
+    return Object.values(mapa).sort((a, b) => a.cc.localeCompare(b.cc) || a.nome.localeCompare(b.nome)).map(({ cc, nome, lista }) => ({
+      Centro_Custo: cc,
+      Colaborador: nome,
+      Total_Refeicoes: lista.length,
+      Valor_Desconto_Funcionario: this._valorRef.desconto || 0,
+      Desconto_Total: lista.length * (this._valorRef.desconto || 0),
+      Periodo_Ini: this._periodo.ini,
+      Periodo_Fim: this._periodo.fim
     }));
-  }
+  },
 
-  function atualizarCards(pedidos, valores, filtros) {
-    const total    = pedidos.length;
-    const custo    = total * valores.valorVascon;
-    const desconto = total * valores.valorDesconto;
-    const cont = { principal:0, light:0, carne:0, massa:0, lanche:0 };
-    pedidos.forEach(p => { const op = getOpcao(p); if (cont[op] !== undefined) cont[op]++; });
+  _criarAbaRateio(wb, conf) {
+    const grupos = this._agruparPorCC(conf);
+    const nf = this._nfInformada();
+    const nfValor = nf === null ? 0 : nf;
+    const unit = this._valorRef.vascon || 0;
 
-    $("relTotalGeral").textContent    = total;
-    $("relCustoVascon").textContent   = moeda(custo);
-    $("relDescontoFolha").textContent = moeda(desconto);
-    $("relDiferencaNF").textContent   = filtros.nf ? moeda(filtros.nf - custo) : "—";
+    const aoa = [[
+      "Centro_Custo",
+      "Total_Refeicoes",
+      "Valor_Unitario_Vascon",
+      "Total_Rateado_Sistema",
+      "Percentual_Rateio",
+      "NF_Informada_Total",
+      "Rateio_NF",
+      "Diferenca_NF_vs_Sistema"
+    ]];
 
-    $("rel-principal").textContent = cont.principal;
-    $("rel-light").textContent     = cont.light;
-    $("rel-carne").textContent     = cont.carne;
-    $("rel-massa").textContent     = cont.massa;
-    $("rel-lanche").textContent    = cont.lanche;
-  }
+    grupos.forEach(({ cc, lista }) => {
+      aoa.push([cc, lista.length, unit, null, null, nfValor, null, null]);
+    });
 
-  function linhasDoTipo(resultado) {
-    if (resultado.filtros.tipo === "centro-custo") return resultado.centroCusto;
-    if (resultado.filtros.tipo === "colaborador")  return resultado.colaborador;
-    return resultado.resumoDia;
-  }
+    if (!grupos.length) aoa.push(["Sem dados", 0, unit, null, null, nfValor, null, null]);
 
-  function colunasDoTipo(tipo, linhas) {
-    // Remove chaves internas (_ccRaw, _conta)
-    if (linhas && linhas.length) return Object.keys(linhas[0]).filter(k => !k.startsWith("_"));
-    return COLUNAS_TIPO[tipo] || ["Sem dados"];
-  }
+    const totalRow = aoa.length + 1;
+    aoa.push(["TOTAL", null, unit, null, null, nfValor, null, null]);
 
-  function valorTela(valor) {
-    if (typeof valor === "number") {
-      // Monetário ou percentual
-      if (valor > 0 && valor < 1) return (valor * 100).toFixed(2).replace(".", ",") + "%";
-      return String(valor).replace(".", ",");
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const lastDataRow = aoa.length - 1;
+
+    for (let r = 2; r <= lastDataRow; r++) {
+      ws[`D${r}`] = { t: "n", f: `B${r}*C${r}` };
+      ws[`E${r}`] = { t: "n", f: `IF(SUM($B$2:$B$${lastDataRow})=0,0,B${r}/SUM($B$2:$B$${lastDataRow}))` };
+      ws[`G${r}`] = { t: "n", f: `F${r}*E${r}` };
+      ws[`H${r}`] = { t: "n", f: `G${r}-D${r}` };
     }
-    return valor ?? "";
-  }
 
-  function renderTabela(resultado) {
-    const linhas  = linhasDoTipo(resultado);
-    const colunas = colunasDoTipo(resultado.filtros.tipo, linhas);
-    const titulo  = TIPOS[resultado.filtros.tipo] || "Relatório";
+    ws[`B${totalRow}`] = { t: "n", f: `SUM(B2:B${lastDataRow})` };
+    ws[`D${totalRow}`] = { t: "n", f: `SUM(D2:D${lastDataRow})` };
+    ws[`E${totalRow}`] = { t: "n", f: `SUM(E2:E${lastDataRow})` };
+    ws[`G${totalRow}`] = { t: "n", f: `SUM(G2:G${lastDataRow})` };
+    ws[`H${totalRow}`] = { t: "n", f: `SUM(H2:H${lastDataRow})` };
 
-    $("relTituloTabela").textContent = titulo;
-    $("relHead").innerHTML = `<tr>${colunas.map(c => `<th>${c}</th>`).join("")}</tr>`;
+    ws["!cols"] = [
+      { wch: 34 }, { wch: 16 }, { wch: 22 }, { wch: 24 },
+      { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 24 }
+    ];
 
-    if (!linhas.length) {
-      $("relTableFinal").innerHTML = `<tr><td colspan="${colunas.length}" style="text-align:center;padding:2rem;color:rgba(143,170,210,0.4)">Sem dados no período.</td></tr>`;
+    XLSX.utils.book_append_sheet(wb, ws, "Rateio Vascon");
+  },
+
+  _criarAbaParametros(wb, conf) {
+    const nf = this._nfInformada();
+    const total = conf.length;
+    const unit = this._valorRef.vascon || 0;
+    const esperado = total * unit;
+
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Parametro", "Valor"],
+      ["Periodo inicial", this._periodo.ini],
+      ["Periodo final", this._periodo.fim],
+      ["Valor cadastrado", this._valorRef.titulo || ""],
+      ["Vigência valor", `${this._valorRef.inicio || ""} a ${this._valorRef.fim || ""}`],
+      ["Valor unitário Vascon", unit],
+      ["Valor desconto funcionário", this._valorRef.desconto || 0],
+      ["Total refeições confirmadas", total],
+      ["Total sistema Vascon", esperado],
+      ["NF Vascon informada", nf === null ? "" : nf],
+      ["Diferença NF x sistema", nf === null ? "" : nf - esperado]
+    ]);
+    ws["!cols"] = [{ wch: 30 }, { wch: 35 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Parametros");
+  },
+
+  async _exportar() {
+    if (typeof XLSX === "undefined") {
+      AdminUtils.toast("Biblioteca XLSX não carregou.", "error");
       return;
     }
 
-    $("relTableFinal").innerHTML = linhas.map(linha =>
-      `<tr>${colunas.map(c => `<td>${valorTela(linha[c])}</td>`).join("")}</tr>`
-    ).join("");
-  }
-
-  async function gerarRelatorioFinal(semanaId) {
     try {
-      await carregarDados(semanaId);
+      const ini = this._valAny("relDataIni") || this._periodo.ini;
+      const fim = this._valAny("relDataFim") || this._periodo.fim;
+      if (ini && fim && (ini !== this._periodo.ini || fim !== this._periodo.fim)) {
+        await this._buscar(ini, fim);
+      } else {
+        await this._carregarValorReferencia(this._periodo.ini, this._periodo.fim);
+      }
 
-      const filtros = getFiltros();
-      const pedidos = filtrarPedidos(filtros);
-      const valores = obterValorPeriodo(filtros.dataInicio, filtros.dataFim);
+      const tipo = this._valAny("relTipo") || "dia";
+      const conf = this._conf();
+      const linhas = this._linhasRelatorio(tipo, conf);
 
-      const resultado = {
-        filtros,
-        pedidos,
-        valores,
-        resumoDia:   montarResumoDia(filtros, pedidos),
-        centroCusto: montarCentroCusto(pedidos, valores, filtros.nf),
-        colaborador: montarColaborador(pedidos, valores),
-        rateio:      montarRateioVascon(pedidos, valores, filtros.nf)
-      };
+      if (!linhas.length) {
+        AdminUtils.toast("Nenhum dado para exportar.", "info");
+        return;
+      }
 
-      state.resultado = resultado;
-      atualizarCards(pedidos, valores, filtros);
-      renderTabela(resultado);
-    } catch (erro) {
-      console.error("Erro ao gerar relatório final:", erro);
-      if (typeof window.toast === "function") toast("Erro ao gerar relatório: " + (erro.message || erro), "error");
-      else alert("Erro ao gerar relatório: " + (erro.message || erro));
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(linhas);
+      ws["!cols"] = Object.keys(linhas[0] || {}).map(k => ({ wch: Math.max(14, String(k).length + 4) }));
+      XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
+
+      this._criarAbaRateio(wb, conf);
+      this._criarAbaParametros(wb, conf);
+
+      XLSX.writeFile(wb, `relatorio-vascon-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`);
+      AdminUtils.toast("Excel exportado com aba Rateio Vascon.", "success");
+    } catch (e) {
+      console.error("[Relatórios] exportar", e);
+      AdminUtils.toast("Erro ao exportar Relatórios: " + (e.message || e), "error");
     }
-  }
+  },
 
-  async function carregarExcelJS() {
-    if (window.ExcelJS) return;
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
-      s.onload = resolve;
-      s.onerror = () => reject(new Error("Não foi possível carregar ExcelJS."));
-      document.head.appendChild(s);
-    });
-  }
-
-  function borda(color = "FFCBD5E1") {
-    const b = { style: "thin", color: { argb: color } };
-    return { top: b, left: b, bottom: b, right: b };
-  }
-
-  // ── Exportação Excel com 2 abas ────────────────────────────────────────────
-  async function exportarRelatorioExcelFinal() {
-    if (!state.resultado) await gerarRelatorioFinal(semanaAtualFallback());
-    const resultado = state.resultado;
-    if (!resultado) return;
-
-    await carregarExcelJS();
-
-    const wb     = new ExcelJS.Workbook();
-    wb.creator   = "Homy Refeitório";
-
-    // ── ABA 1: Relatório principal ────────────────────────────────────────
-    const titulo  = TIPOS[resultado.filtros.tipo] || "Relatório";
-    const linhas  = linhasDoTipo(resultado);
-    const colunas = colunasDoTipo(resultado.filtros.tipo, linhas);
-    const totalCols = Math.max(colunas.length, 6);
-
-    const ws1 = wb.addWorksheet(titulo.substring(0, 31));
-
-    // Cabeçalho
-    const addHeader = (ws, text, row, cols, bgArgb, fontArgb) => {
-      ws.mergeCells(row, 1, row, cols);
-      const cell = ws.getCell(row, 1);
-      cell.value     = text;
-      cell.font      = { bold: true, size: row === 1 ? 14 : 11, color: { argb: fontArgb } };
-      cell.alignment = { horizontal: "center", vertical: "middle" };
-      cell.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
+  _bindControles() {
+    const bind = (id, ev, fn) => {
+      const el = document.getElementById(id);
+      if (el && !el.dataset.boundRel) {
+        el.dataset.boundRel = "1";
+        el.addEventListener(ev, fn);
+      }
     };
 
-    addHeader(ws1, `RELATÓRIO REFEITÓRIO HOMY — ${titulo.toUpperCase()}`, 1, totalCols, "FF0B1F3C", "FFFFFFFF");
-    addHeader(ws1, `Período: ${dataBR(resultado.filtros.dataInicio)} a ${dataBR(resultado.filtros.dataFim)}`, 2, totalCols, "FFC0281C", "FFFFFFFF");
-    addHeader(ws1, `Gerado em: ${new Date().toLocaleDateString("pt-BR")}`, 3, totalCols, "FFE8F1FF", "FF0B1F3C");
-    ws1.addRow([]);
-
-    // Resumo numérico
-    ws1.addRow(["Total de refeições", resultado.pedidos.length]);
-    ws1.addRow(["Valor unitário Vascon", resultado.valores.valorVascon]);
-    ws1.addRow(["Valor unitário desconto funcionário", resultado.valores.valorDesconto]);
-    if (resultado.filtros.nf) ws1.addRow(["NF Vascon recebida", resultado.filtros.nf]);
-    ws1.addRow([]);
-
-    // Header da tabela
-    const headerRow = ws1.addRow(colunas);
-    headerRow.eachCell(cell => {
-      cell.font      = { bold: true, color: { argb: "FFFFFFFF" } };
-      cell.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
-      cell.alignment = { horizontal: "center", wrapText: true };
-      cell.border    = borda();
-    });
-    ws1.getRow(headerRow.number).height = 30;
-
-    const moneyCols = ["Valor Vascon","Desconto funcionários","Rateio NF",
-                       "Valor unitário desconto","Total desconto em folha","Valor Vascon estimado"];
-
-    if (linhas.length) {
-      linhas.forEach((linha, idx) => {
-        const row = ws1.addRow(colunas.map(c => linha[c]));
-        row.eachCell((cell, colNumber) => {
-          const colName = colunas[colNumber - 1];
-          cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: idx % 2 === 0 ? "FFF3F6FB" : "FFFFFFFF" } };
-          cell.border = borda("FFD9E2F3");
-          if (moneyCols.includes(colName)) {
-            cell.numFmt = '"R$" #,##0.00';
-          } else if (colName === "Quantidade" || colName === "Total") {
-            cell.alignment = { horizontal: "center" };
-          }
-        });
-      });
-
-      // Linha de total
-      if (resultado.filtros.tipo !== "resumo-dia") {
-        ws1.addRow([]);
-        const totRow = ws1.addRow(["TOTAL", resultado.pedidos.length,
-          resultado.pedidos.length * resultado.valores.valorVascon,
-          resultado.pedidos.length * resultado.valores.valorDesconto,
-          resultado.filtros.nf || 0
-        ].slice(0, colunas.length));
-        totRow.eachCell(cell => {
-          cell.font   = { bold: true, color: { argb: "FFFFFFFF" } };
-          cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC0281C" } };
-          cell.border = borda();
-          cell.numFmt = '"R$" #,##0.00';
-        });
-      }
-    } else {
-      const row = ws1.addRow(["Sem dados no período."]);
-      row.getCell(1).font = { italic: true, color: { argb: "FF64748B" } };
-    }
-
-    ws1.columns.forEach(col => {
-      let max = 12;
-      col.eachCell({ includeEmpty: true }, cell => {
-        max = Math.max(max, String(cell.value || "").length + 2);
-      });
-      col.width = Math.min(max, 42);
+    bind("btnBuscarRelatorio", "click", async () => {
+      const ini = this._valAny("relDataIni");
+      const fim = this._valAny("relDataFim");
+      if (!ini || !fim) { AdminUtils.toast("Informe o período.", "error"); return; }
+      if (ini > fim) { AdminUtils.toast("Data início maior que fim.", "error"); return; }
+      await this._buscar(ini, fim);
     });
 
-    // ── ABA 2: Rateio Vascon ──────────────────────────────────────────────
-    const ws2 = wb.addWorksheet("Rateio Vascon");
+    bind("relTipo", "change", () => this._renderTipo());
+    bind("btnExportarRelatorio", "click", () => this._exportar());
 
-    // Título
-    ws2.mergeCells(1, 1, 1, 6);
-    const t1 = ws2.getCell(1, 1);
-    t1.value     = "RATEIO VASCON";
-    t1.font      = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
-    t1.alignment = { horizontal: "center", vertical: "middle" };
-    t1.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
-    ws2.getRow(1).height = 28;
-
-    // Competência
-    ws2.mergeCells(2, 1, 2, 6);
-    const t2 = ws2.getCell(2, 1);
-    t2.value     = `COMPETÊNCIA ${dataBR(resultado.filtros.dataInicio)} A ${dataBR(resultado.filtros.dataFim)}`;
-    t2.font      = { bold: true, color: { argb: "FFFFFFFF" } };
-    t2.alignment = { horizontal: "center" };
-    t2.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC0281C" } };
-
-    ws2.addRow([]);
-
-    // Valor unitário
-    ws2.getCell(4, 2).value  = "Valor Unitário";
-    ws2.getCell(4, 3).value  = resultado.valores.valorVascon;
-    ws2.getCell(4, 3).numFmt = '"R$" #,##0.00';
-    ws2.getCell(4, 3).font   = { bold: true };
-
-    ws2.addRow([]);
-
-    // Header rateio
-    const rateioHeader = ["CONTA", "C. DE CUSTO", "DESCRIÇÃO CENTRO CUSTO", "QTDE", "SOMA", "%"];
-    const hr = ws2.addRow(rateioHeader);
-    hr.eachCell(cell => {
-      cell.font      = { bold: true, color: { argb: "FFFFFFFF" } };
-      cell.fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
-      cell.alignment = { horizontal: "center", wrapText: true };
-      cell.border    = borda();
-    });
-    ws2.getRow(hr.number).height = 24;
-
-    let totalQtde = 0, totalSoma = 0;
-
-    (resultado.rateio || []).forEach((r, idx) => {
-      const row = ws2.addRow([
-        r.conta,
-        r.cc,
-        r.descricao,
-        r.qtde,
-        r.soma,
-        r.pct
-      ]);
-
-      totalQtde += r.qtde;
-      totalSoma += r.soma;
-
-      row.eachCell((cell, ci) => {
-        cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: idx % 2 === 0 ? "FFF3F6FB" : "FFFFFFFF" } };
-        cell.border = borda("FFD9E2F3");
-        if (ci === 5) cell.numFmt = '"R$" #,##0.00';
-        if (ci === 6) cell.numFmt = "0.00%";
-        if (ci === 4) cell.alignment = { horizontal: "center" };
-      });
-    });
-
-    // Linha total geral
-    ws2.addRow([]);
-    const totRateio = ws2.addRow(["", "", "Total geral", totalQtde, totalSoma, 1]);
-    totRateio.eachCell((cell, ci) => {
-      cell.font   = { bold: true, color: { argb: "FFFFFFFF" } };
-      cell.fill   = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B1F3C" } };
-      cell.border = borda();
-      if (ci === 5) cell.numFmt = '"R$" #,##0.00';
-      if (ci === 6) cell.numFmt = "0.00%";
-    });
-
-    // Largura das colunas da aba 2
-    ws2.getColumn(1).width = 14;
-    ws2.getColumn(2).width = 14;
-    ws2.getColumn(3).width = 44;
-    ws2.getColumn(4).width = 10;
-    ws2.getColumn(5).width = 18;
-    ws2.getColumn(6).width = 10;
-
-    // ── Download ──────────────────────────────────────────────────────────
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob   = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const nome   = `relatorio-refeitorio-${slug(titulo)}-${resultado.filtros.dataInicio}-a-${resultado.filtros.dataFim}.xlsx`;
-    const link   = document.createElement("a");
-    link.href     = URL.createObjectURL(blob);
-    link.download = nome;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    if (typeof window.toast === "function") toast("Relatório exportado com sucesso.", "success");
+    [
+      "relNfVascon", "relNFVascon", "relNfVasconRecebida", "relTotalNFVascon",
+      "relTotalNfVascon", "relTotalNF", "relTotalNf", "nfTotalRelatorio"
+    ].forEach(id => bind(id, "input", () => this._renderCards()));
   }
-
-  // ── Interface ─────────────────────────────────────────────────────────────
-  function criarTelaRelatorios() {
-    const mod = $("mod-relatorios");
-    if (!mod) return;
-
-    mod.dataset.advanced = "final-2026-06-10";
-
-    mod.innerHTML = `
-      <div class="section-header">
-        <div>
-          <div class="section-title">📈 Relatórios Gerenciais</div>
-          <div style="font-size:0.78rem;color:rgba(143,170,210,0.58);margin-top:0.25rem">
-            Quantidade, centro de custo, colaborador, valores e rateio Vascon.
-          </div>
-        </div>
-        <button class="btn-secondary" type="button" id="btnExportarRelatorioFinal">📥 Exportar Excel</button>
-      </div>
-
-      <div class="form-grid" style="margin-bottom:1rem;grid-template-columns:minmax(160px,1fr) minmax(160px,1fr) minmax(200px,1fr) minmax(220px,1fr) minmax(200px,1fr);align-items:end">
-        <div class="form-group">
-          <label class="form-label">Data inicial</label>
-          <input class="form-input" type="date" id="relDataInicio">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Data final</label>
-          <input class="form-input" type="date" id="relDataFim">
-        </div>
-        <div class="form-group">
-          <label class="form-label">NF Vascon recebida (R$)</label>
-          <input class="form-input" type="number" step="0.01" id="relValorNF" placeholder="Ex: 28487.68">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tipo de relatório</label>
-          <select class="form-select" id="tipoRelatorio">
-            <option value="resumo-dia">Resumo por dia</option>
-            <option value="centro-custo">Por centro de custo</option>
-            <option value="colaborador">Por colaborador</option>
-          </select>
-        </div>
-        <div class="form-group" style="display:flex;align-items:flex-end">
-          <button class="btn-primary" type="button" id="btnGerarRelatorioFinal" style="width:100%">🔍 Gerar relatório</button>
-        </div>
-      </div>
-
-      <div class="stats-grid" style="margin-bottom:1rem">
-        <div class="stat-card"><div class="stat-icon">🍽️</div><div class="stat-value" id="relTotalGeral">—</div><div class="stat-label">Total refeições</div></div>
-        <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value" id="relCustoVascon">—</div><div class="stat-label">Custo Vascon</div></div>
-        <div class="stat-card"><div class="stat-icon">💳</div><div class="stat-value" id="relDescontoFolha">—</div><div class="stat-label">Desconto funcionários</div></div>
-        <div class="stat-card"><div class="stat-icon">📄</div><div class="stat-value" id="relDiferencaNF">—</div><div class="stat-label">Diferença NF</div></div>
-        <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="rel-principal">0</div><div class="stat-label">Principal</div></div>
-        <div class="stat-card"><div class="stat-icon">🥦</div><div class="stat-value" id="rel-light">0</div><div class="stat-label">Light</div></div>
-        <div class="stat-card"><div class="stat-icon">🥩</div><div class="stat-value" id="rel-carne">0</div><div class="stat-label">Carne</div></div>
-        <div class="stat-card"><div class="stat-icon">🍝</div><div class="stat-value" id="rel-massa">0</div><div class="stat-label">Massa</div></div>
-        <div class="stat-card"><div class="stat-icon">🍔</div><div class="stat-value" id="rel-lanche">0</div><div class="stat-label">Lanche</div></div>
-      </div>
-
-      <div style="margin-top:1rem">
-        <div class="section-title" id="relTituloTabela" style="font-size:1rem;margin-bottom:0.8rem">Resumo por dia</div>
-        <div class="alert alert-info" style="margin-bottom:0.8rem;font-size:0.78rem">
-          💡 O Excel exportado contém 2 abas: <b>Relatório</b> e <b>Rateio Vascon</b> (no padrão para envio ao fiscal junto com a NF).
-        </div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead id="relHead"></thead>
-            <tbody id="relTableFinal"></tbody>
-          </table>
-        </div>
-      </div>
-    `;
-
-    const hoje      = new Date();
-    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    $("relDataInicio").value = toInputDate(primeiroDia);
-    $("relDataFim").value    = toInputDate(hoje);
-
-    $("btnGerarRelatorioFinal").onclick   = () => gerarRelatorioFinal(semanaAtualFallback());
-    $("btnExportarRelatorioFinal").onclick = exportarRelatorioExcelFinal;
-    $("tipoRelatorio").onchange           = () => gerarRelatorioFinal(semanaAtualFallback());
-  }
-
-  function getFiltros() {
-    return {
-      dataInicio: $("relDataInicio")?.value || toInputDate(new Date()),
-      dataFim:    $("relDataFim")?.value    || toInputDate(new Date()),
-      nf:         valorNumero($("relValorNF")?.value || 0),
-      tipo:       $("tipoRelatorio")?.value || "resumo-dia"
-    };
-  }
-
-  // ── Exposição pública ─────────────────────────────────────────────────────
-  window.loadRelatorios = async function (semanaId) {
-    criarTelaRelatorios();
-    await gerarRelatorioFinal(semanaId || semanaAtualFallback());
-  };
-
-  window.loadRelatoriosAvancados  = window.loadRelatorios;
-  window.exportarRelatorioCSV     = exportarRelatorioExcelFinal;
-  window.exportarCSV              = exportarRelatorioExcelFinal;
-  window.exportarExcel            = exportarRelatorioExcelFinal;
-
-  window.AdminRelatorios = {
-    carregar:     window.loadRelatorios,
-    gerar:        gerarRelatorioFinal,
-    exportarExcel: exportarRelatorioExcelFinal
-  };
-
-  // Intercepta cliques em "exportar" quando o módulo relatórios está ativo
-  document.addEventListener("click", event => {
-    const btn   = event.target.closest("button, a");
-    if (!btn) return;
-    const texto = normalizar(btn.innerText || "");
-    const ativo = $("mod-relatorios")?.classList.contains("active") ||
-      normalizar(document.querySelector(".nav-item.active")?.innerText || "").includes("relatorios");
-    if (ativo && texto.includes("exportar")) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      exportarRelatorioExcelFinal();
-      return false;
-    }
-  }, true);
-
-  document.addEventListener("click", event => {
-    const item  = event.target.closest("[data-module='relatorios'], .nav-item");
-    if (!item) return;
-    const texto = normalizar(`${item.innerText || ""} ${item.dataset?.module || ""}`);
-    if (texto.includes("relatorios")) setTimeout(() => window.loadRelatorios(semanaAtualFallback()), 120);
-  }, true);
-
-  document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
-      const ativo = document.querySelector(".nav-item.active");
-      if (normalizar(ativo?.dataset?.module || ativo?.innerText || "") === "relatorios") {
-        window.loadRelatorios(semanaAtualFallback());
-      }
-    }, 300);
-  });
-
-})();
+};
