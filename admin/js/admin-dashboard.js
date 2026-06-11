@@ -858,11 +858,19 @@ const AdminDashboard = window.AdminDashboard = {
     if (!valor) return "Sem setor";
     const v = String(valor).trim();
     if (!v || v === "—") return "Sem setor";
-    if (v.includes(" - ")) return v;
-    if (/^\d+$/.test(v)) {
-      const nome = this._CC_MAPA[v];
-      return nome ? `${v} - ${nome}` : v;
+
+    // Padrão oficial: CÓDIGO - NOME DO SETOR.
+    // Corrige entradas antigas como "ADM GERAL - 120101" para "120101 - ADM GERAL".
+    const codigo = (v.match(/\d{6}/) || [""])[0];
+    if (codigo) {
+      const nomeMapa = this._CC_MAPA[codigo];
+      if (nomeMapa) return `${codigo} - ${nomeMapa}`;
+
+      const partes = v.split(" - ").map(x => x.trim()).filter(Boolean);
+      const nome = partes.find(x => !/^\d{6}$/.test(x));
+      return nome ? `${codigo} - ${nome}` : codigo;
     }
+
     return v;
   },
 
@@ -936,18 +944,30 @@ const AdminDashboard = window.AdminDashboard = {
     const itens = [];
 
     if (pendentes.length > 0) {
-      const nomes = pendentes.slice(0, 18).map(c => `
-        <div style="display:flex;justify-content:space-between;gap:.7rem;padding:.35rem 0;border-top:1px solid rgba(255,255,255,.06)">
-          <span>${AdminUtils.esc(c.nome)}</span>
-          <span style="color:rgba(143,170,210,.65);text-align:right">${AdminUtils.esc(this._formatarCC(c.setor))}</span>
-        </div>`).join("");
-      const mais = pendentes.length > 18
-        ? `<div style="padding-top:.35rem;color:rgba(143,170,210,.7)">+ ${pendentes.length - 18} colaborador(es) na lista completa.</div>`
-        : "";
-      itens.push(`<div class="dashboard-alert-item">
-        ⚠️ <b>${pendentes.length}</b> colaborador(es) ainda não marcaram a refeição.
-        <div style="margin-top:.5rem">${nomes}${mais}</div>
-      </div>`);
+      const linhas = pendentes.map(c => `
+        <tr>
+          <td style="color:#ffd45a;font-weight:700">${AdminUtils.esc(c.nome)}</td>
+          <td style="color:rgba(255,220,120,.82);text-align:right">${AdminUtils.esc(this._formatarCC(c.setor))}</td>
+        </tr>`).join("");
+
+      itens.push(`
+        <div class="dashboard-alert-item" style="border:1px solid rgba(255,190,60,.32);background:rgba(255,180,0,.055);padding:.8rem;border-radius:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.7rem;margin-bottom:.65rem;color:#ffd45a;font-weight:700">
+            <span>⚠️ ${pendentes.length} colaborador(es) ainda não marcaram a refeição.</span>
+            <span class="badge badge-yellow">Alerta</span>
+          </div>
+          <div class="table-wrap" style="max-height:360px;overflow-y:auto;border-color:rgba(255,190,60,.24);background:rgba(255,180,0,.035)">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th style="color:#ffd45a">Nome</th>
+                  <th style="color:#ffd45a;text-align:right">Setor</th>
+                </tr>
+              </thead>
+              <tbody>${linhas}</tbody>
+            </table>
+          </div>
+        </div>`);
     }
 
     if (extrasPendentes > 0) {
