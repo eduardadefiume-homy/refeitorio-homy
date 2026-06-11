@@ -1,15 +1,15 @@
-// admin-relatorios.js — Relatórios gerenciais + rateio Vascon automático
-// Correções: load garantido, valor Vascon detectado da lista Valores de Refeição e Excel com aba Rateio Vascon
+// admin-relatorios.js — Relatórios gerenciais + Rateio Vascon automático
+// Versão limpa: valor Vascon detectado da lista, exportação Excel formatada com fórmulas
 
 const AdminRelatorios = window.AdminRelatorios = {
   _pedidos: [],
   _periodo: { ini: "", fim: "" },
   _valorRef: { vascon: 0, desconto: 0, titulo: "", inicio: "", fim: "" },
+  _colsValores: null,
 
   async load(semanaId) {
     try {
       await SP.init();
-
       const datas = SP.getWeekDates(semanaId);
       const ini = datas[0].toISOString().slice(0, 10);
       const fim = datas[4].toISOString().slice(0, 10);
@@ -49,8 +49,12 @@ const AdminRelatorios = window.AdminRelatorios = {
     if (el) el.textContent = valor ?? "—";
   },
 
+  _norm(v) {
+    return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  },
+
   _pick(obj, ...keys) {
-    for (const k of keys) {
+    for (const k of keys.filter(Boolean)) {
       const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
       if (v !== undefined && v !== null && String(v) !== "") return v;
     }
@@ -97,18 +101,76 @@ const AdminRelatorios = window.AdminRelatorios = {
     return iniA <= fimB && fimA >= iniB;
   },
 
+  async _resolverColunasValores() {
+    if (this._colsValores) return this._colsValores;
+
+    const fallback = {
+      titulo: "Title",
+      inicio: "Data_Inicio",
+      fim: "Data_Fim",
+      vascon: "Valor_Vascon",
+      desconto: "Valor_Desconto_Funcionário",
+      obs: "Observacao",
+      ativo: "Ativo"
+    };
+
+    try {
+      const spCols = typeof SP._resolveColunasValores === "function"
+        ? await SP._resolveColunasValores().catch(() => ({}))
+        : {};
+
+      const siteId = await SP.getSiteId();
+      const listId = await SP.getListId("Valores de Refeição");
+      const data = await SP.graph("GET", `/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`);
+      const cols = data?.value || [];
+
+      const byExact = (...cands) => {
+        const normCands = cands.filter(Boolean).map(x => this._norm(x));
+        const found = cols.find(c => normCands.includes(this._norm(c.name)) || normCands.includes(this._norm(c.displayName)));
+        return found?.name || null;
+      };
+      const byIncludes = (...terms) => {
+        const nt = terms.map(t => this._norm(t)).filter(Boolean);
+        const found = cols.find(c => {
+          const n = this._norm(`${c.name} ${c.displayName}`);
+          return nt.every(t => n.includes(t));
+        });
+        return found?.name || null;
+      };
+
+      // Prioriza o nome interno real vindo de /columns; o SharePoint pode codificar
+      // nomes com acento, e é esse nome que precisa ir em PATCH/leituras.
+      this._colsValores = {
+        titulo: byExact("Title", "Título", "Titulo") || spCols.titulo || fallback.titulo,
+        inicio: byExact("Data_Inicio", "Data Inicio", "Data início") || byIncludes("data", "inicio") || spCols.inicio || fallback.inicio,
+        fim: byExact("Data_Fim", "Data Fim") || byIncludes("data", "fim") || spCols.fim || fallback.fim,
+        vascon: byExact("Valor_Vascon", "Valor Vascon", "Vascon") || byIncludes("vascon") || spCols.vascon || fallback.vascon,
+        desconto: byExact("Valor_Desconto_Funcionário", "Valor_Desconto_Funcionario", "Desconto Funcionário", "Desconto Funcionario") || byIncludes("desconto", "funcionario") || spCols.desconto || fallback.desconto,
+        obs: byExact("Observacao", "Observação") || byIncludes("observ") || spCols.obs || fallback.obs,
+        ativo: byExact("Ativo") || spCols.ativo || fallback.ativo
+      };
+      return this._colsValores;
+    } catch (e) {
+      console.warn("[Relatórios] Falha ao resolver colunas de valores. Usando fallback.", e);
+      this._colsValores = fallback;
+      return this._colsValores;
+    }
+  },
+
   async _carregarValorReferencia(ini, fim) {
     try {
+      await this._resolverColunasValores();
+      const c = this._colsValores || {};
       const valores = await SP.getValoresRefeicao(false);
       const norm = valores.map(v => ({
         raw: v,
         id: v.id || "",
-        titulo: this._pick(v, "Title", "Titulo", "Título") || "Valor refeição",
-        inicio: this._dateISO(this._pick(v, "Data_Inicio", "DataInicio")),
-        fim: this._dateISO(this._pick(v, "Data_Fim", "DataFim")),
-        vascon: this._num(this._pick(v, "Valor_Vascon", "ValorVascon")),
-        desconto: this._num(this._pick(v, "Valor_Desconto_Funcionário", "Valor_Desconto_Funcionario", "Valor_Desconto", "Desconto")),
-        ativo: SP.isTrue ? SP.isTrue(this._pick(v, "Ativo")) : !!this._pick(v, "Ativo")
+        titulo: this._pick(v, c.titulo, "Title", "Titulo", "Título") || "Valor refeição",
+        inicio: this._dateISO(this._pick(v, c.inicio, "Data_Inicio", "DataInicio")),
+        fim: this._dateISO(this._pick(v, c.fim, "Data_Fim", "DataFim")),
+        vascon: this._num(this._pick(v, c.vascon, "Valor_Vascon", "ValorVascon")),
+        desconto: this._num(this._pick(v, c.desconto, "Valor_Desconto_Funcionário", "Valor_Desconto_Funcionario", "Valor_Desconto", "Desconto")),
+        ativo: SP.isTrue ? SP.isTrue(this._pick(v, c.ativo, "Ativo")) : !!this._pick(v, c.ativo, "Ativo")
       }));
 
       const escolhido =
@@ -129,11 +191,9 @@ const AdminRelatorios = window.AdminRelatorios = {
   _dataPedido(p) {
     const direta = this._dateISO(this._pick(p, "Data_Hora", "Data", "Data_Referencia"));
     if (direta) return direta;
-
     const semana = this._pick(p, "Semana_id", "Semana");
     const dia = this._pick(p, "Dia");
     if (semana && dia && SP.getDataRefBySemanaDia) return SP.getDataRefBySemanaDia(semana, dia);
-
     return "";
   },
 
@@ -146,30 +206,26 @@ const AdminRelatorios = window.AdminRelatorios = {
       await SP.init();
       await this._carregarValorReferencia(ini, fim);
       const todos = await SP.getItems("Pedidos");
-
       this._pedidos = todos.filter(p => {
         const d = this._dataPedido(p);
         return d && d >= ini && d <= fim;
       });
-
       this._renderCards();
       this._renderTipo();
     } catch (e) {
       console.error("[Relatórios] buscar", e);
-      if (wrap) {
-        wrap.innerHTML = `<div class="alert" style="background:rgba(220,50,50,.1);color:#ff8080">Erro: ${AdminUtils.esc(e.message || e)}</div>`;
-      }
+      if (wrap) wrap.innerHTML = `<div class="alert" style="background:rgba(220,50,50,.1);color:#ff8080">Erro: ${AdminUtils.esc(e.message || e)}</div>`;
     }
   },
 
   _isConf(p) {
-    const s = AdminUtils.norm(this._pick(p, "Status") || "");
+    const s = this._norm(this._pick(p, "Status") || "");
     return ["confirmado", "extra", "aprovado", "travado"].includes(s) ||
            (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")));
   },
 
   _opcao(p) {
-    return AdminUtils.norm(this._pick(p, "Opcao", "Opção") || "");
+    return this._norm(this._pick(p, "Opcao", "Opção") || "");
   },
 
   _countOp(lista, op) {
@@ -185,7 +241,8 @@ const AdminRelatorios = window.AdminRelatorios = {
       "relTotalNfVascon",
       "relTotalNF",
       "relTotalNf",
-      "nfTotalRelatorio"
+      "nfTotalRelatorio",
+      "nfTotalDigitado"
     ));
   },
 
@@ -216,7 +273,6 @@ const AdminRelatorios = window.AdminRelatorios = {
     const tipo = this._valAny("relTipo") || "dia";
     const wrap = document.getElementById("relConteudo");
     if (!wrap) return;
-
     const conf = this._conf();
     if (tipo === "dia") this._renderPorDia(conf, wrap);
     else if (tipo === "cc") this._renderPorCC(conf, wrap);
@@ -239,16 +295,14 @@ const AdminRelatorios = window.AdminRelatorios = {
       if (!mapa[d]) mapa[d] = [];
       mapa[d].push(p);
     });
-
     const sorted = Object.entries(mapa).sort(([a], [b]) => a.localeCompare(b));
     const unit = this._valorRef.vascon || 0;
-
     wrap.innerHTML = `
       <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">📅 Resumo por dia — período ${this._brDate(this._periodo.ini)} a ${this._brDate(this._periodo.fim)}</div>
       ${this._linhaResumoValor()}
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th><th>Valor Vascon</th></tr></thead>
+          <thead><tr><th>Data</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th><th>Total Vascon</th></tr></thead>
           <tbody>
             ${sorted.length ? sorted.map(([data, lista]) => `<tr>
               <td>${this._brDate(data)}</td>
@@ -274,16 +328,27 @@ const AdminRelatorios = window.AdminRelatorios = {
       </div>`;
   },
 
+  _agruparPorCC(conf) {
+    const mapa = {};
+    conf.forEach(p => {
+      const cc = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC";
+      if (!mapa[cc]) mapa[cc] = [];
+      mapa[cc].push(p);
+    });
+    return Object.entries(mapa)
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([cc, lista]) => ({ cc, lista }));
+  },
+
   _renderPorCC(conf, wrap) {
     const sorted = this._agruparPorCC(conf);
     const unit = this._valorRef.vascon || 0;
-
     wrap.innerHTML = `
       <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">🏢 Por centro de custo — período ${this._brDate(this._periodo.ini)} a ${this._brDate(this._periodo.fim)}</div>
       ${this._linhaResumoValor()}
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th><th>Rateio Vascon</th></tr></thead>
+          <thead><tr><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total</th><th>Total Vascon</th></tr></thead>
           <tbody>
             ${sorted.length ? sorted.map(({ cc, lista }) => `<tr>
               <td>${AdminUtils.esc(cc)}</td>
@@ -312,49 +377,30 @@ const AdminRelatorios = window.AdminRelatorios = {
 
     const sorted = Object.values(mapa).sort((a, b) => a.cc.localeCompare(b.cc) || a.nome.localeCompare(b.nome));
     const unitDesc = this._valorRef.desconto || 0;
-
     let ccAtual = null;
     const linhas = sorted.map(({ cc, nome, lista }) => {
       let cabecalho = "";
       if (cc !== ccAtual) {
         ccAtual = cc;
         const totalCC = sorted.filter(x => x.cc === cc).reduce((s, x) => s + x.lista.length, 0);
-        cabecalho = `<tr style="background:rgba(255,255,255,.06)">
-          <td colspan="5" style="font-weight:700;color:#fff">🏢 ${AdminUtils.esc(cc)} — ${totalCC} refeições</td>
-        </tr>`;
+        cabecalho = `<tr style="background:rgba(255,255,255,.06)"><td colspan="5" style="font-weight:700;color:#fff">🏢 ${AdminUtils.esc(cc)} — ${totalCC} refeições</td></tr>`;
       }
       return cabecalho + `<tr>
         <td style="padding-left:1.5rem">${AdminUtils.esc(nome)}</td>
         <td>${AdminUtils.esc(cc)}</td>
         <td>${lista.length}</td>
         <td>${this._money(lista.length * unitDesc)}</td>
-        <td style="font-size:.78rem;color:rgba(143,170,210,.6)">
-          ${[...new Set(lista.map(p => this._dataPedido(p)).filter(Boolean))].sort().map(d => this._brDate(d)).join(", ")}
-        </td>
+        <td style="font-size:.78rem;color:rgba(143,170,210,.6)">${[...new Set(lista.map(p => this._dataPedido(p)).filter(Boolean))].sort().map(d => this._brDate(d)).join(", ")}</td>
       </tr>`;
     }).join("");
 
     wrap.innerHTML = `
       <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">👤 Por CC e funcionário — período ${this._brDate(this._periodo.ini)} a ${this._brDate(this._periodo.fim)}</div>
       <div class="alert alert-info" style="margin-bottom:.8rem">Desconto funcionário aplicado: <b>${this._money(unitDesc)}</b> por refeição.</div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Total refeições</th><th>Desconto total</th><th>Datas</th></tr></thead>
-          <tbody>${linhas || `<tr><td colspan="5" class="empty-cell">Nenhum pedido no período.</td></tr>`}</tbody>
-        </table>
-      </div>`;
-  },
-
-  _agruparPorCC(conf) {
-    const mapa = {};
-    conf.forEach(p => {
-      const cc = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem CC";
-      if (!mapa[cc]) mapa[cc] = [];
-      mapa[cc].push(p);
-    });
-    return Object.entries(mapa)
-      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
-      .map(([cc, lista]) => ({ cc, lista }));
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Total refeições</th><th>Desconto total</th><th>Datas</th></tr></thead>
+        <tbody>${linhas || `<tr><td colspan="5" class="empty-cell">Nenhum pedido no período.</td></tr>`}</tbody>
+      </table></div>`;
   },
 
   _linhasRelatorio(tipo, conf) {
@@ -412,13 +458,150 @@ const AdminRelatorios = window.AdminRelatorios = {
     }));
   },
 
-  _criarAbaRateio(wb, conf) {
+  async _ensureExcelJS() {
+    if (window.ExcelJS) return true;
+    await new Promise((resolve, reject) => {
+      const ja = document.querySelector('script[data-exceljs="1"]');
+      if (ja) {
+        ja.addEventListener("load", resolve, { once: true });
+        ja.addEventListener("error", reject, { once: true });
+        return;
+      }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+      s.dataset.exceljs = "1";
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("Não foi possível carregar ExcelJS."));
+      document.head.appendChild(s);
+    });
+    return !!window.ExcelJS;
+  },
+
+  _downloadBuffer(buffer, filename) {
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  _styleWorksheet(ws, options = {}) {
+    const headerFill = "FF09213F";
+    const redFill = "FFC0281C";
+    const lightFill = "FFEAF1FF";
+    const borderColor = "FFB8C7DD";
+
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    ws.autoFilter = { from: "A1", to: ws.getRow(1).getCell(ws.columnCount).address };
+
+    ws.getRow(1).height = 24;
+    ws.getRow(1).eachCell(cell => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: headerFill } };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      cell.border = { bottom: { style: "thin", color: { argb: redFill } } };
+    });
+
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      row.eachCell(cell => {
+        cell.border = {
+          top: { style: "thin", color: { argb: borderColor } },
+          left: { style: "thin", color: { argb: borderColor } },
+          bottom: { style: "thin", color: { argb: borderColor } },
+          right: { style: "thin", color: { argb: borderColor } }
+        };
+        cell.alignment = { vertical: "middle" };
+      });
+      const first = String(row.getCell(1).value || "").toUpperCase();
+      if (first === "TOTAL") {
+        row.font = { bold: true };
+        row.eachCell(cell => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: lightFill } };
+        });
+      }
+    });
+
+    (options.currencyCols || []).forEach(col => ws.getColumn(col).numFmt = '"R$" #,##0.00');
+    (options.percentCols || []).forEach(col => ws.getColumn(col).numFmt = '0.00%');
+    (options.integerCols || []).forEach(col => ws.getColumn(col).numFmt = '0');
+
+    ws.columns.forEach((col, idx) => {
+      let max = 12;
+      col.eachCell({ includeEmpty: true }, cell => {
+        const v = cell.value?.formula ? cell.value.result : cell.value;
+        max = Math.max(max, String(v ?? "").length + 2);
+      });
+      col.width = Math.min(Math.max(max, idx === 0 ? 18 : 12), 42);
+    });
+  },
+
+  _addRelatorioSheet(wb, tipo, linhas) {
+    const ws = wb.addWorksheet("Relatorio", { properties: { tabColor: { argb: "FFC0281C" } } });
+    const headers = Object.keys(linhas[0] || {});
+    ws.addRow(headers);
+
+    linhas.forEach((obj, idx) => {
+      const row = ws.addRow(headers.map(h => obj[h]));
+      const r = row.number;
+      const totalCol = headers.indexOf("Total_Refeicoes") + 1;
+      const unitVasconCol = headers.indexOf("Valor_Unitario_Vascon") + 1;
+      const totalVasconCol = headers.indexOf("Total_Vascon") + 1;
+      const descUnitCol = headers.indexOf("Valor_Desconto_Funcionario") + 1;
+      const descTotalCol = headers.indexOf("Desconto_Total") + 1;
+
+      if (totalCol > 0 && unitVasconCol > 0 && totalVasconCol > 0) {
+        row.getCell(totalVasconCol).value = {
+          formula: `${ws.getColumn(totalCol).letter}${r}*${ws.getColumn(unitVasconCol).letter}${r}`,
+          result: obj.Total_Vascon
+        };
+      }
+      if (totalCol > 0 && descUnitCol > 0 && descTotalCol > 0) {
+        row.getCell(descTotalCol).value = {
+          formula: `${ws.getColumn(totalCol).letter}${r}*${ws.getColumn(descUnitCol).letter}${r}`,
+          result: obj.Desconto_Total
+        };
+      }
+    });
+
+    const totalRow = ws.addRow([]);
+    totalRow.getCell(1).value = "TOTAL";
+    headers.forEach((h, i) => {
+      const col = i + 1;
+      const letter = ws.getColumn(col).letter;
+      if (["Principal", "Light", "Carne", "Massa", "Lanche", "Total_Refeicoes", "Total_Vascon", "Desconto_Total"].includes(h)) {
+        const sum = linhas.reduce((acc, obj) => acc + Number(obj[h] || 0), 0);
+        totalRow.getCell(col).value = { formula: `SUM(${letter}2:${letter}${linhas.length + 1})`, result: sum };
+      }
+    });
+
+    const currencyCols = [];
+    ["Valor_Unitario_Vascon", "Total_Vascon", "Valor_Desconto_Funcionario", "Desconto_Total"].forEach(h => {
+      const i = headers.indexOf(h) + 1;
+      if (i > 0) currencyCols.push(i);
+    });
+    const integerCols = [];
+    ["Principal", "Light", "Carne", "Massa", "Lanche", "Total_Refeicoes"].forEach(h => {
+      const i = headers.indexOf(h) + 1;
+      if (i > 0) integerCols.push(i);
+    });
+
+    this._styleWorksheet(ws, { currencyCols, integerCols });
+    return ws;
+  },
+
+  _addRateioSheet(wb, conf) {
+    const ws = wb.addWorksheet("Rateio Vascon", { properties: { tabColor: { argb: "FF09213F" } } });
     const grupos = this._agruparPorCC(conf);
     const nf = this._nfInformada();
     const nfValor = nf === null ? 0 : nf;
     const unit = this._valorRef.vascon || 0;
 
-    const aoa = [[
+    ws.addRow([
       "Centro_Custo",
       "Total_Refeicoes",
       "Valor_Unitario_Vascon",
@@ -427,98 +610,100 @@ const AdminRelatorios = window.AdminRelatorios = {
       "NF_Informada_Total",
       "Rateio_NF",
       "Diferenca_NF_vs_Sistema"
-    ]];
+    ]);
 
-    grupos.forEach(({ cc, lista }) => {
-      aoa.push([cc, lista.length, unit, null, null, nfValor, null, null]);
-    });
+    if (!grupos.length) grupos.push({ cc: "Sem dados", lista: [] });
+    grupos.forEach(({ cc, lista }) => ws.addRow([cc, lista.length, unit, null, null, null, null, null]));
 
-    if (!grupos.length) aoa.push(["Sem dados", 0, unit, null, null, nfValor, null, null]);
+    const firstData = 2;
+    const lastData = grupos.length + 1;
+    const totalRow = lastData + 1;
+    ws.addRow(["TOTAL", null, unit, null, null, nfValor, null, null]);
 
-    const totalRow = aoa.length + 1;
-    aoa.push(["TOTAL", null, unit, null, null, nfValor, null, null]);
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const lastDataRow = aoa.length - 1;
-
-    for (let r = 2; r <= lastDataRow; r++) {
-      ws[`D${r}`] = { t: "n", f: `B${r}*C${r}` };
-      ws[`E${r}`] = { t: "n", f: `IF(SUM($B$2:$B$${lastDataRow})=0,0,B${r}/SUM($B$2:$B$${lastDataRow}))` };
-      ws[`G${r}`] = { t: "n", f: `F${r}*E${r}` };
-      ws[`H${r}`] = { t: "n", f: `G${r}-D${r}` };
+    for (let r = firstData; r <= lastData; r++) {
+      const totalSistema = Number(ws.getCell(`B${r}`).value || 0) * unit;
+      const percentual = grupos.reduce((s, g) => s + g.lista.length, 0) ? Number(ws.getCell(`B${r}`).value || 0) / grupos.reduce((s, g) => s + g.lista.length, 0) : 0;
+      const rateioNF = nfValor * percentual;
+      ws.getCell(`D${r}`).value = { formula: `B${r}*C${r}`, result: totalSistema };
+      ws.getCell(`E${r}`).value = { formula: `IF($B$${totalRow}=0,0,B${r}/$B$${totalRow})`, result: percentual };
+      ws.getCell(`F${r}`).value = { formula: `$F$${totalRow}`, result: nfValor };
+      ws.getCell(`G${r}`).value = { formula: `$F$${totalRow}*E${r}`, result: rateioNF };
+      ws.getCell(`H${r}`).value = { formula: `G${r}-D${r}`, result: rateioNF - totalSistema };
     }
 
-    ws[`B${totalRow}`] = { t: "n", f: `SUM(B2:B${lastDataRow})` };
-    ws[`D${totalRow}`] = { t: "n", f: `SUM(D2:D${lastDataRow})` };
-    ws[`E${totalRow}`] = { t: "n", f: `SUM(E2:E${lastDataRow})` };
-    ws[`G${totalRow}`] = { t: "n", f: `SUM(G2:G${lastDataRow})` };
-    ws[`H${totalRow}`] = { t: "n", f: `SUM(H2:H${lastDataRow})` };
+    ws.getCell(`B${totalRow}`).value = { formula: `SUM(B${firstData}:B${lastData})`, result: grupos.reduce((s, g) => s + g.lista.length, 0) };
+    ws.getCell(`D${totalRow}`).value = { formula: `SUM(D${firstData}:D${lastData})`, result: grupos.reduce((s, g) => s + g.lista.length, 0) * unit };
+    ws.getCell(`E${totalRow}`).value = { formula: `SUM(E${firstData}:E${lastData})`, result: 1 };
+    ws.getCell(`G${totalRow}`).value = { formula: `SUM(G${firstData}:G${lastData})`, result: nfValor };
+    ws.getCell(`H${totalRow}`).value = { formula: `SUM(H${firstData}:H${lastData})`, result: nfValor - (grupos.reduce((s, g) => s + g.lista.length, 0) * unit) };
 
-    ws["!cols"] = [
-      { wch: 34 }, { wch: 16 }, { wch: 22 }, { wch: 24 },
-      { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 24 }
-    ];
-
-    XLSX.utils.book_append_sheet(wb, ws, "Rateio Vascon");
+    this._styleWorksheet(ws, { currencyCols: [3, 4, 6, 7, 8], percentCols: [5], integerCols: [2] });
+    return ws;
   },
 
-  _criarAbaParametros(wb, conf) {
+  _addParametrosSheet(wb, conf) {
+    const ws = wb.addWorksheet("Parametros", { properties: { tabColor: { argb: "FF40D090" } } });
     const nf = this._nfInformada();
     const total = conf.length;
     const unit = this._valorRef.vascon || 0;
     const esperado = total * unit;
 
-    const ws = XLSX.utils.aoa_to_sheet([
-      ["Parametro", "Valor"],
-      ["Periodo inicial", this._periodo.ini],
-      ["Periodo final", this._periodo.fim],
-      ["Valor cadastrado", this._valorRef.titulo || ""],
-      ["Vigência valor", `${this._valorRef.inicio || ""} a ${this._valorRef.fim || ""}`],
-      ["Valor unitário Vascon", unit],
-      ["Valor desconto funcionário", this._valorRef.desconto || 0],
-      ["Total refeições confirmadas", total],
-      ["Total sistema Vascon", esperado],
-      ["NF Vascon informada", nf === null ? "" : nf],
-      ["Diferença NF x sistema", nf === null ? "" : nf - esperado]
-    ]);
-    ws["!cols"] = [{ wch: 30 }, { wch: 35 }];
-    XLSX.utils.book_append_sheet(wb, ws, "Parametros");
+    ws.addRow(["Parametro", "Valor"]);
+    ws.addRow(["Período inicial", this._periodo.ini]);
+    ws.addRow(["Período final", this._periodo.fim]);
+    ws.addRow(["Valor cadastrado", this._valorRef.titulo || ""]);
+    ws.addRow(["Vigência valor", `${this._valorRef.inicio || ""} a ${this._valorRef.fim || ""}`]);
+    ws.addRow(["Valor unitário Vascon", unit]);
+    ws.addRow(["Valor desconto funcionário", this._valorRef.desconto || 0]);
+    ws.addRow(["Total refeições confirmadas", total]);
+    ws.addRow(["Total sistema Vascon", { formula: "B6*B8", result: esperado }]);
+    ws.addRow(["NF Vascon informada", nf === null ? 0 : nf]);
+    ws.addRow(["Diferença NF x sistema", { formula: "B10-B9", result: nf === null ? -esperado : nf - esperado }]);
+    ws.addRow([]);
+    ws.addRow(["Memória de cálculo", ""]);
+    ws.addRow(["Total_Rateado_Sistema", "Total_Refeicoes * Valor_Unitario_Vascon"]);
+    ws.addRow(["Percentual_Rateio", "Total_Refeicoes do CC / Total_Refeicoes geral"]);
+    ws.addRow(["Rateio_NF", "NF_Informada_Total * Percentual_Rateio"]);
+    ws.addRow(["Diferenca_NF_vs_Sistema", "Rateio_NF - Total_Rateado_Sistema"]);
+
+    this._styleWorksheet(ws, { currencyCols: [2], integerCols: [] });
+    ws.getColumn(1).width = 34;
+    ws.getColumn(2).width = 46;
+    [6, 7, 9, 10, 11].forEach(r => ws.getCell(`B${r}`).numFmt = '"R$" #,##0.00');
+    ws.getRow(13).font = { bold: true };
+    return ws;
   },
 
   async _exportar() {
-    if (typeof XLSX === "undefined") {
-      AdminUtils.toast("Biblioteca XLSX não carregou.", "error");
-      return;
-    }
-
     try {
       const ini = this._valAny("relDataIni") || this._periodo.ini;
       const fim = this._valAny("relDataFim") || this._periodo.fim;
-      if (ini && fim && (ini !== this._periodo.ini || fim !== this._periodo.fim)) {
-        await this._buscar(ini, fim);
-      } else {
-        await this._carregarValorReferencia(this._periodo.ini, this._periodo.fim);
-      }
+      if (!ini || !fim) { AdminUtils.toast("Informe o período.", "error"); return; }
 
-      const tipo = this._valAny("relTipo") || "dia";
+      if (ini !== this._periodo.ini || fim !== this._periodo.fim) await this._buscar(ini, fim);
+      else await this._carregarValorReferencia(this._periodo.ini, this._periodo.fim);
+
       const conf = this._conf();
+      const tipo = this._valAny("relTipo") || "dia";
       const linhas = this._linhasRelatorio(tipo, conf);
+      if (!linhas.length) { AdminUtils.toast("Nenhum dado para exportar.", "info"); return; }
 
-      if (!linhas.length) {
-        AdminUtils.toast("Nenhum dado para exportar.", "info");
-        return;
-      }
+      await this._ensureExcelJS();
+      if (!window.ExcelJS) throw new Error("ExcelJS não carregou.");
 
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(linhas);
-      ws["!cols"] = Object.keys(linhas[0] || {}).map(k => ({ wch: Math.max(14, String(k).length + 4) }));
-      XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "Refeitório Homy";
+      wb.created = new Date();
+      wb.modified = new Date();
+      wb.calcProperties.fullCalcOnLoad = true;
 
-      this._criarAbaRateio(wb, conf);
-      this._criarAbaParametros(wb, conf);
+      this._addRelatorioSheet(wb, tipo, linhas);
+      this._addRateioSheet(wb, conf);
+      this._addParametrosSheet(wb, conf);
 
-      XLSX.writeFile(wb, `relatorio-vascon-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`);
-      AdminUtils.toast("Excel exportado com aba Rateio Vascon.", "success");
+      const buffer = await wb.xlsx.writeBuffer();
+      this._downloadBuffer(buffer, `relatorio-vascon-${tipo}-${this._periodo.ini}-${this._periodo.fim}.xlsx`);
+      AdminUtils.toast("Excel exportado com formatação e fórmulas.", "success");
     } catch (e) {
       console.error("[Relatórios] exportar", e);
       AdminUtils.toast("Erro ao exportar Relatórios: " + (e.message || e), "error");
@@ -547,7 +732,7 @@ const AdminRelatorios = window.AdminRelatorios = {
 
     [
       "relNfVascon", "relNFVascon", "relNfVasconRecebida", "relTotalNFVascon",
-      "relTotalNfVascon", "relTotalNF", "relTotalNf", "nfTotalRelatorio"
+      "relTotalNfVascon", "relTotalNF", "relTotalNf", "nfTotalRelatorio", "nfTotalDigitado"
     ].forEach(id => bind(id, "input", () => this._renderCards()));
   }
 };
