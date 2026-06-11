@@ -406,7 +406,7 @@ const AdminDashboard = window.AdminDashboard = {
 
     const setoresHojeMap = new Map();
     pedidosHojeProd.forEach(p => {
-      const setor = this._pick(p, "Centro_Custo", "Setor", "Departamento") || "Sem setor";
+      const setor = this._centroCustoPedido(p);
       setoresHojeMap.set(setor, (setoresHojeMap.get(setor) || 0) + 1);
     });
 
@@ -801,7 +801,7 @@ const AdminDashboard = window.AdminDashboard = {
     tbody.innerHTML = lista.slice(0, 60).map(p => {
       const id = AdminUtils.esc(p.id || "");
       const nome = AdminUtils.esc(this._pick(p, "Colaborador_nome", "Title", "Nome") || "—");
-      const setor = AdminUtils.esc(this._formatarCC(this._pick(p, "Centro_Custo", "Setor", "Departamento") || "—"));
+      const setor = AdminUtils.esc(this._formatarCC(this._centroCustoPedido(p)));
       const opcao = AdminUtils.esc(this._pick(p, "Opcao") || "—");
       const prato = AdminUtils.esc(this._pick(p, "Nome_Prato", "Descricao") || "—");
       const status = this._pick(p, "Status") || "Pendente";
@@ -861,7 +861,8 @@ const AdminDashboard = window.AdminDashboard = {
 
     // Padrão oficial: CÓDIGO - NOME DO SETOR.
     // Corrige entradas antigas como "ADM GERAL - 120101" para "120101 - ADM GERAL".
-    const codigo = (v.match(/\d{6}/) || [""])[0];
+    const match = v.match(/(\d{6})/);
+    const codigo = match ? match[1] : "";
     if (codigo) {
       const nomeMapa = this._CC_MAPA[codigo];
       if (nomeMapa) return `${codigo} - ${nomeMapa}`;
@@ -872,6 +873,18 @@ const AdminDashboard = window.AdminDashboard = {
     }
 
     return v;
+  },
+
+  _centroCustoPedido(p) {
+    const raw = this._pick(p, "Centro_Custo", "Setor", "Departamento");
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo") || "");
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Title", "Nome") || "");
+    const isExtra = this._isExtraPedido(p) || origem.includes("guarda") || origem.includes("extra") || nome.includes("guarda") || nome.includes("refeicao extra");
+    if ((!raw || String(raw).trim() === "—" || this._norm(raw).includes("sem")) && isExtra) {
+      return "120602 - PORTARIA";
+    }
+    if (origem.includes("guarda") || nome.includes("guarda")) return "120602 - PORTARIA";
+    return raw || "Sem setor";
   },
 
   _extrairSetorTotal(item) {
