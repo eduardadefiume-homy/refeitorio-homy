@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#040c1a">
 <link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
+<link rel="icon" type="image/png" sizes="64x64" href="icon-cozinha-64.png?v=cozinha-blue-20260611">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-cozinha-180.png?v=cozinha-blue-20260611">
+<link rel="manifest" href="manifest-cozinha.json?v=cozinha-blue-20260611">
+<meta name="theme-color" content="#031b3d">
 <title>Cozinha · Homy Química</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -278,6 +282,45 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   background:rgba(255,255,255,0.04);color:var(--muted);
   font-size:0.88rem;cursor:pointer;font-family:"Barlow",sans-serif;
 }
+
+
+/* POPUP DE CONFIRMAÇÃO DE RETIRADA */
+.modal-overlay{
+  align-items:center!important;
+  justify-content:center!important;
+  padding:1rem;
+}
+.modal{
+  max-width:460px!important;
+  border-radius:22px!important;
+  padding:1.25rem 1.2rem 1.25rem!important;
+  transform:scale(.94) translateY(10px)!important;
+  box-shadow:0 24px 80px rgba(0,0,0,.72), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.modal-overlay.open .modal{transform:scale(1) translateY(0)!important}
+.modal-handle{display:none!important}
+.modal-question{
+  display:flex;align-items:center;gap:.7rem;margin-bottom:1rem;
+  font-family:"Barlow Condensed",sans-serif;font-size:1.3rem;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:#fff;
+}
+.modal-question-icon{font-size:1.55rem}
+.modal-box{
+  border:1px solid rgba(60,140,255,.18);
+  background:rgba(255,255,255,.045);
+  border-radius:16px;
+  padding:.95rem 1rem;
+  margin-bottom:1rem;
+}
+.modal-nome{font-size:1.05rem!important;margin-bottom:.25rem!important}
+.modal-opcao{margin-bottom:0!important}
+.item.done{pointer-events:none;filter:none!important;opacity:.62!important}
+.item.done .name{text-decoration:line-through;text-decoration-thickness:1px;text-decoration-color:rgba(64,208,144,.65)}
+.item.done .badge{font-weight:800}
+
+
+.btn-confirm:disabled{opacity:.65;cursor:wait;filter:grayscale(.25)}
+
 </style>
 </head>
 <body>
@@ -370,11 +413,13 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 <!-- Modal confirmação -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
-    <div class="modal-handle"></div>
-    <div class="modal-nome" id="modalNome">—</div>
-    <div class="modal-opcao" id="modalOpcao">—</div>
+    <div class="modal-question"><span class="modal-question-icon">✅</span><span>Confirmar retirada?</span></div>
+    <div class="modal-box">
+      <div class="modal-nome" id="modalNome">—</div>
+      <div class="modal-opcao" id="modalOpcao">—</div>
+    </div>
     <div class="modal-actions">
-      <button class="btn-confirm" onclick="confirmarRetirada()">✓ Confirmar retirada</button>
+      <button class="btn-confirm" id="btnConfirmarRetirada" onclick="confirmarRetirada()">✓ Sim, confirmar retirada</button>
       <button class="btn-cancel" onclick="fecharModal()">Cancelar</button>
     </div>
   </div>
@@ -418,6 +463,7 @@ let pedidosHoje  = [];
 let checkinsHoje = [];
 let pedidoSelecionado = null;
 let cozinhaSyncTimer = null;
+let checkinsConfirmadosLocal = new Set();
 
 // ---- helpers ----
 function normalizar(v){ return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
@@ -433,14 +479,80 @@ function iniciais(nome){
   return (p[0][0] + (p.length > 1 ? p[p.length-1][0] : "")).toUpperCase();
 }
 
+function chaveCheckinLocal(semanaId, dia, pedido){
+  const cid = String(getColaboradorId(pedido) || "").trim();
+  const pid = String(getPedidoId(pedido) || "").trim();
+  const nome = normalizar(getNome(pedido));
+  return [semanaId, normalizar(dia), cid || pid || nome].join("|");
+}
+
+function carregarCheckinsLocais(semanaId, dia){
+  try {
+    const raw = localStorage.getItem("homy_cozinha_checkins_confirmados") || "[]";
+    const arr = JSON.parse(raw);
+    checkinsConfirmadosLocal = new Set((Array.isArray(arr) ? arr : []).filter(k =>
+      String(k).startsWith(`${semanaId}|${normalizar(dia)}|`)
+    ));
+  } catch(e) {
+    checkinsConfirmadosLocal = new Set();
+  }
+}
+
+function salvarCheckinLocal(semanaId, dia, pedido){
+  const chave = chaveCheckinLocal(semanaId, dia, pedido);
+  checkinsConfirmadosLocal.add(chave);
+  try {
+    const raw = localStorage.getItem("homy_cozinha_checkins_confirmados") || "[]";
+    const arr = JSON.parse(raw);
+    const set = new Set(Array.isArray(arr) ? arr : []);
+    set.add(chave);
+    localStorage.setItem("homy_cozinha_checkins_confirmados", JSON.stringify(Array.from(set).slice(-500)));
+  } catch(e) {
+    console.warn("Não foi possível manter confirmação local:", e);
+  }
+}
+
+function marcarPedidoEntregueLocal(semanaId, dia, pedido){
+  if (!pedido) return;
+  pedido._retirouLocal = true;
+  salvarCheckinLocal(semanaId, dia, pedido);
+
+  const cid = String(getColaboradorId(pedido) || "").trim();
+  const nome = String(getNome(pedido) || "").trim();
+  const pid = String(getPedidoId(pedido) || "").trim();
+  checkinsHoje.push({
+    Pedido_id: pid,
+    Colaborador_id: cid,
+    Colaborador_nome: nome,
+    Dia: dia,
+    Semana_id: semanaId,
+    Retirou: true,
+    _local: true
+  });
+}
+
 function isCheckinFeito(p){
+  if (p?._retirouLocal) return true;
+
+  const semanaId = semanaIdAtual();
+  const dia = diaAtual();
+  if (checkinsConfirmadosLocal.has(chaveCheckinLocal(semanaId, dia, p))) return true;
+
   const cid = String(getColaboradorId(p) || "").trim();
+  const pid = String(getPedidoId(p) || "").trim();
   const nome = normalizar(getNome(p));
+
   return checkinsHoje.some(c => {
     const cCid = String(itemValor(c,"Colaborador_id","colaborador_id") || "").trim();
+    const cPid = String(itemValor(c,"Pedido_id","pedido_id","PedidoId") || "").trim();
     const cNome = normalizar(itemValor(c,"Colaborador_nome","colaborador_nome","Nome","Title") || "");
-    const retirou = window.SP?.isTrue ? window.SP.isTrue(itemValor(c,"Retirou","retirou")) : itemValor(c,"Retirou","retirou") === true;
-    return retirou && ((cid && cCid && cCid === cid) || (nome && cNome && cNome === nome));
+    const retirouValor = itemValor(c,"Retirou","retirou","Confirmado","confirmado");
+    const retirou = window.SP?.isTrue ? window.SP.isTrue(retirouValor) : (retirouValor === true || String(retirouValor).toLowerCase() === "true" || String(retirouValor).toLowerCase() === "sim");
+    return retirou && (
+      (pid && cPid && cPid === pid) ||
+      (cid && cCid && cCid === cid) ||
+      (nome && cNome && cNome === nome)
+    );
   });
 }
 
@@ -585,6 +697,7 @@ async function sincronizar(){
   try {
     const semanaId = semanaIdAtual();
     const dia      = diaAtual();
+    carregarCheckinsLocais(semanaId, dia);
 
     await carregarCardapio(semanaId, dia);
 
@@ -703,7 +816,9 @@ function abrirModal(id){
   pedidoSelecionado = pedidosHoje.find(p => getPedidoId(p) === String(id));
   if (!pedidoSelecionado) return;
   document.getElementById("modalNome").textContent  = getNome(pedidoSelecionado);
-  document.getElementById("modalOpcao").textContent = getOpcao(pedidoSelecionado);
+  document.getElementById("modalOpcao").textContent = `Opção: ${getOpcao(pedidoSelecionado) || "—"}`;
+  const btn = document.getElementById("btnConfirmarRetirada");
+  if (btn) { btn.disabled = false; btn.textContent = "✓ Sim, confirmar retirada"; }
   document.getElementById("modalOverlay").classList.add("open");
 }
 
@@ -761,6 +876,7 @@ async function salvarCheckInCozinha(semanaId, pedido, dia, quem){
     Semana_id:             semanaId,
     Colaborador_id:        String(cid),
     Colaborador_nome:      nome,
+    Pedido_id:             String(getPedidoId(pedido) || ""),
     Dia:                   dia,
     Retirou:               true,
     Data_Hora_Retirada:    new Date().toISOString(),
@@ -776,17 +892,28 @@ async function salvarCheckInCozinha(semanaId, pedido, dia, quem){
 
 async function confirmarRetirada(){
   if (!pedidoSelecionado) return;
+
+  const btn = document.getElementById("btnConfirmarRetirada");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Confirmando..."; }
+
   try {
     const semanaId = semanaIdAtual();
     const dia      = diaAtual();
     const quem     = window.SP.getUserName ? window.SP.getUserName() : "Cozinha";
+    const pedido   = pedidoSelecionado;
 
-    await salvarCheckInCozinha(semanaId, pedidoSelecionado, dia, quem);
+    await salvarCheckInCozinha(semanaId, pedido, dia, quem);
 
+    // SharePoint confirmou: agora a interface trava imediatamente o colaborador.
+    marcarPedidoEntregueLocal(semanaId, dia, pedido);
     fecharModal();
     mostrarToast("Retirada confirmada");
-    await sincronizar();
+    renderLista();
+
+    // Sincroniza em segundo plano sem desfazer o travamento visual.
+    setTimeout(() => sincronizar().catch(console.warn), 900);
   } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = "✓ Sim, confirmar retirada"; }
     alert("Erro ao confirmar retirada: " + (e.message || e));
   }
 }
