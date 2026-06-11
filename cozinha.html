@@ -100,24 +100,79 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 .weekday{font-family:"Barlow Condensed";font-size:1.15rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase}
 .fulldate{font-size:0.78rem;color:var(--muted);letter-spacing:0.06em}
 
-.content{max-width:700px;margin:0 auto;padding:1rem 1rem 0}
+.content{max-width:980px;margin:0 auto;padding:1rem 1rem 0}
 
-/* cardápio do dia */
+/* cardápio do dia — cards iguais ao Cardápio do Dia */
 .cardapio{
-  display:flex;align-items:center;gap:0.9rem;
-  padding:0.85rem 1rem;border-radius:14px;
+  display:flex;align-items:flex-start;gap:0.9rem;
+  padding:1rem;border-radius:16px;
   background:rgba(40,100,200,0.08);border:1px solid rgba(60,140,255,0.14);
   margin-bottom:1rem;
+  box-shadow:0 2px 12px rgba(0,0,0,0.18);
 }
-.cardapio-icon{font-size:1.7rem;flex-shrink:0}
-.label{font-size:0.66rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:0.15rem}
-.cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4}
+.cardapio-icon{font-size:1.7rem;flex-shrink:0;margin-top:0.25rem}
+.label{font-size:0.66rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:0.65rem}
+.cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4;width:100%}
 
-.cardapio-options{display:flex;flex-wrap:wrap;gap:0.45rem;margin-top:0.35rem}
-.cardapio-opcao{display:inline-flex;align-items:center;gap:0.35rem;padding:4px 9px;border-radius:999px;background:rgba(26,58,110,0.55);border:1px solid rgba(60,140,255,0.22);font-size:0.72rem;color:rgba(210,230,255,0.92);max-width:100%}
-.cardapio-opcao b{font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:rgba(120,190,255,0.96)}
-.cardapio-opcao span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
-@media(max-width:520px){.cardapio{align-items:flex-start}.cardapio-options{flex-direction:column}.cardapio-opcao{width:100%}.cardapio-opcao span{max-width:100%}}
+.cozinha-cardapio-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:0.75rem;
+  width:100%;
+}
+.cozinha-op-card{
+  min-height:118px;
+  border-radius:15px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.045);
+  overflow:hidden;
+  padding:0.85rem 0.9rem;
+  display:flex;
+  flex-direction:column;
+  gap:0.55rem;
+  box-shadow:0 2px 10px rgba(0,0,0,0.18);
+}
+.cozinha-op-top{display:flex;align-items:flex-start;gap:0.55rem;flex-wrap:wrap}
+.cozinha-op-tag{
+  font-size:0.58rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;
+  padding:4px 8px;border-radius:6px;line-height:1;flex-shrink:0;
+  background:rgba(26,58,110,0.7);color:rgba(140,200,255,0.95);border:1px solid rgba(60,140,255,0.3);
+}
+.cozinha-op-tag.tag-principal{background:rgba(26,58,110,0.75);color:rgba(140,200,255,0.95);border-color:rgba(60,140,255,0.34)}
+.cozinha-op-tag.tag-light{background:rgba(16,110,90,0.55);color:rgba(80,220,160,0.95);border-color:rgba(16,160,120,0.35)}
+.cozinha-op-tag.tag-carne{background:rgba(192,40,28,0.45);color:rgba(255,160,140,0.95);border-color:rgba(192,40,28,0.38)}
+.cozinha-op-tag.tag-massa{background:rgba(100,60,10,0.65);color:rgba(255,200,100,0.95);border-color:rgba(180,120,20,0.35)}
+.cozinha-op-tag.tag-lanche{background:rgba(80,20,140,0.65);color:rgba(200,160,255,0.95);border-color:rgba(140,80,220,0.4)}
+.cozinha-op-name{font-size:0.95rem;font-weight:700;color:#fff;line-height:1.25;flex:1;min-width:120px}
+.cozinha-op-list{display:flex;flex-direction:column;gap:0.25rem;margin-top:0.05rem}
+.cozinha-op-detail{font-size:0.78rem;color:rgba(185,210,245,0.74);line-height:1.35;display:flex;gap:0.38rem;align-items:flex-start}
+.cozinha-op-detail::before{content:"·";color:rgba(192,40,28,0.78);font-size:1rem;line-height:1;flex-shrink:0;margin-top:0.1rem}
+.cozinha-op-aviso{
+  margin-top:auto;
+  padding:0.5rem 0.6rem;
+  border-radius:9px;
+  background:rgba(255,180,0,0.07);
+  border:1px solid rgba(255,200,80,0.15);
+  font-size:0.72rem;
+  color:rgba(255,215,130,0.85);
+  line-height:1.45;
+}
+.cozinha-cardapio-vazio{
+  padding:0.75rem 0.9rem;
+  border-radius:12px;
+  background:rgba(255,180,0,0.06);
+  border:1px solid rgba(255,200,80,0.14);
+  color:rgba(255,215,130,0.9);
+}
+@media(max-width:720px){
+  .content{max-width:100%;padding:0.9rem 0.8rem 0}
+  .cardapio{flex-direction:column;gap:0.65rem}
+  .cozinha-cardapio-grid{grid-template-columns:1fr}
+}
+@media(min-width:721px) and (max-width:1020px){
+  .content{max-width:92vw}
+  .cozinha-cardapio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 
 /* busca */
 .search{position:relative;margin-bottom:0.9rem}
@@ -410,6 +465,23 @@ function atualizarData(){
   document.getElementById("fulldate").textContent = d.getDate() + " de " + meses[d.getMonth()];
 }
 
+function detalhesCardapio(item){
+  const bruto = itemValor(item, "Detalhes", "detalhes", "Descricao", "Descrição", "Observacao", "observacao") || "";
+  return String(bruto)
+    .split(/\r?\n|•|;/g)
+    .map(x => x.replace(/^[-–—·\s]+/, "").trim())
+    .filter(Boolean);
+}
+
+function avisoOpcaoCardapio(opcao){
+  const op = normalizar(opcao);
+  if (op === "light") return "A opção Light substitui o prato principal completo.";
+  if (op === "carne") return "A opção Carne substitui a carne do prato principal.";
+  if (op === "massa") return "A opção Massa substitui a carne do prato principal.";
+  if (op === "lanche") return "Opção disponível conforme regra do cardápio.";
+  return "";
+}
+
 async function carregarCardapio(semanaId, dia){
   const el = document.getElementById("cardapioHoje");
   try {
@@ -419,7 +491,7 @@ async function carregarCardapio(semanaId, dia){
     const labels = { principal:"Principal", light:"Light", carne:"Carne", massa:"Massa", lanche:"Lanche" };
 
     if (!hoje.length) {
-      el.textContent = "Cardápio não cadastrado";
+      el.innerHTML = `<div class="cozinha-cardapio-vazio">Cardápio não cadastrado para hoje.</div>`;
       return;
     }
 
@@ -430,14 +502,29 @@ async function carregarCardapio(semanaId, dia){
     const outros = hoje.filter(i => !ordem.includes(normalizar(itemValor(i,"Opcao","opcao"))));
     const final = porOpcao.concat(outros);
 
-    el.innerHTML = `<div class="cardapio-options">${final.map(i => {
+    el.innerHTML = `<div class="cozinha-cardapio-grid">${final.map(i => {
       const op = normalizar(itemValor(i,"Opcao","opcao")) || "opcao";
+      const label = labels[op] || itemValor(i,"Opcao","opcao") || "Opção";
       const nome = itemValor(i,"Nome_Prato","nome_prato","Title") || "Prato cadastrado";
-      return `<div class="cardapio-opcao"><b>${esc(labels[op] || op)}</b><span>${esc(nome)}</span></div>`;
+      const detalhes = detalhesCardapio(i);
+      const aviso = avisoOpcaoCardapio(op);
+      const detalhesHtml = detalhes.length
+        ? `<div class="cozinha-op-list">${detalhes.map(d => `<div class="cozinha-op-detail">${esc(d)}</div>`).join("")}</div>`
+        : "";
+      const avisoHtml = aviso ? `<div class="cozinha-op-aviso">ℹ️ ${esc(aviso)}</div>` : "";
+
+      return `<article class="cozinha-op-card">
+        <div class="cozinha-op-top">
+          <span class="cozinha-op-tag tag-${esc(op)}">${esc(label)}</span>
+          <div class="cozinha-op-name">${esc(nome)}</div>
+        </div>
+        ${detalhesHtml}
+        ${avisoHtml}
+      </article>`;
     }).join("")}</div>`;
   } catch(e) {
     console.warn("Cardápio cozinha:", e);
-    if (el) el.textContent = "Cardápio indisponível";
+    if (el) el.innerHTML = `<div class="cozinha-cardapio-vazio">Cardápio indisponível.</div>`;
   }
 }
 
