@@ -434,8 +434,14 @@ function iniciais(nome){
 }
 
 function isCheckinFeito(p){
-  const cid = String(getColaboradorId(p));
-  return checkinsHoje.some(c => String(itemValor(c,"Colaborador_id")) === cid && c.Retirou === true);
+  const cid = String(getColaboradorId(p) || "").trim();
+  const nome = normalizar(getNome(p));
+  return checkinsHoje.some(c => {
+    const cCid = String(itemValor(c,"Colaborador_id","colaborador_id") || "").trim();
+    const cNome = normalizar(itemValor(c,"Colaborador_nome","colaborador_nome","Nome","Title") || "");
+    const retirou = window.SP?.isTrue ? window.SP.isTrue(itemValor(c,"Retirou","retirou")) : itemValor(c,"Retirou","retirou") === true;
+    return retirou && ((cid && cCid && cCid === cid) || (nome && cNome && cNome === nome));
+  });
 }
 
 function isAusente(p){
@@ -706,15 +712,77 @@ function fecharModal(){
   document.getElementById("modalOverlay").classList.remove("open");
 }
 
+async function salvarCheckInCozinha(semanaId, pedido, dia, quem){
+  if (!window.SP) throw new Error("sharepoint.js não carregou.");
+
+  const cid  = String(getColaboradorId(pedido) || "").trim();
+  const nome = String(getNome(pedido) || "").trim();
+
+  if (!cid || !nome) {
+    throw new Error("Pedido sem colaborador válido para registrar retirada.");
+  }
+
+  // Compatibilidade com versões diferentes do sharepoint.js.
+  // Algumas versões têm saveCheckIn/registrarCheckIn; outras têm apenas CRUD genérico.
+  if (typeof window.SP.saveCheckIn === "function") {
+    return window.SP.saveCheckIn(semanaId, cid, nome, dia, quem);
+  }
+
+  if (typeof window.SP.registrarCheckIn === "function") {
+    return window.SP.registrarCheckIn(semanaId, cid, nome, dia, quem);
+  }
+
+  if (typeof window.SP.createItem !== "function") {
+    throw new Error("sharepoint.js não possui createItem para gravar CheckIn.");
+  }
+
+  let existentes = [];
+  try {
+    if (typeof window.SP.getCheckIn === "function") {
+      existentes = await window.SP.getCheckIn(semanaId, dia);
+    } else if (typeof window.SP.getItems === "function") {
+      const todos = await window.SP.getItems("CheckIn");
+      existentes = (todos || []).filter(i =>
+        String(itemValor(i,"Semana_id","semana_id") || "") === String(semanaId) &&
+        normalizar(itemValor(i,"Dia","dia") || "") === normalizar(dia)
+      );
+    }
+  } catch(e) {
+    console.warn("CheckIn existente ignorado; será criado novo registro:", e.message || e);
+    existentes = [];
+  }
+
+  const encontrado = (existentes || []).find(i =>
+    String(itemValor(i,"Colaborador_id","colaborador_id") || "") === String(cid)
+  );
+
+  const fields = {
+    Title:                 `${semanaId}-${cid}-${dia}`,
+    Semana_id:             semanaId,
+    Colaborador_id:        String(cid),
+    Colaborador_nome:      nome,
+    Dia:                   dia,
+    Retirou:               true,
+    Data_Hora_Retirada:    new Date().toISOString(),
+    Confirmado_Por:        quem
+  };
+
+  if (encontrado?.id && typeof window.SP.updateItem === "function") {
+    return window.SP.updateItem("CheckIn", encontrado.id, fields);
+  }
+
+  return window.SP.createItem("CheckIn", fields);
+}
+
 async function confirmarRetirada(){
   if (!pedidoSelecionado) return;
   try {
     const semanaId = semanaIdAtual();
     const dia      = diaAtual();
-    const cid      = getColaboradorId(pedidoSelecionado);
-    const nome     = getNome(pedidoSelecionado);
     const quem     = window.SP.getUserName ? window.SP.getUserName() : "Cozinha";
-    await window.SP.registrarCheckIn(semanaId, cid, nome, dia, quem);
+
+    await salvarCheckInCozinha(semanaId, pedidoSelecionado, dia, quem);
+
     fecharModal();
     mostrarToast("Retirada confirmada");
     await sincronizar();
