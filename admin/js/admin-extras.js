@@ -1,134 +1,60 @@
 // admin-extras.js — Extras / Visitantes do Admin Homy
-// CC automático por tipo: Guarda/Investigador → Portaria, outros → ADM Geral
-// Prestador → Luana escolhe CC da lista ou digita manualmente
+// Correção: Guarda/Extras entram no centro de custo da Portaria e criam pedido correspondente.
 
 const AdminExtras = window.AdminExtras = {
-
   _lista: [],
-  _ccsDisponiveis: [],
-
-  // CC automático por tipo de extra (formato NOME - CÓDIGO)
-  CC_POR_TIPO: {
-    "guarda":       "PORTARIA - 120602",
-    "investigador": "PORTARIA - 120602",
-    "visitante":    "ADM GERAL - 120101",
-    "motorista":    "ADM GERAL - 120101",
-    "marmita":      "ADM GERAL - 120101",
-    "prestador":    "" // dinâmico — Luana escolhe
-  },
+  PORTARIA_CC: "120602 - PORTARIA",
 
   async load(semanaId) {
-    await this._carregarCCs();
     this._bindFiltros(semanaId);
     this._bindBotoes(semanaId);
     await this._carregar(semanaId);
   },
 
-  // Mapa oficial: código → nome (plano de contas Homy)
-  CC_MAPA: {
-    "110101": "DIRETORIA PRESIDENCIAL",
-    "110201": "DIRETORIA ADMINISTRATIVA",
-    "110202": "DIRETORIA DE PRODUTOS",
-    "120101": "ADM GERAL",
-    "120102": "CUSTOS",
-    "120103": "LEGALIZAÇÃO",
-    "120201": "CONTABILIDADE",
-    "120202": "FISCAL",
-    "120301": "FINANCEIRO",
-    "120401": "RECURSOS HUMANOS",
-    "120402": "DEPARTAMENTO PESSOAL",
-    "120501": "TI",
-    "120601": "RECEPÇÃO",
-    "120602": "PORTARIA",
-    "120603": "ASSEIO E CONSERVAÇÃO",
-    "120604": "JARDINAGEM",
-    "150101": "SUPRIMENTOS",
-    "160101": "CONTROLADORIA E COMPLIANCE",
-    "160102": "ADM CONTRATOS",
-    "170101": "SGI",
-    "180101": "P&D",
-    "190101": "PATIO EXTERNO",
-    "220101": "ADM VENDAS",
-    "220201": "COML INTERNO - SUPORTE",
-    "220202": "COML INTERNO - ATIVO",
-    "220301": "COML EXTERNO - CLT",
-    "220302": "COML EXTERNO - REPRESENTANTE",
-    "230101": "SUPORTE TECNICO INDUSTRIAL",
-    "230102": "SUPORTE TECNICO OBRAS/INFRA",
-    "240101": "MARKETING",
-    "250101": "FATURAMENTO",
-    "250102": "LOGISTICA",
-    "250103": "EXPEDIÇÃO",
-    "320101": "PRODUÇÃO",
-    "320201": "ENVASE MANUAL",
-    "320202": "ENVASE AUTOMATICO",
-    "320301": "LABORATORIO E CONTROLE QUALIDADE",
-    "360101": "APOIO A PRODUÇÃO",
-    "360102": "PCP",
-    "360201": "MANUTENÇÃO",
-    "360301": "ALMOXARIFADO DE INSUMOS"
+  _norm(v) {
+    return String(v || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
   },
 
-  // Normaliza um valor de CC para o formato "NOME - CÓDIGO"
-  _normalizarCC(valor) {
-    if (!valor) return null;
-    const v = String(valor).trim();
-    // Se já está no formato "NOME - CÓDIGO", retorna como está
-    if (v.includes(" - ")) return v;
-    // Se é só código numérico, busca o nome no mapa
-    if (/^\d+$/.test(v)) {
-      const nome = this.CC_MAPA[v];
-      return nome ? `${nome} - ${v}` : null; // descarta códigos desconhecidos
+  _pick(obj, ...keys) {
+    for (const k of keys) {
+      const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
+      if (v !== undefined && v !== null && String(v) !== "") return v;
     }
-    // É um nome — busca o código correspondente
-    const entrada = Object.entries(this.CC_MAPA).find(([, n]) => n === v.toUpperCase());
-    return entrada ? `${entrada[1]} - ${entrada[0]}` : v;
+    return "";
   },
 
-  // Carrega CCs distintos da lista de Colaboradores + fixos do mapa oficial
-  async _carregarCCs() {
-    try {
-      await SP.init();
-      const colabs = await SP.getTodosColaboradores().catch(() => []);
+  _esc(v) {
+    return AdminUtils.esc ? AdminUtils.esc(v) : String(v ?? "");
+  },
 
-      // Normaliza CCs vindos do SharePoint
-      const ccsDoSP = colabs
-        .map(c => this._normalizarCC(SP.pick(c, "Centro_Custo") || ""))
-        .filter(Boolean);
+  _tipoPortaria(tipo, nome = "") {
+    const t = this._norm(`${tipo} ${nome}`);
+    return t.includes("guarda") || t.includes("extra") || t.includes("visitante") || t.includes("motorista") || t.includes("prestador") || t.includes("marmita");
+  },
 
-      // CCs fixos do mapa oficial no formato "NOME - CÓDIGO"
-      const ccsFixos = Object.entries(this.CC_MAPA)
-        .map(([cod, nome]) => `${nome} - ${cod}`);
-
-      // Mescla sem duplicar, ordena por nome
-      const todos = [...new Set([...ccsFixos, ...ccsDoSP])]
-        .sort((a, b) => a.localeCompare(b, "pt-BR"));
-
-      this._ccsDisponiveis = todos;
-    } catch (e) {
-      // Fallback: só os fixos
-      this._ccsDisponiveis = Object.entries(this.CC_MAPA)
-        .map(([cod, nome]) => `${nome} - ${cod}`)
-        .sort((a, b) => a.localeCompare(b, "pt-BR"));
-    }
+  _centroCustoPorTipo(tipo, nome = "") {
+    // Refeições extras, Guarda e visitantes entram no rateio da Portaria.
+    return this._tipoPortaria(tipo, nome) ? this.PORTARIA_CC : this.PORTARIA_CC;
   },
 
   async _carregar(semanaId) {
     const tbody = document.getElementById("extrasTable");
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Carregando...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Carregando...</td></tr>`;
 
     try {
       await SP.init();
-      const todos = await SP.getExtras(semanaId);
+      const todos = typeof SP.getExtras === "function" ? await SP.getExtras(semanaId) : await SP.getItems("Extras");
 
-      // Remove duplicatas de extra automático — mantém só 1 por dia
       const seenAuto = new Set();
-      this._lista = todos.filter(e => {
-        const norm = v => AdminUtils.norm(v);
-        const nome  = norm(SP.pick(e, "Nome", "Title") || "");
-        const tipo  = norm(SP.pick(e, "tipo", "Tipo")  || "");
-        const dia   = norm(SP.pick(e, "Dia")           || "");
+      this._lista = (todos || []).filter(e => {
+        const nome = this._norm(this._pick(e, "Nome", "Title") || "");
+        const tipo = this._norm(this._pick(e, "tipo", "Tipo") || "");
+        const dia = this._norm(this._pick(e, "Dia") || "");
         const isAuto = nome.includes("refeicaoextra") || (nome.includes("extra") && tipo.includes("extra"));
         if (isAuto) {
           const k = `auto-${dia}`;
@@ -140,15 +66,15 @@ const AdminExtras = window.AdminExtras = {
 
       const diaOrd = { segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5 };
       this._lista.sort((a, b) => {
-        const da = diaOrd[AdminUtils.norm(SP.pick(a, "Dia"))] || 9;
-        const db = diaOrd[AdminUtils.norm(SP.pick(b, "Dia"))] || 9;
+        const da = diaOrd[this._norm(this._pick(a, "Dia"))] || 9;
+        const db = diaOrd[this._norm(this._pick(b, "Dia"))] || 9;
         if (da !== db) return da - db;
-        return AdminUtils.norm(SP.pick(a, "tipo")).localeCompare(AdminUtils.norm(SP.pick(b, "tipo")));
+        return this._norm(this._pick(a, "tipo", "Tipo")).localeCompare(this._norm(this._pick(b, "tipo", "Tipo")), "pt-BR");
       });
 
       this._render();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-cell" style="color:#ff8080">Erro: ${AdminUtils.esc(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell" style="color:#ff8080">Erro: ${this._esc(e.message || e)}</td></tr>`;
     }
   },
 
@@ -156,39 +82,40 @@ const AdminExtras = window.AdminExtras = {
     const tbody = document.getElementById("extrasTable");
     if (!tbody) return;
 
-    const txt  = AdminUtils.norm(AdminUtils.getVal("fExtraTexto"));
-    const dia  = AdminUtils.norm(AdminUtils.getVal("fExtraDia"));
-    const tipo = AdminUtils.norm(AdminUtils.getVal("fExtraTipo"));
+    const txt = this._norm(AdminUtils.getVal("fExtraTexto"));
+    const dia = this._norm(AdminUtils.getVal("fExtraDia"));
+    const tipo = this._norm(AdminUtils.getVal("fExtraTipo"));
 
     const lista = this._lista.filter(e => {
-      const all = AdminUtils.norm([
-        SP.pick(e, "Nome", "Title"), SP.pick(e, "Observacao"),
-        SP.pick(e, "tipo", "Tipo"), SP.pick(e, "Dia"), SP.pick(e, "Centro_Custo")
+      const all = this._norm([
+        this._pick(e, "Nome", "Title"),
+        this._pick(e, "Observacao"),
+        this._pick(e, "tipo", "Tipo"),
+        this._pick(e, "Dia"),
+        this._pick(e, "Centro_Custo", "Setor")
       ].join(" "));
       return (!txt || all.includes(txt)) &&
-             (!dia  || AdminUtils.norm(SP.pick(e, "Dia"))            === dia)  &&
-             (!tipo || AdminUtils.norm(SP.pick(e, "tipo", "Tipo")).includes(tipo));
+             (!dia || this._norm(this._pick(e, "Dia")) === dia) &&
+             (!tipo || this._norm(this._pick(e, "tipo", "Tipo")).includes(tipo));
     });
 
     if (!lista.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Nenhum extra encontrado.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Nenhum extra encontrado.</td></tr>`;
       return;
     }
 
     tbody.innerHTML = lista.map(e => {
-      const id   = AdminUtils.esc(e.id || "");
-      const nome = AdminUtils.esc(SP.pick(e, "Nome", "Title") || "Extra");
-      const tipo = AdminUtils.esc(SP.pick(e, "tipo", "Tipo")  || "—");
-      const dia  = AdminUtils.esc(SP.pick(e, "Dia")           || "—");
-      const opc  = AdminUtils.esc(SP.pick(e, "Opcao")         || "principal");
-      const cc   = AdminUtils.esc(SP.pick(e, "Centro_Custo")  || "—");
-      const obs  = AdminUtils.esc(SP.pick(e, "Observacao")    || "—");
+      const id = this._esc(e.id || "");
+      const nome = this._esc(this._pick(e, "Nome", "Title") || "Extra");
+      const tipo = this._esc(this._pick(e, "tipo", "Tipo") || "—");
+      const dia = this._esc(this._pick(e, "Dia") || "—");
+      const opc = this._esc(this._pick(e, "Opcao") || "principal");
+      const obs = this._esc(this._pick(e, "Observacao") || "—");
       return `<tr>
         <td>${nome}</td>
         <td><span class="badge badge-yellow">${tipo}</span></td>
         <td>${dia}</td>
         <td><span class="badge badge-blue">${opc}</span></td>
-        <td><span class="badge badge-blue" style="background:rgba(64,208,144,.15);color:#40d090;border-color:rgba(64,208,144,.25)">${cc}</span></td>
         <td style="font-size:.78rem;color:rgba(143,170,210,.7)">${obs}</td>
         <td><div class="table-actions">
           <button class="btn-icon danger" title="Excluir" onclick="AdminExtras.excluir('${id}')">🗑️</button>
@@ -197,128 +124,151 @@ const AdminExtras = window.AdminExtras = {
     }).join("");
   },
 
-  // ── Modal ────────────────────────────────────────────────────
   abrirModal(predefinido = "") {
     const modal = document.getElementById("modalExtra");
     if (!modal) return;
     modal.dataset.predefinido = predefinido;
 
-    // Reseta campos
-    ["extraNome", "extraObs"].forEach(id => AdminUtils.setVal(id, ""));
-    AdminUtils.setVal("extraOpcao", "principal");
-    AdminUtils.setVal("extraTipo",  "visitante");
-    AdminUtils.setVal("extraCC",    "");
-
-    // Popula datalist de CCs
-    this._popularDatalistCC();
-
-    // Controla visibilidade do campo CC
-    const ccGroup = document.getElementById("extraCCGroup");
+    ["extraNome", "extraTipo", "extraOpcao", "extraObs"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el?.closest(".form-group")) el.closest(".form-group").style.display = predefinido ? "none" : "";
+      if (!predefinido && el) el.value = "";
+    });
 
     if (predefinido === "investigador") {
-      AdminUtils.setVal("extraNome",  "Investigador");
-      AdminUtils.setVal("extraTipo",  "investigador");
+      AdminUtils.setVal("extraNome", "Investigador");
+      AdminUtils.setVal("extraTipo", "investigador");
       AdminUtils.setVal("extraOpcao", "principal");
-      AdminUtils.setVal("extraCC",    "Portaria");
-      AdminUtils.setVal("extraObs",   "Investigador");
-      if (ccGroup) ccGroup.style.display = "none"; // CC automático, não precisa mostrar
+      AdminUtils.setVal("extraObs", "Investigador");
     } else if (predefinido === "guarda") {
-      AdminUtils.setVal("extraNome",  "Guarda");
-      AdminUtils.setVal("extraTipo",  "guarda");
+      AdminUtils.setVal("extraNome", "Guarda");
+      AdminUtils.setVal("extraTipo", "guarda");
       AdminUtils.setVal("extraOpcao", "principal");
-      AdminUtils.setVal("extraCC",    "Portaria");
-      AdminUtils.setVal("extraObs",   "Guarda");
-      if (ccGroup) ccGroup.style.display = "none";
-    } else {
-      if (ccGroup) ccGroup.style.display = "";
-      // CC padrão para tipo atual
-      this._atualizarCCPorTipo();
+      AdminUtils.setVal("extraObs", `Guarda — Centro de custo ${this.PORTARIA_CC}`);
     }
 
     AdminUtils.openModal("modalExtra");
   },
 
-  _popularDatalistCC() {
-    const dl = document.getElementById("extraCCList");
-    if (!dl) return;
-    dl.innerHTML = this._ccsDisponiveis
-      .map(cc => `<option value="${AdminUtils.esc(cc)}">`)
-      .join("");
+  async _pratoPorOpcao(semanaId, dia, opcao) {
+    try {
+      if (typeof SP.getCardapio !== "function") return "Cardápio do Dia";
+      const cardapio = await SP.getCardapio(semanaId);
+      const item = (cardapio || []).find(c =>
+        this._norm(this._pick(c, "Dia")) === this._norm(dia) &&
+        this._norm(this._pick(c, "Opcao", "Opção")) === this._norm(opcao)
+      );
+      return this._pick(item, "Nome_Prato", "Descricao", "Descrição", "Title") || "Cardápio do Dia";
+    } catch (_) {
+      return "Cardápio do Dia";
+    }
   },
 
-  _atualizarCCPorTipo() {
-    const tipo = AdminUtils.getVal("extraTipo");
-    const ccAutomatico = this.CC_POR_TIPO[tipo.toLowerCase()] ?? "";
-    const ccGroup = document.getElementById("extraCCGroup");
+  async _contarExistentes(semanaId, dia, tipo) {
+    const pedidos = await SP.getPedidos(semanaId).catch(() => []);
+    return pedidos.filter(p =>
+      this._norm(this._pick(p, "Dia")) === this._norm(dia) &&
+      this._norm(this._pick(p, "Origem", "tipo", "Tipo", "Colaborador_nome")).includes(this._norm(tipo))
+    ).length;
+  },
 
-    if (tipo === "prestador") {
-      // Prestador: Luana escolhe CC — mostra campo
-      if (ccGroup) ccGroup.style.display = "";
-      AdminUtils.setVal("extraCC", "");
-    } else if (ccAutomatico) {
-      // CC automático: preenche e oculta campo (não precisa escolher)
-      AdminUtils.setVal("extraCC", ccAutomatico);
-      if (ccGroup) ccGroup.style.display = "none";
-    } else {
-      // Tipo desconhecido: mostra campo livre
-      if (ccGroup) ccGroup.style.display = "";
-      AdminUtils.setVal("extraCC", "ADM Geral");
+  async _criarExtra(semanaId, dia, nome, tipo, opcao, obs) {
+    if (typeof SP.addExtra === "function") {
+      return await SP.addExtra(semanaId, dia, nome, tipo, opcao, obs, SP.getUserName ? SP.getUserName() : "Admin");
     }
+    return await SP.createItem("Extras", {
+      Title: `${semanaId}-${dia}-${nome}`,
+      Semana_id: semanaId,
+      Dia: dia,
+      Nome: nome,
+      tipo: tipo,
+      Opcao: opcao || "principal",
+      Observacao: obs || "",
+      Adicionado_Por: SP.getUserName ? SP.getUserName() : "Admin"
+    });
+  },
+
+  async _criarPedidoDoExtra(semanaId, dia, nome, tipo, opcao, obs) {
+    const centroCusto = this._centroCustoPorTipo(tipo, nome);
+    const nomePrato = await this._pratoPorOpcao(semanaId, dia, opcao);
+    const colabId = `extra-${this._norm(tipo)}-${Date.now()}`;
+
+    if (typeof SP.savePedido === "function") {
+      return await SP.savePedido(semanaId, colabId, nome, dia, opcao || "principal", nomePrato, {
+        confirmado: true,
+        status: "Confirmado",
+        centroCusto,
+        origem: tipo || "Extra",
+        observacao: obs || "",
+        alteradoPor: SP.getUserName ? SP.getUserName() : "Admin"
+      });
+    }
+
+    return await SP.createItem("Pedidos", {
+      Title: `${semanaId}-${colabId}-${dia}`,
+      Semana_id: semanaId,
+      Colaborador_id: colabId,
+      Colaborador_nome: nome,
+      Dia: dia,
+      Opcao: opcao || "principal",
+      Nome_Prato: nomePrato,
+      Confirmado: true,
+      Data_Hora: new Date().toISOString(),
+      Centro_Custo: centroCusto,
+      Status: "Confirmado",
+      Observacao: obs || "",
+      Origem: tipo || "Extra",
+      Alterado_Por: SP.getUserName ? SP.getUserName() : "Admin"
+    });
   },
 
   async salvar() {
-    const modal       = document.getElementById("modalExtra");
+    const modal = document.getElementById("modalExtra");
     const predefinido = modal?.dataset.predefinido || "";
-    const semanaId    = AdminState.getSemanaId();
-    const dia         = AdminUtils.getVal("extraDia") || "segunda";
+    const semanaId = AdminState.getSemanaId();
+    const dia = AdminUtils.getVal("extraDia") || "segunda";
 
-    let nome, tipo, opcao, obs, cc;
+    let nome, tipo, opcao, obs;
 
     if (predefinido === "investigador") {
-      const pedidos = await SP.getPedidos(semanaId).catch(() => []);
-      const qtd = pedidos.filter(p =>
-        AdminUtils.norm(SP.pick(p, "Dia")) === AdminUtils.norm(dia) &&
-        AdminUtils.norm(SP.pick(p, "Origem", "tipo")).includes("investigador")
-      ).length;
-      nome  = `Investigador ${qtd + 1}`;
-      tipo  = "investigador";
+      const qtd = await this._contarExistentes(semanaId, dia, "investigador");
+      nome = `Investigador ${qtd + 1}`;
+      tipo = "investigador";
       opcao = "principal";
-      obs   = "Investigador";
-      cc    = "Portaria";
+      obs = "Investigador";
     } else if (predefinido === "guarda") {
-      nome  = "Guarda";
-      tipo  = "guarda";
+      const qtd = await this._contarExistentes(semanaId, dia, "guarda");
+      nome = qtd > 0 ? `Guarda ${qtd + 1}` : "Guarda";
+      tipo = "guarda";
       opcao = "principal";
-      obs   = "Guarda";
-      cc    = "Portaria";
+      obs = `Guarda — Centro de custo ${this.PORTARIA_CC}`;
     } else {
-      nome  = AdminUtils.getVal("extraNome");
-      tipo  = AdminUtils.getVal("extraTipo")  || "visitante";
+      nome = AdminUtils.getVal("extraNome");
+      tipo = AdminUtils.getVal("extraTipo") || "visitante";
       opcao = AdminUtils.getVal("extraOpcao") || "principal";
-      obs   = AdminUtils.getVal("extraObs");
-      cc    = AdminUtils.getVal("extraCC")    || "ADM Geral";
-
-      // Se tipo tem CC automático e o campo ficou vazio, aplica
-      if (!cc && this.CC_POR_TIPO[tipo.toLowerCase()]) {
-        cc = this.CC_POR_TIPO[tipo.toLowerCase()];
-      }
-      if (!cc) cc = "ADM Geral";
+      obs = AdminUtils.getVal("extraObs");
+      if (!obs && this._tipoPortaria(tipo, nome)) obs = `Centro de custo ${this.PORTARIA_CC}`;
     }
 
     if (!nome) { AdminUtils.toast("Informe o nome do extra.", "error"); return; }
-    if (tipo === "prestador" && !cc) {
-      AdminUtils.toast("Informe o centro de custo do prestador.", "error"); return;
-    }
+
+    const btn = document.getElementById("salvarExtra");
+    const old = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Salvando..."; }
 
     try {
       await SP.init();
-      // Grava em Extras com CC
-      await SP._addExtraPedidoCC(semanaId, dia, nome, tipo, opcao, obs, cc, SP.getUserName());
+      await this._criarExtra(semanaId, dia, nome, tipo, opcao, obs);
+      await this._criarPedidoDoExtra(semanaId, dia, nome, tipo, opcao, obs);
       AdminUtils.closeModal("modalExtra");
-      AdminUtils.toast("Extra adicionado.", "success");
+      AdminUtils.toast(`Extra adicionado em ${this.PORTARIA_CC}.`, "success");
       await this._carregar(semanaId);
+      if (window.AdminDashboard && AdminState.moduloAtivo === "dashboard") await AdminDashboard.load(semanaId);
     } catch (e) {
-      AdminUtils.toast("Erro ao salvar extra: " + e.message, "error");
+      console.error("[Extras] salvar", e);
+      AdminUtils.toast("Erro ao salvar extra: " + (e.message || e), "error");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = old || "💾 Adicionar"; }
     }
   },
 
@@ -327,26 +277,27 @@ const AdminExtras = window.AdminExtras = {
     try {
       await SP.init();
       const semanaId = AdminState.getSemanaId();
-      const item     = this._lista.find(e => String(e.id) === String(id));
-      if (item) await SP.deleteExtraComPedido(item);
-      else await SP.deleteExtra(id);
+      const item = this._lista.find(e => String(e.id) === String(id));
+      if (item && typeof SP.deleteExtraComPedido === "function") await SP.deleteExtraComPedido(item);
+      else if (typeof SP.deleteExtra === "function") await SP.deleteExtra(id);
+      else await SP.deleteItem("Extras", id);
       this._lista = this._lista.filter(e => String(e.id) !== String(id));
       this._render();
       AdminUtils.toast("Extra excluído.", "success");
     } catch (e) {
-      AdminUtils.toast("Erro ao excluir: " + e.message, "error");
+      AdminUtils.toast("Erro ao excluir: " + (e.message || e), "error");
     }
   },
 
-  // ── Bindings ─────────────────────────────────────────────────
   _bindFiltros(semanaId) {
     const bind = (id, ev, fn) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.boundExt) { el.dataset.boundExt = "1"; el.addEventListener(ev, fn); }
     };
-    bind("fExtraTexto", "input",  () => this._render());
-    bind("fExtraDia",   "change", () => this._render());
-    bind("fExtraTipo",  "change", () => this._render());
+    bind("fExtraTexto", "input", () => this._render());
+    bind("fExtraDia", "change", () => this._render());
+    bind("fExtraTipo", "change", () => this._render());
+    bind("btnFiltrarExtras", "click", () => this._render());
     bind("btnLimparExtras", "click", () => {
       ["fExtraTexto", "fExtraDia", "fExtraTipo"].forEach(id => AdminUtils.setVal(id, ""));
       this._render();
@@ -358,18 +309,11 @@ const AdminExtras = window.AdminExtras = {
       const el = document.getElementById(id);
       if (el && !el.dataset.boundExtBtn) { el.dataset.boundExtBtn = "1"; el.addEventListener("click", fn); }
     };
-    bind("btnAdicionarExtra",    () => this.abrirModal());
+    bind("btnAdicionarExtra", () => this.abrirModal());
     bind("btnExtraInvestigador", () => this.abrirModal("investigador"));
-    bind("btnExtraGuarda",       () => this.abrirModal("guarda"));
-    bind("salvarExtra",          () => this.salvar());
-    bind("cancelModalExtra",     () => AdminUtils.closeModal("modalExtra"));
-    bind("closeModalExtra",      () => AdminUtils.closeModal("modalExtra"));
-
-    // Atualiza CC automaticamente quando tipo muda
-    const tipoEl = document.getElementById("extraTipo");
-    if (tipoEl && !tipoEl.dataset.boundExtBtn) {
-      tipoEl.dataset.boundExtBtn = "1";
-      tipoEl.addEventListener("change", () => this._atualizarCCPorTipo());
-    }
+    bind("btnExtraGuarda", () => this.abrirModal("guarda"));
+    bind("salvarExtra", () => this.salvar());
+    bind("cancelModalExtra", () => AdminUtils.closeModal("modalExtra"));
+    bind("closeModalExtra", () => AdminUtils.closeModal("modalExtra"));
   }
 };
