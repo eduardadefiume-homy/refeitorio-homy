@@ -42,6 +42,32 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 #telaAcessoNegado .msg{font-size:0.95rem;color:var(--muted);line-height:1.6;max-width:360px}
 #telaAcessoNegado .btn-voltar-neg{display:inline-block;margin-top:0.5rem;padding:0.75rem 1.5rem;border-radius:12px;background:rgba(26,100,200,0.2);border:1px solid rgba(80,150,255,0.3);color:#9bd2ff;text-decoration:none;font-weight:700;font-size:0.9rem}
 
+/* TELA DE LOGIN DA COZINHA */
+#telaLoginCozinha{
+  display:none;
+  position:fixed;inset:0;z-index:55;
+  background:var(--bg);
+  flex-direction:column;align-items:center;justify-content:center;
+  gap:1.2rem;padding:2rem;text-align:center;
+}
+#telaLoginCozinha .icon{font-size:3.5rem}
+#telaLoginCozinha .titulo{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase}
+#telaLoginCozinha .msg{font-size:0.95rem;color:var(--muted);line-height:1.6;max-width:420px}
+.auth-actions{display:flex;align-items:center;justify-content:center;gap:.8rem;flex-wrap:wrap;margin-top:.3rem}
+.btn-auth-primary,.btn-auth-secondary{
+  border-radius:12px;padding:.78rem 1.25rem;font-family:"Barlow",sans-serif;
+  font-size:.88rem;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;
+}
+.btn-auth-primary{border:1px solid rgba(64,208,144,.35);background:rgba(64,208,144,.16);color:#64e0a6}
+.btn-auth-primary:hover{background:rgba(64,208,144,.24);transform:translateY(-1px)}
+.btn-auth-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.btn-auth-secondary{border:1px solid rgba(80,150,255,.3);background:rgba(26,100,200,.18);color:#9bd2ff}
+.btn-auth-secondary:hover{background:rgba(26,100,200,.28)}
+.login-status{min-height:1rem;font-size:.82rem;color:rgba(143,170,210,.72);max-width:440px;line-height:1.45}
+.login-status.error{color:#ff8c80}
+.acesso-email{font-size:.78rem;color:rgba(143,170,210,.7);word-break:break-all;max-width:440px}
+
+
 .app{position:relative;z-index:1;min-height:100vh;padding-bottom:2rem}
 
 .header{
@@ -189,11 +215,32 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 
 <canvas id="techCanvas"></canvas>
 
+<div id="telaLoginCozinha">
+  <div class="icon">🍽️</div>
+  <div class="titulo">Acesso da Cozinha</div>
+  <div class="msg">
+    Entre com a conta autorizada da cozinha:<br>
+    <strong>recepcao.hq@homyquimica.com.br</strong>
+  </div>
+  <div class="auth-actions">
+    <button id="btnEntrarCozinha" class="btn-auth-primary" type="button" onclick="entrarCozinhaComConta()">🔐 Entrar com conta da cozinha</button>
+    <a class="btn-auth-secondary" href="index.html">Voltar ao início</a>
+  </div>
+  <div id="loginCozinhaStatus" class="login-status"></div>
+</div>
+
 <div id="telaAcessoNegado">
   <div class="icon">🔒</div>
   <div class="titulo">Acesso Restrito</div>
-  <div class="msg">Esta área é exclusiva para o e-mail da cozinha.<br>Acesse com a conta <strong>recepcao.hq@homyquimica.com.br</strong>.</div>
-  <a class="btn-voltar-neg" href="index.html">Voltar ao início</a>
+  <div class="msg">
+    Não foi possível acessar esta página com a conta informada.<br>
+    Esta área é exclusiva para <strong>recepcao.hq@homyquimica.com.br</strong>.
+  </div>
+  <div class="acesso-email" id="emailNegadoCozinha"></div>
+  <div class="auth-actions">
+    <button class="btn-auth-primary" type="button" onclick="entrarCozinhaComConta()">Trocar conta</button>
+    <a class="btn-auth-secondary" href="index.html">Voltar ao início</a>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -301,6 +348,7 @@ const EMAIL_COZINHA = "recepcao.hq@homyquimica.com.br";
 let pedidosHoje  = [];
 let checkinsHoje = [];
 let pedidoSelecionado = null;
+let cozinhaSyncTimer = null;
 
 // ---- helpers ----
 function normalizar(v){ return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
@@ -422,12 +470,7 @@ async function sincronizar(){
 }
 
 async function conectar(){
-  try {
-    await window.SP.login();
-    await sincronizar();
-  } catch(e) {
-    alert("Não foi possível conectar: " + (e.message || e));
-  }
+  await entrarCozinhaComConta();
 }
 
 function limparBusca(){
@@ -564,36 +607,126 @@ function iniciarFundoTecnologico(){
 }
 
 // ================================================================
-// GATE DE ACESSO — só deixa entrar recepcao.hq@homyquimica.com.br
+// GATE DE ACESSO — permite escolher conta, mas só autoriza recepção
 // ================================================================
+function esconderTelasAcesso(){
+  const login = document.getElementById("telaLoginCozinha");
+  const neg   = document.getElementById("telaAcessoNegado");
+  const app   = document.getElementById("appCozinha");
+  if (login) login.style.display = "none";
+  if (neg)   neg.style.display = "none";
+  if (app)   app.style.display = "none";
+}
+
+function mostrarTelaLoginCozinha(msg, isError = false){
+  esconderTelasAcesso();
+  const login = document.getElementById("telaLoginCozinha");
+  const status = document.getElementById("loginCozinhaStatus");
+  if (status) {
+    status.textContent = msg || "Selecione a conta da cozinha para continuar.";
+    status.classList.toggle("error", !!isError);
+  }
+  if (login) login.style.display = "flex";
+}
+
+function mostrarTelaNegado(email){
+  esconderTelasAcesso();
+  const neg = document.getElementById("telaAcessoNegado");
+  const emailEl = document.getElementById("emailNegadoCozinha");
+  if (emailEl) {
+    emailEl.textContent = email ? `Conta utilizada: ${email}` : "Conta utilizada: não identificada";
+  }
+  if (neg) neg.style.display = "flex";
+}
+
+function emailAtualSP(){
+  return String(window.SP?.getUserEmail?.() || window.SP?._account?.username || "").toLowerCase().trim();
+}
+
+async function iniciarAppCozinhaAutorizado(){
+  esconderTelasAcesso();
+  const app = document.getElementById("appCozinha");
+  if (app) app.style.display = "block";
+
+  atualizarData();
+  await sincronizar();
+
+  if (cozinhaSyncTimer) clearInterval(cozinhaSyncTimer);
+  cozinhaSyncTimer = setInterval(sincronizar, 30000);
+}
+
+async function entrarCozinhaComConta(){
+  const btn = document.getElementById("btnEntrarCozinha");
+  const status = document.getElementById("loginCozinhaStatus");
+
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Abrindo Microsoft..."; }
+    if (status) { status.textContent = "Escolha a conta recepcao.hq@homyquimica.com.br."; status.classList.remove("error"); }
+
+    if (window.HOMY_SP_READY) await window.HOMY_SP_READY;
+    if (!window.SP) throw new Error("sharepoint.js não carregou.");
+
+    await window.SP.init();
+
+    // Força o seletor de conta, mesmo quando já existe sessão de TI/Admin no navegador.
+    let result = null;
+    if (window.SP._msalInstance?.loginPopup) {
+      result = await window.SP._msalInstance.loginPopup({
+        scopes: window.SP.scopes,
+        prompt: "select_account"
+      });
+      if (result?.account) {
+        window.SP._account = result.account;
+        window.SP._msalInstance.setActiveAccount(result.account);
+      }
+    } else {
+      await window.SP.login();
+    }
+
+    const email = emailAtualSP();
+    if (email !== EMAIL_COZINHA) {
+      mostrarTelaNegado(email);
+      return;
+    }
+
+    await iniciarAppCozinhaAutorizado();
+
+  } catch(e) {
+    console.error("Login cozinha:", e);
+    mostrarTelaLoginCozinha("Não foi possível acessar. Tente entrar novamente com recepcao.hq@homyquimica.com.br.", true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🔐 Entrar com conta da cozinha"; }
+  }
+}
+
 async function iniciarCozinha(){
   const lista = document.getElementById("lista");
   try {
     if (window.HOMY_SP_READY) await window.HOMY_SP_READY;
     if (!window.SP) throw new Error("sharepoint.js não carregou.");
 
-    // Garante login
-    const logado = await window.SP.init();
-    if (!logado) await window.SP.login();
+    await window.SP.init();
 
-    // Verifica email
-    const email = (window.SP.getUserEmail ? window.SP.getUserEmail() : "").toLowerCase().trim();
-    if (email !== EMAIL_COZINHA) {
-      // Acesso negado — mostra tela de bloqueio
-      document.getElementById("appCozinha").style.display = "none";
-      const neg = document.getElementById("telaAcessoNegado");
-      neg.style.display = "flex";
+    const email = emailAtualSP();
+
+    // Se já está com a conta da recepção em cache, entra direto.
+    if (email === EMAIL_COZINHA) {
+      await iniciarAppCozinhaAutorizado();
       return;
     }
 
-    // Acesso permitido
-    document.getElementById("appCozinha").style.display = "block";
-    atualizarData();
-    await sincronizar();
-    setInterval(sincronizar, 30000);
+    // Se está com outra conta em cache, não bloqueia definitivamente: oferece troca de conta.
+    if (email) {
+      mostrarTelaLoginCozinha(`Sessão atual: ${email}. Para acessar a cozinha, entre com recepcao.hq@homyquimica.com.br.`);
+      return;
+    }
+
+    // Sem sessão: mostra botão de login.
+    mostrarTelaLoginCozinha("Selecione a conta recepcao.hq@homyquimica.com.br para continuar.");
 
   } catch(e) {
     console.error("Erro ao iniciar cozinha:", e);
+    esconderTelasAcesso();
     if (lista) lista.innerHTML = `
       <div class="empty">
         <div class="empty-icon">⚠️</div>
