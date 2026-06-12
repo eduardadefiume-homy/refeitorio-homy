@@ -747,17 +747,39 @@ function chavePedidoCozinha(p){
   return `pedido:${id || cid || nome}:${dia}`;
 }
 
+function chaveHumanaExtraCozinha(p){
+  const dia = normalizar(itemValor(p,"Dia","dia"));
+  const nome = normalizar(getNome(p));
+  const tipoRaw = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
+  let tipo = tipoRaw;
+  if (nome.includes("guarda") || tipoRaw.includes("guarda")) tipo = "guarda";
+  else if (nome.includes("investigador") || tipoRaw.includes("investigador")) tipo = "investigador";
+  else if (nome.includes("refeicao extra") || tipoRaw.includes("extra")) tipo = "extra";
+  return `${dia}|${tipo}|${nome || tipo}`;
+}
+
 function juntarPedidosEExtrasCozinha(pedidos, extras){
   const mapa = new Map();
+  const extrasHumanosJaVindosDePedidos = new Set();
+
   (pedidos || []).forEach(p => {
     const k = chavePedidoCozinha(p);
     if (!mapa.has(k)) mapa.set(k, p);
+    if (isPedidoExtraCozinha(p)) extrasHumanosJaVindosDePedidos.add(chaveHumanaExtraCozinha(p));
   });
+
   (extras || []).forEach(e => {
     const p = extraParaPedidoCozinha(e, semanaIdAtual(), diaAtual());
+    const chaveHumana = chaveHumanaExtraCozinha(p);
+    if (extrasHumanosJaVindosDePedidos.has(chaveHumana)) return;
+
     const k = chavePedidoCozinha(p);
-    if (!mapa.has(k)) mapa.set(k, p);
+    if (!mapa.has(k)) {
+      mapa.set(k, p);
+      extrasHumanosJaVindosDePedidos.add(chaveHumana);
+    }
   });
+
   return Array.from(mapa.values());
 }
 
