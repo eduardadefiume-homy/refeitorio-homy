@@ -4,12 +4,18 @@
 const AdminDashboard = window.AdminDashboard = {
   _prazoTimer: null,
   _cache: null,
+  _loading: false,
+  _syncTimer: null,
+  _syncBound: false,
 
   async load(semanaId) {
+    if (this._loading) return;
+    this._loading = true;
     try {
       await SP.init();
       this._ensureStatsLayout();
       this._ensurePrazoPainel();
+      this._bindSyncTempoReal();
 
       const base = typeof SP.getDashboardResumo === "function"
         ? await SP.getDashboardResumo(semanaId).catch(e => {
@@ -38,7 +44,35 @@ const AdminDashboard = window.AdminDashboard = {
     } catch (e) {
       console.error("[Dashboard]", e);
       AdminUtils.toast("Erro ao carregar dashboard: " + (e.message || e), "error");
+    } finally {
+      this._loading = false;
     }
+  },
+
+  _bindSyncTempoReal() {
+    if (this._syncBound) return;
+    this._syncBound = true;
+
+    const recarregar = () => {
+      if (document.hidden) return;
+      if (window.AdminState?.moduloAtivo && AdminState.moduloAtivo !== "dashboard") return;
+      this.load(AdminState.getSemanaId()).catch?.(console.warn);
+    };
+
+    this._syncTimer = setInterval(recarregar, 7000);
+    window.addEventListener("focus", recarregar);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) recarregar(); });
+    window.addEventListener("storage", e => {
+      if (e.key === "homy_refeitorio_sync" || e.key === "homy_cozinha_checkin_sync") recarregar();
+    });
+
+    try {
+      const canal = new BroadcastChannel("homy-refeitorio-sync");
+      canal.onmessage = ev => {
+        if (["checkin", "pedido", "extra", "dashboard"].includes(ev?.data?.tipo)) recarregar();
+      };
+      this._syncChannel = canal;
+    } catch (_) {}
   },
 
   async _safeRender(nome, fn) {
@@ -343,16 +377,206 @@ const AdminDashboard = window.AdminDashboard = {
     return [];
   },
 
+
+  async _buscarCheckinsHoje(semanaId, dia, dataHoje) {
+    const diaNorm = this._norm(dia);
+    const hojeISO = dataHoje || this._dataPorDia(semanaId, dia);
+    let items = [];
+
+    try {
+      if (typeof SP.getCheckIn === "function") {
+        items = await SP.getCheckIn(semanaId, dia);
+      }
+    } catch (e) {
+      console.warn("[Dashboard] SP.getCheckIn falhou. Tentando getItems(CheckIn).", e);
+    }
+
+    if (!Array.isArray(items) || !items.length) {
+      try {
+        items = await SP.getItems("CheckIn");
+      } catch (e) {
+        console.warn("[Dashboard] Não foi possível carregar CheckIn.", e);
+        items = [];
+      }
+    }
+
+    const validos = (items || []).filter(c => {
+      const retirouValor = this._pick(c, "Retirou", "retirou", "Confirmado", "confirmado");
+      const retirou = SP.isTrue ? SP.isTrue(retirouValor) : (retirouValor === true || ["true", "sim", "1", "yes"].includes(this._norm(retirouValor)));
+      if (!retirou) return false;
+
+      const semana = this._pick(c, "Semana_id", "Semana", "semana_id");
+      const diaItem = this._pick(c, "Dia", "dia");
+      const dataRetirada = this._dateISO(this._pick(c, "Data_Hora_Retirada", "Data_Hora", "Data", "Created", "Modified"));
+
+      const semanaOk = !semana || String(semana) === String(semanaId);
+      const diaOk = diaItem && this._norm(diaItem) === diaNorm;
+      const dataOk = dataRetirada && dataRetirada === hojeISO;
+      return semanaOk && (diaOk || dataOk);
+    });
+
+    const unico = new Map();
+    validos.forEach(c => {
+      const cid = this._pick(c, "Colaborador_id", "colaborador_id", "ColaboradorId");
+      const nome = this._pick(c, "Colaborador_nome", "Nome", "Title");
+      const key = cid ? `id:${cid}` : `nome:${this._norm(nome)}`;
+      if (key !== "nome:" && !unico.has(key)) unico.set(key, c);
+    });
+
+    return Array.from(unico.values());
+  },
+
+  _isExtraAtivoDashboard(e) {
+    const status = this._norm(this._pick(e, "Status", "status") || "");
+    const ativo = this._pick(e, "Ativo", "ativo");
+
+    if (["cancelado", "cancelada", "excluido", "excluida", "inativo", "inativa", "false", "nao", "não", "0"].includes(status)) return false;
+    if (ativo !== "" && ativo !== undefined && ativo !== null) {
+      if (SP.isTrue) return SP.isTrue(ativo);
+      return !["false", "nao", "não", "0", "inativo", "inativa"].includes(this._norm(ativo));
+    }
+    return true;
+  },
+
+  _extraDiaBate(e, semanaId, dia) {
+    const diaNorm = this._norm(dia);
+    const diaExtra = this._norm(this._pick(e, "Dia", "dia"));
+    if (diaExtra && diaExtra === diaNorm) return true;
+
+    const dataExtra = this._dateISO(this._pick(e, "Data", "Data_Hora", "Data_Referencia"));
+    if (!dataExtra) return false;
+    return dataExtra === this._dataPorDia(semanaId, dia);
+  },
+
+  _nomeExtra(e) {
+    const nome = this._pick(e, "Nome", "Title", "Colaborador_nome", "Colaborador");
+    const tipo = this._norm(this._pick(e, "tipo", "Tipo", "Origem"));
+    if (this._valorValido(nome)) return String(nome).trim();
+    if (tipo.includes("guarda")) return "Guarda";
+    if (tipo.includes("investigador")) return "Investigador";
+    return "Refeição Extra";
+  },
+
+  _tipoExtra(e) {
+    return this._pick(e, "tipo", "Tipo", "Origem") || "Extra";
+  },
+
+  _pratoLabelPorOpcao(opcao) {
+    const op = this._norm(opcao);
+    if (op === "principal") return "Prato Principal";
+    if (op === "light") return "Opção Light";
+    if (op === "carne") return "Opção Carne";
+    if (op === "massa") return "Opção Massa";
+    if (op === "lanche") return "Lanche";
+    return "Cardápio do Dia";
+  },
+
+  _extraKey(e) {
+    const id = this._pick(e, "id", "ID");
+    if (id) return `extraid:${id}`;
+    return [
+      this._norm(this._pick(e, "Semana_id", "Semana")),
+      this._norm(this._pick(e, "Dia", "dia")),
+      this._norm(this._nomeExtra(e)),
+      this._norm(this._tipoExtra(e)),
+      this._norm(this._pick(e, "Opcao", "opcao") || "principal")
+    ].join("|");
+  },
+
+  _pedidoEquivaleExtra(p, e) {
+    const extraId = String(this._pick(e, "id", "ID") || "").trim();
+    const obsPedido = String(this._pick(p, "Observacao", "Observação", "observacao") || "");
+    if (extraId && obsPedido.includes(`ExtraID:${extraId}`)) return true;
+
+    const nomePedido = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title", "Colaborador"));
+    const nomeExtra = this._norm(this._nomeExtra(e));
+    const tipoPedido = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+    const tipoExtra = this._norm(this._tipoExtra(e));
+    const diaPedido = this._norm(this._pick(p, "Dia", "dia"));
+    const diaExtra = this._norm(this._pick(e, "Dia", "dia"));
+
+    if (diaExtra && diaPedido && diaPedido !== diaExtra) return false;
+    if (nomePedido && nomeExtra && nomePedido === nomeExtra) return true;
+    if (nomePedido && nomeExtra && nomePedido.includes(nomeExtra)) return true;
+    if (tipoPedido && tipoExtra && tipoPedido.includes(tipoExtra) && nomePedido && nomePedido.includes(tipoExtra)) return true;
+    return false;
+  },
+
+  _extraComoPedidoVirtual(e, semanaId, diaFallback) {
+    const nome = this._nomeExtra(e);
+    const tipo = this._tipoExtra(e);
+    const dia = this._pick(e, "Dia", "dia") || diaFallback;
+    const opcao = this._pick(e, "Opcao", "opcao") || "principal";
+    const status = this._pick(e, "Status", "status") || "Confirmado";
+    const centroCusto = this._centroCustoExtra(e);
+    const idExtra = this._pick(e, "id", "ID") || this._extraKey(e);
+    const prato = this._pick(e, "Nome_Prato", "Prato", "Descricao", "Descrição") || this._pratoLabelPorOpcao(opcao);
+
+    return {
+      id: `extra-${idExtra}`,
+      ID: `extra-${idExtra}`,
+      _virtualExtra: true,
+      _extraSource: e,
+      Semana_id: this._pick(e, "Semana_id", "Semana") || semanaId,
+      Colaborador_id: `extra-${idExtra}`,
+      Colaborador_nome: nome,
+      Dia: dia,
+      Opcao: opcao,
+      Nome_Prato: prato,
+      Confirmado: true,
+      Status: status,
+      Centro_Custo: centroCusto,
+      Origem: tipo,
+      Observacao: this._pick(e, "Observacao", "Observação", "observacao") || ""
+    };
+  },
+
+  _mesclarPedidosEExtrasDoDia(semanaId, dia, pedidos, extras) {
+    const diaNorm = this._norm(dia);
+    const pedidosDia = (pedidos || [])
+      .filter(p => this._pedidoTemConteudo(p))
+      .filter(p => this._norm(this._pick(p, "Dia", "dia")) === diaNorm)
+      .filter(p => this._isPedidoProd(p));
+
+    const extrasDia = (extras || [])
+      .filter(e => this._isExtraAtivoDashboard(e))
+      .filter(e => this._extraDiaBate(e, semanaId, dia));
+
+    const virtuais = [];
+    extrasDia.forEach(e => {
+      const jaExiste = pedidosDia.some(p => this._pedidoEquivaleExtra(p, e));
+      if (!jaExiste) virtuais.push(this._extraComoPedidoVirtual(e, semanaId, dia));
+    });
+
+    return [...pedidosDia, ...virtuais].sort((a, b) => {
+      const ea = a._virtualExtra ? 1 : 0;
+      const eb = b._virtualExtra ? 1 : 0;
+      return ea - eb || String(this._pick(a, "Colaborador_nome", "Nome", "Title")).localeCompare(String(this._pick(b, "Colaborador_nome", "Nome", "Title")), "pt-BR");
+    });
+  },
+
+  _atualizarSetoresPorListaOperacao(lista, colaboradores = []) {
+    const mapa = new Map();
+    (lista || []).forEach(p => {
+      const setor = p._virtualExtra ? this._centroCustoExtra(p._extraSource || p) : this._centroCustoPedidoResolvido(p, colaboradores);
+      const cc = this._formatarCC(setor);
+      if (cc === "Sem setor") return;
+      mapa.set(cc, (mapa.get(cc) || 0) + 1);
+    });
+    this._renderSetores({ setoresHoje: Array.from(mapa.entries()) });
+  },
+
   async _montarResumoDashboard(semanaId, base) {
     const { ini, fim, datas } = this._getSemanaRange(semanaId);
     const diaHoje = base.diaHoje || this._diaHoje(base);
     const dataHoje = this._dataPorDia(semanaId, diaHoje);
 
-    const [pedidos, colaboradoresAtivos, extras, ausenciasRaw] = await Promise.all([
+    const [pedidos, colaboradoresAtivos, extras, ausenciasRaw, checkinsHojeLista] = await Promise.all([
       this._buscarPedidos(semanaId),
       this._buscarColaboradores(),
       this._buscarExtras(semanaId),
-      this._buscarAusencias()
+      this._buscarAusencias(),
+      this._buscarCheckinsHoje(semanaId, diaHoje, dataHoje)
     ]);
 
     const pedidosDaSemana = pedidos.filter(p => {
@@ -402,17 +626,9 @@ const AdminDashboard = window.AdminDashboard = {
       ? pedidosPendentesSemana
       : Math.max(0, expectedSemana - pedidosConfirmadosSemana);
 
-    const extrasAtivos = extras.filter(e => {
-      const ativo = this._pick(e, "Ativo", "ativo", "Status");
-      if (ativo === "") return true;
-      return SP.isTrue ? SP.isTrue(ativo) || this._norm(ativo) === "confirmado" : !!ativo;
-    });
+    const extrasAtivos = extras.filter(e => this._isExtraAtivoDashboard(e));
 
-    const extrasHoje = extrasAtivos.filter(e => {
-      const dia = this._norm(this._pick(e, "Dia"));
-      const data = this._dateISO(this._pick(e, "Data", "Data_Hora", "Data_Referencia"));
-      return dia === this._norm(diaHoje) || data === dataHoje;
-    });
+    const extrasHoje = extrasAtivos.filter(e => this._extraDiaBate(e, semanaId, diaHoje));
 
     const porDia = {};
     AdminUtils.DIAS.forEach(dia => {
@@ -439,18 +655,7 @@ const AdminDashboard = window.AdminDashboard = {
 
     // Garante que extras lançados no módulo Extras apareçam no setor correto
     // mesmo quando ainda não existe pedido espelho válido em Pedidos.
-    const extraJaExisteNoPedidoHoje = e => {
-      const nomeExtra = this._norm(this._pick(e, "Nome", "Title"));
-      const tipoExtra = this._norm(this._pick(e, "tipo", "Tipo"));
-      return pedidosHojeProd.some(p => {
-        const nomePedido = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
-        const origemPedido = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
-        if (!nomePedido) return false;
-        if (nomeExtra && nomePedido === nomeExtra) return true;
-        if (nomeExtra && nomePedido.includes(nomeExtra)) return true;
-        return tipoExtra && origemPedido.includes(tipoExtra) && nomePedido.includes(tipoExtra);
-      });
-    };
+    const extraJaExisteNoPedidoHoje = e => pedidosHojeProd.some(p => this._pedidoEquivaleExtra(p, e));
 
     const extrasHojeSemPedido = extrasHoje.filter(e => !extraJaExisteNoPedidoHoje(e));
     extrasHojeSemPedido.forEach(e => {
@@ -493,7 +698,8 @@ const AdminDashboard = window.AdminDashboard = {
       pedidosPendentesSemana: pendentesSemanaFinal,
       totalPedidosSemana: pedidosProdComExtras.length,
       totalPedidosHoje: pedidosHojeProd.length + extrasHojeSemPedido.length,
-      checkinsHoje: this._num(base.checkinsHoje),
+      checkinsHoje: Array.isArray(checkinsHojeLista) ? checkinsHojeLista.length : this._num(base.checkinsHoje),
+      _checkinsHojeLista: checkinsHojeLista || [],
       extrasAtivos: extrasAtivos.length || this._num(base.extrasAtivos),
       extrasSemana: extrasAtivos.length,
       extrasDia: extrasHoje.length,
@@ -838,8 +1044,13 @@ const AdminDashboard = window.AdminDashboard = {
     tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Carregando...</td></tr>`;
 
     const pedidos = this._cache?._pedidosSemana || await this._buscarPedidos(semanaId);
-    const diaNorm = this._norm(dia);
-    const lista = pedidos.filter(p => this._norm(this._pick(p, "Dia")) === diaNorm);
+    const extras = this._cache?._extrasSemanaLista || await this._buscarExtras(semanaId);
+    const colaboradores = await this._buscarColaboradores();
+    const lista = this._mesclarPedidosEExtrasDoDia(semanaId, dia, pedidos, extras);
+
+    // Quando o usuário muda o dia na Operação do Dia do dashboard,
+    // o bloco "Por Setor" passa a refletir o mesmo dia selecionado.
+    this._atualizarSetoresPorListaOperacao(lista, colaboradores);
 
     if (!lista.length) {
       tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Nenhum pedido para este dia.</td></tr>`;
@@ -849,21 +1060,25 @@ const AdminDashboard = window.AdminDashboard = {
     tbody.innerHTML = lista.slice(0, 60).map(p => {
       const id = AdminUtils.esc(p.id || "");
       const nome = AdminUtils.esc(this._pick(p, "Colaborador_nome", "Title", "Nome") || "—");
-      const setor = AdminUtils.esc(this._formatarCC(this._centroCustoPedido(p)));
+      const setor = AdminUtils.esc(this._formatarCC(p._virtualExtra ? this._centroCustoExtra(p._extraSource || p) : this._centroCustoPedidoResolvido(p, colaboradores)));
       const opcao = AdminUtils.esc(this._pick(p, "Opcao") || "—");
       const prato = AdminUtils.esc(this._pick(p, "Nome_Prato", "Descricao") || "—");
       const status = this._pick(p, "Status") || "Pendente";
+      const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+      const acoes = p._virtualExtra
+        ? `<span class="badge badge-yellow" title="Registro vindo da lista Extras">EXTRA</span>`
+        : `<div class="table-actions">
+          <button class="btn-icon" title="Confirmar" onclick="AdminOperacao.alterarStatus('${id}','Confirmado')">✅</button>
+          <button class="btn-icon danger" title="Cancelar" onclick="AdminOperacao.alterarStatus('${id}','Cancelado')">❌</button>
+          <button class="btn-icon" title="Não vai almoçar" onclick="AdminOperacao.alterarStatus('${id}','Não vai almoçar')">🚫</button>
+        </div>`;
       return `<tr>
-        <td>${nome}</td>
+        <td${origem.includes("extra") || origem.includes("guarda") || origem.includes("investigador") ? ' style="color:#ffd36d;font-weight:700"' : ""}>${nome}</td>
         <td>${setor}</td>
         <td><span class="badge badge-blue">${opcao}</span></td>
         <td>${prato}</td>
         <td>${AdminUtils.badge(status)}</td>
-        <td><div class="table-actions">
-          <button class="btn-icon" title="Confirmar" onclick="AdminOperacao.alterarStatus('${id}','Confirmado')">✅</button>
-          <button class="btn-icon danger" title="Cancelar" onclick="AdminOperacao.alterarStatus('${id}','Cancelado')">❌</button>
-          <button class="btn-icon" title="Não vai almoçar" onclick="AdminOperacao.alterarStatus('${id}','Não vai almoçar')">🚫</button>
-        </div></td>
+        <td>${acoes}</td>
       </tr>`;
     }).join("");
   },
