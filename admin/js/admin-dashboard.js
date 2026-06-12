@@ -894,17 +894,26 @@ const AdminDashboard = window.AdminDashboard = {
     let pedidosCriados = 0;
 
     for (const colab of listaPendentes) {
-      const colaboradorId = colab.id || String(colab.key || "").replace(/^id:/, "");
-      const colaboradorNome = colab.nome || "Colaborador";
+      const colaboradorId = String(colab.id || String(colab.key || "").replace(/^id:/, "") || "").trim();
+      const colaboradorNome = String(colab.nome || "").trim();
       const centroCusto = colab.setor || "";
+
+      // Proteção contra pedido fantasma: nunca cria pedido sem colaborador real.
+      if (!colaboradorId && !colaboradorNome) {
+        console.warn("[Dashboard] Colaborador pendente ignorado sem id/nome:", colab);
+        continue;
+      }
+
       const key = colab.key || (colaboradorId ? `id:${colaboradorId}` : `nome:${this._norm(colaboradorNome)}`);
+      const nomeFinal = colaboradorNome || `Colaborador ${colaboradorId}`;
 
       for (const dia of AdminUtils.DIAS) {
+        if (!dia) continue;
         const chave = `${key}|${this._norm(dia)}`;
         if (existentes.has(chave)) continue;
 
         const nomePrato = this._pratoPrincipalPorDia(cardapio, dia);
-        await SP.savePedido(semanaId, colaboradorId || this._norm(colaboradorNome), colaboradorNome, dia, "principal", nomePrato, {
+        await SP.savePedido(semanaId, colaboradorId || this._norm(nomeFinal), nomeFinal, dia, "principal", nomePrato, {
           confirmado: true,
           status: "Travado",
           centroCusto,
