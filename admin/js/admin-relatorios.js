@@ -607,7 +607,7 @@ const AdminRelatorios = window.AdminRelatorios = {
     ["B6", "B7", "B8"].forEach(addr => ws.getCell(addr).numFmt = '"R$" #,##0.00');
 
     const headerRow = 10;
-    ws.getRow(headerRow).values = [null, ...headers];
+    ws.getRow(headerRow).values = headers;
     ws.getRow(headerRow).height = 22;
     headers.forEach((h, idx) => {
       const cell = ws.getCell(headerRow, idx + 1);
@@ -694,7 +694,7 @@ const AdminRelatorios = window.AdminRelatorios = {
 
     const headerRow = 6;
     const headers = ["CONTA", "C. DE CUSTO", "DESCRIÇÃO CENTRO CUSTO", "QTDE", "SOMA", "%"];
-    ws.getRow(headerRow).values = [null, ...headers];
+    ws.getRow(headerRow).values = headers;
     headers.forEach((_, idx) => this._setCellStyle(ws.getCell(headerRow, idx + 1), "FF09213F"));
 
     codigos.forEach(codigo => {
