@@ -718,3 +718,6 @@ const SP = {
   }
 
 };
+
+// Export explícito para páginas que verificam window.SP antes do login.
+if (typeof window !== 'undefined') window.SP = SP;
