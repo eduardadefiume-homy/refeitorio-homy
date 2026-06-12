@@ -283,12 +283,14 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   _dataPedido(p, semanaId) {
-    const direta = this._dateISO(this._pick(p, "Data_Hora", "Data", "Data_Referencia"));
-    if (direta) return direta;
+    // A data real da refeição é sempre Semana + Dia quando esses campos existem.
+    // Não usar Data_Hora/Created antes do Dia, porque registros alterados hoje
+    // podem ser de outro dia da semana e não devem aparecer como ausência/pedido de hoje.
     const semana = this._pick(p, "Semana_id", "Semana") || semanaId;
-    const dia = this._pick(p, "Dia");
+    const dia = this._pick(p, "Dia", "dia");
     if (semana && dia) return this._dataPorDia(semana, dia);
-    return "";
+
+    return this._dateISO(this._pick(p, "Data_Refeicao", "Data_Referencia", "Data"));
   },
 
   _ausenciaAtiva(a) {
