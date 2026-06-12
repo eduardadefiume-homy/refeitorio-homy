@@ -6,20 +6,48 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>Admin · Refeitório Homy</title>
 <!-- PWA Admin Homy -->
-<link rel="manifest" href="../manifest-admin.json?v=pwa-homy-final-20260612-v2">
-<link rel="icon" type="image/png" sizes="64x64" href="../assets/pwa/icon-admin-64.png?v=pwa-homy-final-20260612-v2">
-<link rel="apple-touch-icon" sizes="180x180" href="../assets/pwa/icon-admin-180.png?v=pwa-homy-final-20260612-v2">
+<link rel="manifest" href="../manifest-admin.json?v=pwa-homy-final-20260612-v3">
+<link rel="icon" type="image/png" sizes="64x64" href="../assets/pwa/icon-admin-64.png?v=pwa-homy-final-20260612-v3">
+<link rel="apple-touch-icon" sizes="180x180" href="../assets/pwa/icon-admin-180.png?v=pwa-homy-final-20260612-v3">
 <meta name="theme-color" content="#05153A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Admin Homy">
+<script>
+  (function() {
+    function isStandaloneApp() {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+             window.navigator.standalone === true;
+    }
+    function isMobileOrTablet() {
+      return window.innerWidth <= 1180 ||
+             (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
+             (navigator.maxTouchPoints || 0) > 0;
+    }
+    if (isStandaloneApp() && isMobileOrTablet()) {
+      document.documentElement.classList.add('homy-app-standalone');
+    }
+  })();
+</script>
 <style>
   #homyAppSplash {
     position: fixed;
     inset: 0;
     z-index: 999999;
-    background: #05153A url('../assets/pwa/splash-admin-1080x1920.jpg?v=pwa-homy-final-20260612-v2') center / cover no-repeat;
+    display: none;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    background-color: #05153A;
+    background-image: url('../assets/pwa/splash-admin-1080x1920.jpg?v=pwa-homy-final-20260612-v3');
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
     transition: opacity .35s ease, visibility .35s ease;
+  }
+
+  html.homy-app-standalone #homyAppSplash {
+    display: block;
   }
 
   #homyAppSplash.is-hidden {
@@ -309,19 +337,43 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 </head>
 <body>
 
-<!-- Splash visual do app Admin -->
+<!-- Splash visual do app Admin: aparece somente quando aberto como app instalado no celular/tablet -->
 <div id="homyAppSplash" aria-hidden="true"></div>
 
 <script>
-  window.addEventListener('load', () => {
-    setTimeout(() => {
+  (function() {
+    function isStandaloneApp() {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+             window.navigator.standalone === true;
+    }
+    function isMobileOrTablet() {
+      return window.innerWidth <= 1180 ||
+             (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
+             (navigator.maxTouchPoints || 0) > 0;
+    }
+    function shouldShowSplash() {
+      return isStandaloneApp() && isMobileOrTablet();
+    }
+    function removeSplashNow() {
       const splash = document.getElementById('homyAppSplash');
-      if (splash) {
-        splash.classList.add('is-hidden');
-        setTimeout(() => splash.remove(), 450);
-      }
-    }, 900);
-  });
+      if (splash) splash.remove();
+    }
+
+    if (!shouldShowSplash()) {
+      removeSplashNow();
+      return;
+    }
+
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const splash = document.getElementById('homyAppSplash');
+        if (splash) {
+          splash.classList.add('is-hidden');
+          setTimeout(() => splash.remove(), 450);
+        }
+      }, 900);
+    });
+  })();
 </script>
 
 
