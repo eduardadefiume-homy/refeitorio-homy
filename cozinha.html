@@ -150,6 +150,94 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 
 .content{max-width:1180px;margin:0 auto;padding:1rem 1rem 0}
 
+
+/* MINI DASHBOARD DA COZINHA — conferência rápida da Vascon */
+.cozinha-dashboard{
+  margin-bottom:1rem;
+  border-radius:16px;
+  border:1px solid rgba(60,140,255,0.16);
+  background:rgba(255,255,255,0.026);
+  padding:0.95rem;
+  box-shadow:0 2px 12px rgba(0,0,0,0.18);
+}
+.cozinha-dashboard-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:0.8rem;
+  margin-bottom:0.75rem;
+}
+.cozinha-dashboard-title{
+  font-family:"Barlow Condensed",sans-serif;
+  font-size:1rem;
+  font-weight:700;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  color:#fff;
+  display:flex;
+  align-items:center;
+  gap:0.45rem;
+}
+.cozinha-dashboard-sub{
+  margin-top:0.18rem;
+  font-size:0.72rem;
+  color:rgba(143,170,210,0.58);
+  line-height:1.35;
+}
+.cozinha-dashboard-sync{
+  font-size:0.62rem;
+  font-weight:800;
+  letter-spacing:0.09em;
+  text-transform:uppercase;
+  border-radius:999px;
+  padding:5px 9px;
+  color:rgba(64,208,144,0.96);
+  background:rgba(64,208,144,0.08);
+  border:1px solid rgba(64,208,144,0.22);
+  white-space:nowrap;
+}
+.cozinha-stats-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(122px,1fr));
+  gap:0.62rem;
+}
+.cozinha-stat-card{
+  min-height:88px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.085);
+  background:rgba(255,255,255,0.04);
+  padding:0.78rem 0.82rem;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  gap:0.35rem;
+}
+.cozinha-stat-icon{font-size:1.15rem;line-height:1}
+.cozinha-stat-value{
+  font-family:"Barlow Condensed",sans-serif;
+  font-size:1.65rem;
+  font-weight:700;
+  line-height:1;
+  color:#fff;
+}
+.cozinha-stat-label{
+  font-size:0.58rem;
+  font-weight:700;
+  letter-spacing:0.11em;
+  text-transform:uppercase;
+  color:rgba(143,170,210,0.66);
+}
+@media(max-width:720px){
+  .cozinha-dashboard{padding:0.82rem;margin-bottom:0.85rem}
+  .cozinha-dashboard-head{align-items:flex-start;flex-direction:column;gap:0.45rem}
+  .cozinha-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:0.5rem}
+  .cozinha-stat-card{min-height:82px;padding:0.72rem}
+  .cozinha-stat-value{font-size:1.5rem}
+}
+@media(max-width:390px){
+  .cozinha-stats-grid{grid-template-columns:1fr}
+}
+
 /* cardápio do dia — cards iguais ao Cardápio do Dia */
 .cardapio{
   display:grid;grid-template-columns:auto minmax(0,1fr);align-items:flex-start;gap:0.9rem;
@@ -463,6 +551,27 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   </header>
 
   <main class="content">
+
+    <section class="cozinha-dashboard" aria-label="Resumo para conferência da cozinha">
+      <div class="cozinha-dashboard-head">
+        <div>
+          <div class="cozinha-dashboard-title">📊 Resumo para conferência</div>
+          <div class="cozinha-dashboard-sub">Totais do dia sincronizados com Admin, Pedidos, Extras e Check-ins.</div>
+        </div>
+        <div class="cozinha-dashboard-sync" id="cozDashAtualizado">Tempo real</div>
+      </div>
+      <div class="cozinha-stats-grid">
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">✅</div><div class="cozinha-stat-value" id="cozDashConfirmados">0</div><div class="cozinha-stat-label">Confirmados</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🥗</div><div class="cozinha-stat-value" id="cozDashPrincipal">0</div><div class="cozinha-stat-label">Principal</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍃</div><div class="cozinha-stat-value" id="cozDashLight">0</div><div class="cozinha-stat-label">Light</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🥩</div><div class="cozinha-stat-value" id="cozDashCarne">0</div><div class="cozinha-stat-label">Carne</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍝</div><div class="cozinha-stat-value" id="cozDashMassa">0</div><div class="cozinha-stat-label">Massa</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍔</div><div class="cozinha-stat-value" id="cozDashLanche">0</div><div class="cozinha-stat-label">Lanche</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">➕</div><div class="cozinha-stat-value" id="cozDashExtras">0</div><div class="cozinha-stat-label">Extras / Portaria</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">📦</div><div class="cozinha-stat-value" id="cozDashPendentes">0</div><div class="cozinha-stat-label">A retirar</div></div>
+      </div>
+    </section>
+
     <section class="cardapio">
       <div class="cardapio-icon">🍱</div>
       <div>
@@ -973,6 +1082,39 @@ function limparBusca(){
   renderLista();
 }
 
+
+function setTxtCozinha(id, valor){
+  const el = document.getElementById(id);
+  if (el) el.textContent = String(valor ?? 0);
+}
+
+function atualizarResumoCozinha(){
+  const validos = (pedidosHoje || []).filter(p => !(isAusente(p) || p?._ausente));
+  const entregues = validos.filter(isCheckinFeito).length;
+  const resumo = { principal:0, light:0, carne:0, massa:0, lanche:0, extras:0 };
+
+  validos.forEach(p => {
+    const op = normalizar(getOpcao(p));
+    if (Object.prototype.hasOwnProperty.call(resumo, op)) resumo[op]++;
+    if (isPedidoExtraCozinha(p) || p?._extraCozinha || String(getColaboradorId(p) || "").startsWith("extra-")) resumo.extras++;
+  });
+
+  setTxtCozinha("cozDashConfirmados", validos.length);
+  setTxtCozinha("cozDashPrincipal", resumo.principal);
+  setTxtCozinha("cozDashLight", resumo.light);
+  setTxtCozinha("cozDashCarne", resumo.carne);
+  setTxtCozinha("cozDashMassa", resumo.massa);
+  setTxtCozinha("cozDashLanche", resumo.lanche);
+  setTxtCozinha("cozDashExtras", resumo.extras);
+  setTxtCozinha("cozDashPendentes", Math.max(validos.length - entregues, 0));
+
+  const sync = document.getElementById("cozDashAtualizado");
+  if (sync) {
+    const agora = new Date();
+    sync.textContent = "Atualizado " + String(agora.getHours()).padStart(2,"0") + ":" + String(agora.getMinutes()).padStart(2,"0");
+  }
+}
+
 function renderLista(){
   const lista = document.getElementById("lista");
   const termo = normalizar(document.getElementById("busca").value);
@@ -981,6 +1123,7 @@ function renderLista(){
 
   document.getElementById("cntDone").textContent  = `${entregues} entregues`;
   document.getElementById("cntTotal").textContent = `${pedidosHoje.length} total`;
+  atualizarResumoCozinha();
 
   if (!pedidosHoje.length) {
     lista.innerHTML = `
