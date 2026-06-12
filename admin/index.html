@@ -5,11 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Admin · Refeitório Homy</title>
-<link rel="icon" type="image/png" sizes="64x64" href="../icon-admin-64.png?v=admin-solid-blue-20260611">
-<link rel="apple-touch-icon" sizes="180x180" href="../icon-admin-180.png?v=admin-solid-blue-20260611">
-<link rel="manifest" href="../manifest-admin.json?v=admin-solid-blue-20260611">
-<meta name="theme-color" content="#063D8F">
+<!-- PWA Admin Homy -->
+<link rel="manifest" href="../manifest-admin.json?v=pwa-homy-final-20260612-v2">
+<link rel="icon" type="image/png" sizes="64x64" href="../assets/pwa/icon-admin-64.png?v=pwa-homy-final-20260612-v2">
+<link rel="apple-touch-icon" sizes="180x180" href="../assets/pwa/icon-admin-180.png?v=pwa-homy-final-20260612-v2">
+<meta name="theme-color" content="#05153A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Admin Homy">
+<style>
+  #homyAppSplash {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    background: #05153A url('../assets/pwa/splash-admin-1080x1920.jpg?v=pwa-homy-final-20260612-v2') center / cover no-repeat;
+    transition: opacity .35s ease, visibility .35s ease;
+  }
 
+  #homyAppSplash.is-hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+</style>
 <!-- Dependências externas -->
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -290,6 +308,22 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
 </style>
 </head>
 <body>
+
+<!-- Splash visual do app Admin -->
+<div id="homyAppSplash" aria-hidden="true"></div>
+
+<script>
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      const splash = document.getElementById('homyAppSplash');
+      if (splash) {
+        splash.classList.add('is-hidden');
+        setTimeout(() => splash.remove(), 450);
+      }
+    }, 900);
+  });
+</script>
+
 
 <!-- ═══════════════════════════════════════ LOGIN ═══════════════════════════════════════ -->
 <div id="loginScreen">
