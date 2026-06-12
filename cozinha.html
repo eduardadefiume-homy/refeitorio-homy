@@ -4,10 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#040c1a">
-<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
 <title>Cozinha · Homy Química</title>
+<!-- PWA Cozinha Homy -->
+<link rel="manifest" href="manifest-cozinha.json?v=pwa-homy-final-20260612-v2">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/pwa/icon-cozinha-64.png?v=pwa-homy-final-20260612-v2">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/pwa/icon-cozinha-180.png?v=pwa-homy-final-20260612-v2">
+<meta name="theme-color" content="#8E050A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cozinha Homy">
+<style>
+  #homyAppSplash {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    background: #8E050A url('assets/pwa/splash-cozinha-1080x1920.jpg?v=pwa-homy-final-20260612-v2') center / cover no-repeat;
+    transition: opacity .35s ease, visibility .35s ease;
+  }
+
+  #homyAppSplash.is-hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+</style>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -320,6 +340,22 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 </style>
 </head>
 <body>
+
+<!-- Splash visual do app Cozinha -->
+<div id="homyAppSplash" aria-hidden="true"></div>
+
+<script>
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      const splash = document.getElementById('homyAppSplash');
+      if (splash) {
+        splash.classList.add('is-hidden');
+        setTimeout(() => splash.remove(), 450);
+      }
+    }, 900);
+  });
+</script>
+
 
 <canvas id="techCanvas"></canvas>
 
