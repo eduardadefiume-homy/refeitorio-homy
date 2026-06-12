@@ -242,12 +242,30 @@ const AdminRelatorios = window.AdminRelatorios = {
   },
 
   _dataPedido(p) {
-    const direta = this._dateISO(this._pick(p, "Data_Hora", "Data", "Data_Referencia"));
-    if (direta) return direta;
+    // Relatório deve considerar a data REAL da refeição.
+    // Data_Hora é apenas a data em que o item foi criado/alterado no SharePoint.
+    // Isso evita que pedidos gerados/alterados hoje entrem como refeição de hoje sem Dia válido.
     const semana = this._pick(p, "Semana_id", "Semana");
     const dia = this._pick(p, "Dia");
     if (semana && dia && SP.getDataRefBySemanaDia) return SP.getDataRefBySemanaDia(semana, dia);
-    return "";
+    if (semana && !dia) return "";
+    return this._dateISO(this._pick(p, "Data_Referencia", "Data", "Data_Hora"));
+  },
+
+  _pedidoValidoRelatorio(p) {
+    const nome = String(this._pick(p, "Colaborador_nome", "Colaborador", "Nome") || "").trim();
+    const colabId = String(this._pick(p, "Colaborador_id", "colaborador_id") || "").trim();
+    const dia = String(this._pick(p, "Dia", "dia") || "").trim();
+    const opcao = String(this._pick(p, "Opcao", "Opção", "opcao") || "").trim();
+    const nomeNorm = this._norm(nome);
+
+    // Linhas fantasmas no SharePoint costumam ter apenas Semana_id/Opcao/Confirmado/Data_Hora,
+    // sem colaborador e sem dia. Elas não representam refeição real.
+    if (!dia || !opcao) return false;
+    if (!nome && !colabId) return false;
+    if (nomeNorm === "pedido" && !colabId) return false;
+
+    return true;
   },
 
   async _buscar(ini, fim) {
@@ -260,6 +278,7 @@ const AdminRelatorios = window.AdminRelatorios = {
       await this._carregarValorReferencia(ini, fim);
       const todos = await SP.getItems("Pedidos");
       this._pedidos = todos.filter(p => {
+        if (!this._pedidoValidoRelatorio(p)) return false;
         const d = this._dataPedido(p);
         return d && d >= ini && d <= fim;
       });
@@ -286,7 +305,7 @@ const AdminRelatorios = window.AdminRelatorios = {
   },
 
   _conf() {
-    return this._pedidos.filter(p => this._isConf(p));
+    return this._pedidos.filter(p => this._pedidoValidoRelatorio(p) && this._isConf(p));
   },
 
   _nfInformada() {
