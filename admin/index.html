@@ -6,9 +6,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>Admin · Refeitório Homy</title>
 <!-- PWA Admin Homy -->
-<link rel="manifest" href="../manifest-admin.json?v=pwa-homy-final-20260612-v3">
-<link rel="icon" type="image/png" sizes="64x64" href="../assets/pwa/icon-admin-64.png?v=pwa-homy-final-20260612-v3">
-<link rel="apple-touch-icon" sizes="180x180" href="../assets/pwa/icon-admin-180.png?v=pwa-homy-final-20260612-v3">
+<link rel="manifest" href="../manifest-admin.json?v=pwa-homy-final-20260612-v4">
+<link rel="icon" type="image/png" sizes="64x64" href="../assets/pwa/icon-admin-64.png?v=pwa-homy-final-20260612-v4">
+<link rel="apple-touch-icon" sizes="180x180" href="../assets/pwa/icon-admin-180.png?v=pwa-homy-final-20260612-v4">
 <meta name="theme-color" content="#05153A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -39,7 +39,7 @@
     visibility: visible;
     pointer-events: auto;
     background-color: #05153A;
-    background-image: url('../assets/pwa/splash-admin-1080x1920.jpg?v=pwa-homy-final-20260612-v3');
+    background-image: url('../assets/pwa/splash-admin-1080x1920.jpg?v=pwa-homy-final-20260612-v4');
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -73,10 +73,39 @@
 <script src="js/admin-pedidos.js"></script>
 <script src="js/admin-operacao-dia.js"></script>
 <script src="js/admin-colaboradores.js"></script>
+<script src="js/admin-ausencias.js?v=restaurar-ausencias-20260612-1"></script>
 <script src="js/admin-extras.js?v=final-portaria-20260611-3"></script>
 <script src="js/admin-valores.js?v=final-nf-responsive-20260611-3"></script>
 <script src="js/admin-relatorios.js?v=final-rateio-homy-20260611-3"></script>
 <script src="js/admin-configuracoes.js"></script>
+
+<script>
+// Patch mínimo para restaurar o módulo Ausências sem alterar admin-core.js.
+(function(){
+  if (!window.AdminCore || window.AdminCore.__homyAusenciasPatch) return;
+  window.AdminCore.__homyAusenciasPatch = true;
+  window.AdminCore.MODULOS = window.AdminCore.MODULOS || {};
+  window.AdminCore.MODULOS.ausencias = {
+    title: "Ausências",
+    sub: "Férias, afastamentos e bloqueios"
+  };
+
+  const loadOriginal = window.AdminCore.loadModule.bind(window.AdminCore);
+  window.AdminCore.loadModule = function(mod){
+    loadOriginal(mod);
+
+    if (mod === "ausencias") {
+      const loader = window.AdminAusencias?.load || window.AdminAusencias?.carregar;
+      if (typeof loader === "function") {
+        Promise.resolve(loader.call(window.AdminAusencias)).catch(e => {
+          console.error("[AdminAusencias]", e);
+          window.AdminUtils?.toast?.("Erro ao carregar ausências: " + (e.message || e), "error");
+        });
+      }
+    }
+  };
+})();
+</script>
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -411,6 +440,7 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
       <div class="nav-item" data-module="cardapio">            <span class="nav-icon">🍽️</span><span class="nav-label">Cardápio</span></div>
       <div class="nav-item" data-module="pedidos">             <span class="nav-icon">📋</span><span class="nav-label">Pedidos</span></div>
       <div class="nav-item" data-module="operacao">            <span class="nav-icon">👨‍🍳</span><span class="nav-label">Operação do Dia</span></div>
+      <div class="nav-item" data-module="ausencias">           <span class="nav-icon">🚫</span><span class="nav-label">Ausências</span></div>
       <div class="nav-item" data-module="colaboradores">       <span class="nav-icon">👥</span><span class="nav-label">Colaboradores</span></div>
       <div class="nav-item" data-module="extras">              <span class="nav-icon">➕</span><span class="nav-label">Extras</span></div>
       <div class="nav-item" data-module="valores">             <span class="nav-icon">💰</span><span class="nav-label">Valores</span></div>
@@ -633,6 +663,47 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
           <table class="table">
             <thead><tr><th>Colaborador</th><th>Setor</th><th>Opção</th><th>Prato</th><th>Status</th><th>Origem</th><th>Ações</th></tr></thead>
             <tbody id="operacaoTable"><tr><td colspan="7" class="empty-cell">Carregando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <!-- ══ AUSÊNCIAS ══ -->
+      <div class="module" id="mod-ausencias">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🚫 Ausências</div>
+            <div style="font-size:.78rem;color:rgba(143,170,210,.58);margin-top:.25rem">Férias, afastamentos, faltas e bloqueios de refeição.</div>
+          </div>
+          <button class="btn-primary" id="btnNovaAusencia">+ Nova ausência</button>
+        </div>
+
+        <div class="homy-filter-box">
+          <div class="form-group">
+            <label class="form-label">Pesquisar</label>
+            <input class="form-input" id="fAusenciaTexto" placeholder="Colaborador, setor ou motivo">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="fAusenciaStatus">
+              <option value="">Todos</option>
+              <option value="ativo">Ativos</option>
+              <option value="inativo">Inativos</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:flex-end">
+            <button class="btn-secondary" id="btnLimparAusencias">Limpar</button>
+          </div>
+        </div>
+
+        <div class="alert alert-info">ℹ️ Use este módulo para registrar colaboradores que não devem aparecer como pendentes/confirmados no período informado.</div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Colaborador</th><th>Início</th><th>Fim</th><th>Motivo</th><th>Status</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="ausenciasTable"><tr><td colspan="6" class="empty-cell">Carregando...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -918,6 +989,57 @@ html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;background:
     <div class="modal-footer">
       <button class="btn-secondary" id="cancelModalExtra">Cancelar</button>
       <button class="btn-primary"   id="salvarExtra">💾 Adicionar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Modal Ausência -->
+<div class="modal-overlay" id="modalAusencia">
+  <div class="modal-box" style="max-width:620px">
+    <div class="modal-header">
+      <div class="modal-title">Nova ausência</div>
+      <div class="modal-close">✕</div>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ausenciaId">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Colaborador *</label>
+          <select class="form-select" id="ausenciaColaborador">
+            <option value="">Carregando colaboradores...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Data início *</label>
+          <input type="date" class="form-input" id="ausenciaDataInicio">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Data fim *</label>
+          <input type="date" class="form-input" id="ausenciaDataFim">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Motivo</label>
+          <select class="form-select" id="ausenciaMotivo">
+            <option value="nao_vai_almocar">Não vai almoçar</option>
+            <option value="ferias">Férias</option>
+            <option value="afastamento">Afastamento</option>
+            <option value="atestado">Atestado</option>
+            <option value="falta">Falta</option>
+            <option value="homy_office">Homy Office</option>
+            <option value="banco_horas">Banco de horas</option>
+            <option value="outro">Outro</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Observação</label>
+          <textarea class="form-textarea" id="ausenciaObs" placeholder="Informações adicionais..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="cancelarAusencia">Cancelar</button>
+      <button class="btn-success" id="salvarAusencia">💾 Salvar ausência</button>
     </div>
   </div>
 </div>
