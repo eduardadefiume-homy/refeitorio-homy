@@ -6,10 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#040c1a">
-<link rel="icon" type="image/png" sizes="64x64" href="icon-cozinha-64.png?v=cozinha-solid-red-20260611">
-<link rel="apple-touch-icon" sizes="180x180" href="icon-cozinha-180.png?v=cozinha-solid-red-20260611">
-<link rel="manifest" href="manifest-cozinha.json?v=cozinha-solid-red-20260611">
-<meta name="theme-color" content="#B31717">
+<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
 <title>Cozinha · Homy Química</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -462,6 +459,8 @@ let pedidosHoje  = [];
 let checkinsHoje = [];
 let pedidoSelecionado = null;
 let cozinhaSyncTimer = null;
+let cozinhaSyncEmAndamento = false;
+let cozinhaSyncChannel = null;
 let checkinsConfirmadosLocal = new Set();
 
 // ---- helpers ----
@@ -509,6 +508,16 @@ function salvarCheckinLocal(semanaId, dia, pedido){
   } catch(e) {
     console.warn("Não foi possível manter confirmação local:", e);
   }
+}
+
+function emitirEventoSync(tipo, detalhe = {}){
+  const payload = { tipo, detalhe, ts: Date.now() };
+  try { localStorage.setItem("homy_cozinha_checkin_sync", JSON.stringify(payload)); } catch (_) {}
+  try { localStorage.setItem("homy_refeitorio_sync", JSON.stringify(payload)); } catch (_) {}
+  try {
+    if (!cozinhaSyncChannel) cozinhaSyncChannel = new BroadcastChannel("homy-refeitorio-sync");
+    cozinhaSyncChannel.postMessage(payload);
+  } catch (_) {}
 }
 
 function marcarPedidoEntregueLocal(semanaId, dia, pedido){
@@ -689,9 +698,13 @@ async function carregarAusenciasSeguras(){
   return [];
 }
 
-async function sincronizar(){
+async function sincronizar(silencioso = false){
+  if (cozinhaSyncEmAndamento) return;
+  cozinhaSyncEmAndamento = true;
   const lista = document.getElementById("lista");
-  if (lista) lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
+  if (!silencioso && lista && !pedidosHoje.length) {
+    lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
+  }
 
   try {
     const semanaId = semanaIdAtual();
@@ -745,13 +758,15 @@ async function sincronizar(){
     renderLista();
   } catch(e) {
     console.error(e);
-    if (lista) lista.innerHTML = `
+    if (!silencioso && lista) lista.innerHTML = `
       <div class="empty">
         <div class="empty-icon">⚠️</div>
         <div class="empty-title">Não foi possível conectar</div>
         <div class="empty-sub">${esc(e.message || e)}</div>
         <button class="connect" onclick="conectar()">Conectar novamente</button>
       </div>`;
+  } finally {
+    cozinhaSyncEmAndamento = false;
   }
 }
 
@@ -904,12 +919,13 @@ async function confirmarRetirada(){
 
     // SharePoint confirmou: agora a interface trava imediatamente o colaborador.
     marcarPedidoEntregueLocal(semanaId, dia, pedido);
+    emitirEventoSync("checkin", { semanaId, dia, colaboradorId: getColaboradorId(pedido), nome: getNome(pedido) });
     fecharModal();
     mostrarToast("Retirada confirmada");
     renderLista();
 
     // Sincroniza em segundo plano sem desfazer o travamento visual.
-    setTimeout(() => sincronizar().catch(console.warn), 900);
+    setTimeout(() => sincronizar(true).catch(console.warn), 900);
   } catch(e) {
     if (btn) { btn.disabled = false; btn.textContent = "✓ Sim, confirmar retirada"; }
     alert("Erro ao confirmar retirada: " + (e.message || e));
@@ -1004,6 +1020,28 @@ function emailAtualSP(){
   return String(window.SP?.getUserEmail?.() || window.SP?._account?.username || "").toLowerCase().trim();
 }
 
+function ativarSyncTempoRealCozinha(){
+  if (cozinhaSyncTimer) clearInterval(cozinhaSyncTimer);
+  cozinhaSyncTimer = setInterval(() => sincronizar(true).catch(console.warn), 7000);
+
+  window.addEventListener("focus", () => sincronizar(true).catch(console.warn));
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) sincronizar(true).catch(console.warn);
+  });
+  window.addEventListener("online", () => sincronizar(true).catch(console.warn));
+  window.addEventListener("storage", e => {
+    if (e.key === "homy_cozinha_checkin_sync" || e.key === "homy_refeitorio_sync") {
+      sincronizar(true).catch(console.warn);
+    }
+  });
+  try {
+    if (!cozinhaSyncChannel) cozinhaSyncChannel = new BroadcastChannel("homy-refeitorio-sync");
+    cozinhaSyncChannel.onmessage = ev => {
+      if (["checkin", "pedido", "extra"].includes(ev?.data?.tipo)) sincronizar(true).catch(console.warn);
+    };
+  } catch (_) {}
+}
+
 async function iniciarAppCozinhaAutorizado(){
   esconderTelasAcesso();
   const app = document.getElementById("appCozinha");
@@ -1011,9 +1049,7 @@ async function iniciarAppCozinhaAutorizado(){
 
   atualizarData();
   await sincronizar();
-
-  if (cozinhaSyncTimer) clearInterval(cozinhaSyncTimer);
-  cozinhaSyncTimer = setInterval(sincronizar, 30000);
+  ativarSyncTempoRealCozinha();
 }
 
 async function entrarCozinhaComConta(){
