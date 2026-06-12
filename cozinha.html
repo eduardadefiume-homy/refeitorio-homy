@@ -607,9 +607,8 @@ function isAusente(p){
          status === "ferias" || status === "férias" || status === "afastado" || status === "atestado";
 }
 
-// Extras administrativos não devem aparecer na lista da cozinha.
-// Eles continuam existindo para operação, pedidos, dashboard e relatórios,
-// mas a tela da cozinha exibe apenas os colaboradores do refeitório.
+// Identifica extras administrativos.
+// Na cozinha eles DEVEM aparecer quando existirem; quem não mostra extras é a tela de marcar refeição.
 function isPedidoExtraCozinha(p){
   const origem = normalizar(itemValor(p,"Origem","origem"));
   const tipo   = normalizar(itemValor(p,"tipo","Tipo"));
@@ -624,7 +623,90 @@ function isPedidoExtraCozinha(p){
 
 // Mantido por compatibilidade com versões anteriores.
 function pedidoConta(p){
-  return !isPedidoExtraCozinha(p);
+  return true;
+}
+
+function isExtraCanceladoCozinha(e){
+  const status = normalizar(itemValor(e,"Status","status"));
+  return ["cancelado", "bloqueado", "travado", "excluido", "excluído", "inativo"].includes(status);
+}
+
+async function carregarExtrasCozinhaSeguros(semanaId, dia){
+  const tentativas = [
+    () => window.SP.getExtras?.(semanaId, dia),
+    () => window.SP.getExtras?.(semanaId),
+    () => window.SP.getItems?.("Extras")
+  ];
+
+  for (const fn of tentativas) {
+    try {
+      const r = await fn();
+      if (Array.isArray(r)) {
+        return r.filter(e =>
+          String(itemValor(e,"Semana_id","semanaId") || "") === String(semanaId) &&
+          normalizar(itemValor(e,"Dia","dia") || "") === normalizar(dia) &&
+          !isExtraCanceladoCozinha(e)
+        );
+      }
+    } catch(e) {
+      console.warn("Extras ignorados na cozinha:", e.message || e);
+    }
+  }
+
+  return [];
+}
+
+function extraParaPedidoCozinha(extra, semanaId, dia){
+  const id = String(extra?.id || extra?.ID || "").trim();
+  const nome = String(itemValor(extra,"Nome","Title") || "Refeição Extra").trim();
+  const tipo = String(itemValor(extra,"tipo","Tipo","Origem","origem") || "extra").trim();
+  const opcao = String(itemValor(extra,"Opcao","opcao") || "principal").trim();
+  const obs = String(itemValor(extra,"Observacao","observacao") || "").trim();
+  const colabId = id ? `extra-${id}` : `extra-${normalizar(tipo)}-${normalizar(nome)}-${normalizar(dia)}`;
+
+  return {
+    id: colabId,
+    ID: colabId,
+    Title: nome,
+    Semana_id: semanaId,
+    Colaborador_id: colabId,
+    Colaborador_nome: nome,
+    Dia: dia,
+    Opcao: opcao || "principal",
+    Nome_Prato: "Cardápio do Dia",
+    Status: "Confirmado",
+    Confirmado: true,
+    Origem: tipo || "extra",
+    tipo: tipo || "extra",
+    Observacao: obs,
+    _extraCozinha: true
+  };
+}
+
+function chavePedidoCozinha(p){
+  const dia = normalizar(itemValor(p,"Dia","dia"));
+  const cid = normalizar(getColaboradorId(p));
+  const nome = normalizar(getNome(p));
+  const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
+  const id = normalizar(getPedidoId(p));
+
+  if (cid && cid.startsWith("extra-")) return `extra:${cid}:${dia}`;
+  if (isPedidoExtraCozinha(p)) return `extra:${dia}:${nome}:${origem}`;
+  return `pedido:${id || cid || nome}:${dia}`;
+}
+
+function juntarPedidosEExtrasCozinha(pedidos, extras){
+  const mapa = new Map();
+  (pedidos || []).forEach(p => {
+    const k = chavePedidoCozinha(p);
+    if (!mapa.has(k)) mapa.set(k, p);
+  });
+  (extras || []).forEach(e => {
+    const p = extraParaPedidoCozinha(e, semanaIdAtual(), diaAtual());
+    const k = chavePedidoCozinha(p);
+    if (!mapa.has(k)) mapa.set(k, p);
+  });
+  return Array.from(mapa.values());
 }
 
 function diaAtual(){
@@ -752,9 +834,10 @@ async function sincronizar(silencioso = false){
     // A lista de ausências NÃO pode impedir a cozinha de abrir.
     // Se a lista não existir no SharePoint, seguimos com os pedidos normalmente.
     const pedidos = await window.SP.getPedidos(semanaId);
+    const extras = await carregarExtrasCozinhaSeguros(semanaId, dia);
     const ausencias = await carregarAusenciasSeguras();
 
-    pedidosHoje = (pedidos || []).filter(p => {
+    const pedidosFiltrados = (pedidos || []).filter(p => {
       const okDia = normalizar(itemValor(p,"Dia","dia")) === normalizar(dia);
       const nome  = String(getNome(p) || "").trim();
       const opcao = String(itemValor(p,"Opcao","opcao") || "").trim();
@@ -762,9 +845,10 @@ async function sincronizar(silencioso = false){
       const prato = String(itemValor(p,"Nome_Prato","nome_prato") || "").trim();
       const quebrado = (!nome && !opcao) || (normalizar(nome) === "pedido" && !prato);
       const cancelado = ["cancelado", "bloqueado", "travado"].includes(status);
-      const extraAdmin = isPedidoExtraCozinha(p);
-      return okDia && !quebrado && !cancelado && !extraAdmin;
+      return okDia && !quebrado && !cancelado;
     });
+
+    pedidosHoje = juntarPedidosEExtrasCozinha(pedidosFiltrados, extras);
 
     const hoje = new Date().toISOString().slice(0,10);
     pedidosHoje = pedidosHoje.map(p => {
