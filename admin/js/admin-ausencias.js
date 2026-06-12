@@ -61,6 +61,124 @@ const AdminAusencias = window.AdminAusencias = {
     return SP.getItems(lista);
   },
 
+  _semanaIdAtual() {
+    try {
+      if (window.AdminState?.getSemanaId) return AdminState.getSemanaId();
+      if (SP.getSemanaId) return SP.getSemanaId(new Date());
+    } catch (_) {}
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    const w1 = new Date(d.getFullYear(), 0, 4);
+    const wn = 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+    return d.getFullYear() + "-W" + String(wn).padStart(2, "0");
+  },
+
+  _dataPorDia(semanaId, dia) {
+    const m = String(semanaId || "").match(/^(\d{4})-W(\d{2})$/);
+    if (!m) return "";
+
+    const ano = Number(m[1]);
+    const semana = Number(m[2]);
+    const jan4 = new Date(Date.UTC(ano, 0, 4));
+    const jan4Day = jan4.getUTCDay() || 7;
+    const monday = new Date(jan4);
+    monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1 + (semana - 1) * 7);
+
+    const idx = { segunda:0, terca:1, terça:1, quarta:2, quinta:3, sexta:4 }[AdminUtils.norm(dia)];
+    if (idx === undefined) return "";
+
+    const d = new Date(monday);
+    d.setUTCDate(monday.getUTCDate() + idx);
+    return d.toISOString().slice(0, 10);
+  },
+
+  _isPedidoAusencia(p) {
+    const status = AdminUtils.norm(this._pick(p, "Status", "status"));
+    return [
+      "nao vai almocar", "não vai almoçar", "nao_vai_almocar",
+      "ferias", "férias", "afastado", "atestado", "licenca", "licença", "falta"
+    ].includes(status);
+  },
+
+  _pedidoDataRefeicao(p, semanaId) {
+    const semana = this._pick(p, "Semana_id", "Semana") || semanaId;
+    const dia = this._pick(p, "Dia", "dia");
+    if (semana && dia) return this._dataPorDia(semana, dia);
+    return this._dateISO(this._pick(p, "Data_Refeicao", "Data_Referencia", "Data"));
+  },
+
+  _pedidoAusenciaKey(p, semanaId) {
+    const cid = String(this._pick(p, "Colaborador_id", "ColaboradorId") || "").trim();
+    const nome = AdminUtils.norm(this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+    const data = this._pedidoDataRefeicao(p, semanaId);
+    const motivo = AdminUtils.norm(this._pick(p, "Status", "status") || "nao_vai_almocar");
+    return `${cid || nome}|${data}|${motivo}`;
+  },
+
+  async _getAusenciasDoRefeitorio() {
+    const semanaId = this._semanaIdAtual();
+    let pedidos = [];
+
+    try {
+      if (SP.getPedidos) pedidos = await SP.getPedidos(semanaId);
+      else pedidos = await SP.getItems("Pedidos");
+    } catch (e) {
+      console.warn("[Ausências] Não foi possível ler ausências vindas do refeitório:", e);
+      return [];
+    }
+
+    const vistos = new Set();
+    return (pedidos || [])
+      .filter(p => this._isPedidoAusencia(p))
+      .map(p => {
+        const data = this._pedidoDataRefeicao(p, semanaId);
+        const motivo = this._pick(p, "Status", "status") || "Não vai almoçar";
+        const key = this._pedidoAusenciaKey(p, semanaId);
+        return {
+          id: `pedido-${this._pick(p, "id", "ID") || key}`,
+          _origemPedido: true,
+          _pedidoId: this._pick(p, "id", "ID") || "",
+          Title: this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—",
+          Colaborador_id: String(this._pick(p, "Colaborador_id", "ColaboradorId") || ""),
+          Colaborador_nome: this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—",
+          Centro_Custo: this._pick(p, "Centro_Custo", "Setor", "Departamento") || "",
+          Data_Inicio: data,
+          Data_Fim: data,
+          Motivo: motivo,
+          Status: "Refeitório",
+          Ativo: true,
+          Observacao: "Ausência registrada pela tela de marcação/refeitório."
+        };
+      })
+      .filter(a => {
+        const key = `${AdminUtils.norm(a.Colaborador_id || a.Colaborador_nome)}|${a.Data_Inicio}|${AdminUtils.norm(a.Motivo)}`;
+        if (!a.Data_Inicio || vistos.has(key)) return false;
+        vistos.add(key);
+        return true;
+      });
+  },
+
+  _mesclarAusencias(listaSharePoint, listaRefeitorio) {
+    const mapa = new Map();
+    const chave = a => {
+      const cid = String(this._pick(a, "Colaborador_id", "ColaboradorId") || "").trim();
+      const nome = AdminUtils.norm(this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+      const ini = this._dateISO(this._pick(a, "Data_Inicio", "Inicio", "DataInicio"));
+      const fim = this._dateISO(this._pick(a, "Data_Fim", "Fim", "DataFim")) || ini;
+      const motivo = AdminUtils.norm(this._pick(a, "Motivo", "motivo", "Status"));
+      return `${cid || nome}|${ini}|${fim}|${motivo}`;
+    };
+
+    (listaSharePoint || []).forEach(a => mapa.set(chave(a), a));
+    (listaRefeitorio || []).forEach(a => {
+      const k = chave(a);
+      if (!mapa.has(k)) mapa.set(k, a);
+    });
+
+    return Array.from(mapa.values());
+  },
+
   async _createAusencia(fields) {
     const lista = await this._descobrirLista();
     return SP.createItem(lista, fields);
@@ -95,7 +213,11 @@ const AdminAusencias = window.AdminAusencias = {
 
     try {
       await SP.init();
-      this._lista = await this._getAusencias();
+      const [ausenciasSP, ausenciasRefeitorio] = await Promise.all([
+        this._getAusencias().catch(e => { throw e; }),
+        this._getAusenciasDoRefeitorio()
+      ]);
+      this._lista = this._mesclarAusencias(ausenciasSP, ausenciasRefeitorio);
       this._render();
     } catch (e) {
       console.error("[Ausências]", e);
@@ -212,18 +334,25 @@ const AdminAusencias = window.AdminAusencias = {
       const motivo = AdminUtils.esc(this._formatMotivo(this._pick(a, "Motivo", "motivo") || "—"));
       const ativo = this._ativo(a);
       const status = ativo ? "Ativo" : "Inativo";
+      const origemRefeitorio = !!a._origemPedido;
+      const statusHtml = origemRefeitorio
+        ? `<span class="badge badge-blue">Refeitório</span>`
+        : `<span class="badge ${ativo ? "badge-green" : "badge-red"}">${status}</span>`;
+      const acoesHtml = origemRefeitorio
+        ? `<span style="color:rgba(143,170,210,.45);font-size:.78rem">Via pedidos</span>`
+        : `<div class="table-actions">
+          <button class="btn-icon" title="Editar" onclick="AdminAusencias.abrirEdicao('${id}')">✏️</button>
+          ${ativo
+            ? `<button class="btn-icon danger" title="Inativar" onclick="AdminAusencias.inativar('${id}')">🚫</button>`
+            : `<button class="btn-icon" title="Reativar" onclick="AdminAusencias.reativar('${id}')">↩️</button>`}
+        </div>`;
       return `<tr>
         <td>${nome}</td>
         <td>${ini}</td>
         <td>${fim}</td>
         <td>${motivo}</td>
-        <td><span class="badge ${ativo ? "badge-green" : "badge-red"}">${status}</span></td>
-        <td><div class="table-actions">
-          <button class="btn-icon" title="Editar" onclick="AdminAusencias.abrirEdicao('${id}')">✏️</button>
-          ${ativo
-            ? `<button class="btn-icon danger" title="Inativar" onclick="AdminAusencias.inativar('${id}')">🚫</button>`
-            : `<button class="btn-icon" title="Reativar" onclick="AdminAusencias.reativar('${id}')">↩️</button>`}
-        </div></td>
+        <td>${statusHtml}</td>
+        <td>${acoesHtml}</td>
       </tr>`;
     }).join("");
   },
