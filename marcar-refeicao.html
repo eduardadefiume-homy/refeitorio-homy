@@ -272,7 +272,7 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("sharepoint.js?v=fix-publico-refeitorio-20260615-1");
+      return loadScript("sharepoint.js?v=fix-ausencias-com-centro-custo-20260615");
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
@@ -640,7 +640,7 @@ async function carregarDadosSharePoint(){
       id:         String(c.id||""),
       nome:       String(SP.pick(c,"Nome","Title")||"Sem nome"),
       dept:       String(SP.pick(c,"Departamento","")||""),
-      cc:         String(SP.pick(c,"Centro_Custo")||""),
+      cc:         String(SP.pick(c,"Centro_Custo","Centro Custo","Centro de Custo","CentroCusto","Centro_x0020_Custo","Centro_x005f_Custo","CC","Setor","Departamento")||""),
       confirmado: idsConfirmados.has(String(c.id||""))
     })).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
 
