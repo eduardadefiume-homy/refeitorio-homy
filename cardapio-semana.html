@@ -232,9 +232,9 @@ window.HOMY_SP_READY = (function(){
 const DIAS_KEY    = ["seg","ter","qua","qui","sex"];
 const DIAS_LABEL  = {seg:"Segunda",ter:"Terça",qua:"Quarta",qui:"Quinta",sex:"Sexta"};
 const MESES       = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
-const TAG_CLASS   = {principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
-const TAG_LABEL   = {principal:"Principal",light:"Light",carne:"Carne",massa:"Massa",lanche:"Lanche"};
-const ORDEM_OPCOES = ["principal","light","carne","massa","lanche"];
+const TAG_CLASS   = {feriado:"tag-feriado",principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
+const TAG_LABEL   = {feriado:"Feriado",principal:"Principal",light:"Light",carne:"Carne",massa:"Massa",lanche:"Lanche"};
+const ORDEM_OPCOES = ["feriado","principal","light","carne","massa","lanche"];
 
 // Textos que NUNCA devem aparecer como detalhe para o colaborador
 const DETALHES_BLOQUEADOS = [
@@ -282,6 +282,7 @@ function normOpcao(v){
   if(s.startsWith("car"))  return "carne";
   if(s.startsWith("mas"))  return "massa";
   if(s.startsWith("lan"))  return "lanche";
+  if(s.startsWith("fer"))  return "feriado";
   return "principal";
 }
 
@@ -334,6 +335,17 @@ function normalizarItem(item){
   const tag     = normOpcao(pick(item,"Opcao","opcao"));
   const nomeRaw = String(pick(item,"Nome_Prato","nomePrato","Prato","Title")||"").trim();
   const detRaw  = String(pick(item,"Detalhes","detalhes")||"").trim();
+
+  if(tag === "feriado" || norm(nomeRaw).includes("feriado") || norm(detRaw).includes("feriado")){
+    return {
+      tag:"feriado",
+      tagLabel:"Feriado",
+      tagClass:"tag-feriado",
+      nome:"FERIADO",
+      detalhes:["Não haverá marcação de refeição para este dia."],
+      aviso:null
+    };
+  }
 
   let nome     = nomeRaw;
   // Remove detalhes sujos E observações Vascon que já vieram do SharePoint
@@ -548,6 +560,18 @@ function setDay(key){
     '</div>';
 
   const itens = ordenar(CARDAPIO[key]||[]);
+  const feriado = itens.find(op => op.tag === "feriado" || norm(op.nome).includes("feriado"));
+
+  if(feriado){
+    panel.innerHTML +=
+      '<div style="border:1px solid rgba(255,80,80,.28);background:rgba(192,40,28,.12);border-radius:18px;padding:2.2rem 1rem;text-align:center;margin-top:1rem">'+
+        '<div style="font-size:3.2rem;line-height:1">🚫</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:3rem;font-weight:800;letter-spacing:.14em;color:#fff;text-transform:uppercase;margin-top:.7rem">FERIADO</div>'+
+        '<div style="font-size:.92rem;color:rgba(255,210,210,.84);margin-top:.4rem">Não haverá marcação de refeição para este dia.</div>'+
+      '</div>';
+    area.appendChild(panel);
+    return;
+  }
 
   if(!itens.length){
     panel.innerHTML +=
