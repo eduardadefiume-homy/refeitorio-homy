@@ -496,7 +496,7 @@ const AdminAusencias = window.AdminAusencias = {
   async inativar(id) {
     if (!confirm("Inativar esta ausência?")) return;
     try {
-      await this._updateAusencia(id, { Ativo: false, Status: "Inativo" });
+      await this._updateAusencia(id, { Ativo: false });
       AdminUtils.toast("Ausência inativada.", "success");
       await this._carregar();
     } catch (e) {
@@ -506,7 +506,7 @@ const AdminAusencias = window.AdminAusencias = {
 
   async reativar(id) {
     try {
-      await this._updateAusencia(id, { Ativo: true, Status: "Ativo" });
+      await this._updateAusencia(id, { Ativo: true });
       AdminUtils.toast("Ausência reativada.", "success");
       await this._carregar();
     } catch (e) {
