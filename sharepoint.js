@@ -140,6 +140,22 @@ const SP = {
     return true;
   },
 
+  // Compatibilidade com páginas públicas antigas/novas do refeitório.
+  // Faz apenas a tentativa silenciosa de reaproveitar uma sessão Microsoft já existente.
+  // Não abre popup sozinho; quando não houver sessão, a própria página mostra o botão de login.
+  async ensureLoginSilenciosoOuAviso() {
+    await this.init();
+    return !!this._account;
+  },
+
+  async ensureLoginSilencioso() {
+    return this.ensureLoginSilenciosoOuAviso();
+  },
+
+  async loginSilencioso() {
+    return this.ensureLoginSilenciosoOuAviso();
+  },
+
   async logout() {
     await this.init();
     const account = this._account;
@@ -545,6 +561,18 @@ const SP = {
       if (this.isTrue(v)) return true;
     }
     return false;
+  },
+
+  async getMarcacaoLiberada() {
+    return this.isCardapioLiberado();
+  },
+
+  async getCardapioVisivel() {
+    return this.isCardapioLiberado();
+  },
+
+  async isMarcacaoLiberada() {
+    return this.isCardapioLiberado();
   },
 
   async setMarcacaoLiberada(liberado) {
