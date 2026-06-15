@@ -542,7 +542,7 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
           </div>
         </div>
       </div>
-      <button class="sync" onclick="sincronizar()">↻ Atualizar</button>
+      <button class="sync" id="btnSyncCozinha" onclick="forcarSincronizarCozinha()">↻ Atualizar</button>
     </div>
     <div class="datebar">
       <div class="weekday" id="weekday">—</div>
@@ -556,7 +556,7 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
       <div class="cozinha-dashboard-head">
         <div>
           <div class="cozinha-dashboard-title">📊 Resumo para conferência</div>
-          <div class="cozinha-dashboard-sub">Totais do dia sincronizados com Admin, Pedidos, Extras e Check-ins.</div>
+          <div class="cozinha-dashboard-sub">Totais do dia sincronizados com Admin, Pedidos e Check-ins.</div>
         </div>
         <div class="cozinha-dashboard-sync" id="cozDashAtualizado">Tempo real</div>
       </div>
@@ -567,7 +567,6 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🥩</div><div class="cozinha-stat-value" id="cozDashCarne">0</div><div class="cozinha-stat-label">Carne</div></div>
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍝</div><div class="cozinha-stat-value" id="cozDashMassa">0</div><div class="cozinha-stat-label">Massa</div></div>
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍔</div><div class="cozinha-stat-value" id="cozDashLanche">0</div><div class="cozinha-stat-label">Lanche</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">➕</div><div class="cozinha-stat-value" id="cozDashExtras">0</div><div class="cozinha-stat-label">Extras / Portaria</div></div>
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">📦</div><div class="cozinha-stat-value" id="cozDashPendentes">0</div><div class="cozinha-stat-label">A retirar</div></div>
       </div>
     </section>
@@ -1003,6 +1002,8 @@ async function sincronizar(silencioso = false){
   if (cozinhaSyncEmAndamento) return;
   cozinhaSyncEmAndamento = true;
   const lista = document.getElementById("lista");
+  const sync = document.getElementById("cozDashAtualizado");
+  if (sync && !silencioso) sync.textContent = "Atualizando...";
   if (!silencioso && lista && !pedidosHoje.length) {
     lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
   }
@@ -1076,6 +1077,22 @@ async function sincronizar(silencioso = false){
 async function conectar(){
   await entrarCozinhaComConta();
 }
+
+async function forcarSincronizarCozinha(){
+  const btn = document.getElementById("btnSyncCozinha") || document.querySelector(".sync");
+  const old = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Atualizando..."; }
+  try {
+    await sincronizar(false);
+    mostrarToast("Lista atualizada");
+  } catch (e) {
+    console.warn("Atualização manual da cozinha:", e);
+    mostrarToast("Não foi possível atualizar agora");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = old || "↻ Atualizar"; }
+  }
+}
+
 
 function limparBusca(){
   document.getElementById("busca").value = "";
@@ -1151,7 +1168,6 @@ function atualizarResumoCozinha(){
   setTxtCozinha("cozDashCarne", resumo.carne);
   setTxtCozinha("cozDashMassa", resumo.massa);
   setTxtCozinha("cozDashLanche", resumo.lanche);
-  setTxtCozinha("cozDashExtras", resumo.extras);
   setTxtCozinha("cozDashPendentes", Math.max(validos.length - entregues, 0));
 
   const sync = document.getElementById("cozDashAtualizado");
