@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: homy-final-20260610-1
+// v: fix-ausencias-com-centro-custo-20260615
 // ============================================================
 
 const SP = {
@@ -17,6 +17,7 @@ const SP = {
   _account:      null,
   _siteId:       null,
   _listIds:      {},
+  _columnCache:   {},
 
   // ============================================================
   // UTILITÁRIOS
@@ -160,8 +161,9 @@ const SP = {
     await this.init();
     const account = this._account;
     this._account = null;
-    this._siteId  = null;
-    this._listIds = {};
+    this._siteId      = null;
+    this._listIds     = {};
+    this._columnCache = {};
     if (account) await this._msalInstance.logoutPopup({ account });
   },
 
@@ -295,6 +297,102 @@ const SP = {
     return items.map(i => ({ id: i.id, ...i.fields }));
   },
 
+  async getListColumns(listName) {
+    if (this._columnCache[listName]) return this._columnCache[listName];
+
+    const siteId = await this.getSiteId();
+    const listId = await this.getListId(listName);
+    const data = await this.graph("GET",
+      `/sites/${siteId}/lists/${listId}/columns?$select=name,displayName`
+    );
+    const cols = data?.value || [];
+    this._columnCache[listName] = cols;
+    return cols;
+  },
+
+  _normCampo(v) {
+    return String(v || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+  },
+
+  _aliasesCampo(campo) {
+    const k = String(campo || "");
+    const mapa = {
+      Centro_Custo: [
+        "Centro_Custo", "Centro Custo", "Centro de Custo", "CentroCusto",
+        "Centro_x0020_Custo", "Centro_x005f_Custo", "Centro_x005f_Custo0",
+        "CC", "Centro custo"
+      ],
+      centroCusto: [
+        "Centro_Custo", "Centro Custo", "Centro de Custo", "CentroCusto",
+        "Centro_x0020_Custo", "Centro_x005f_Custo", "CC"
+      ]
+    };
+    return [k, ...(mapa[k] || [])];
+  },
+
+  _isCampoCentroCusto(campo) {
+    return this._normCampo(campo) === "centrocusto" ||
+           this._normCampo(campo) === "cc" ||
+           this._normCampo(campo) === "centrodecusto";
+  },
+
+  _isListaAusencias(listName) {
+    const n = this._normCampo(listName);
+    return n.includes("ausencia") || n.includes("ausencias");
+  },
+
+  async _mapFieldsToListColumns(listName, fields) {
+    const clean = this._cleanFields(fields || {});
+    // Ausencias do Refeitorio agora possui Centro_Custo.
+    // Mantemos o campo quando a coluna existir; se alguma lista antiga não tiver,
+    // o mapeamento abaixo omite apenas o Centro_Custo para não quebrar o salvamento.
+    let cols = [];
+    try {
+      cols = await this.getListColumns(listName);
+    } catch (e) {
+      console.warn(`[SharePoint] Não foi possível ler colunas de ${listName}; usando campos originais.`, e);
+      return clean;
+    }
+
+    const byName = new Map(cols.map(c => [String(c.name), c.name]));
+    const byNorm = new Map();
+    for (const c of cols) {
+      byNorm.set(this._normCampo(c.name), c.name);
+      byNorm.set(this._normCampo(c.displayName), c.name);
+    }
+
+    const out = {};
+    for (const [campo, valor] of Object.entries(clean)) {
+      let resolved = byName.get(campo) || null;
+
+      if (!resolved) {
+        for (const alias of this._aliasesCampo(campo)) {
+          resolved = byName.get(alias) || byNorm.get(this._normCampo(alias)) || null;
+          if (resolved) break;
+        }
+      }
+
+      if (resolved) {
+        out[resolved] = valor;
+        continue;
+      }
+
+      // Centro_Custo existe com nomes internos diferentes em algumas listas.
+      // Se a lista não tiver essa coluna, o campo é omitido para não quebrar o salvamento.
+      if (this._isCampoCentroCusto(campo)) {
+        console.warn(`[SharePoint] Campo Centro_Custo não existe em ${listName}; envio omitido.`);
+        continue;
+      }
+
+      out[campo] = valor;
+    }
+
+    return out;
+  },
+
   _validarPedidoFields(fields = {}) {
     const semana = String(fields.Semana_id || fields.semana_id || "").trim();
     const dia = String(fields.Dia || fields.dia || "").trim();
@@ -314,17 +412,19 @@ const SP = {
 
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
+    const mappedFields = await this._mapFieldsToListColumns(listName, fields);
     return this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, {
-      fields: this._cleanFields(fields)
+      fields: mappedFields
     });
   },
 
   async updateItem(listName, itemId, fields) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
+    const mappedFields = await this._mapFieldsToListColumns(listName, fields);
     return this.graph("PATCH",
       `/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,
-      this._cleanFields(fields)
+      mappedFields
     );
   },
 
@@ -432,6 +532,11 @@ const SP = {
   },
 
   async savePedido(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato, extras = {}) {
+    let centroCusto = extras.centroCusto ?? extras.Centro_Custo ?? "";
+    if (!centroCusto) {
+      centroCusto = await this._resolverCentroCustoColaborador(colaboradorId, colaboradorNome);
+    }
+
     const fields = {
       Title:            `${semanaId}-${colaboradorId}-${dia}`,
       Semana_id:        semanaId,
@@ -442,7 +547,7 @@ const SP = {
       Nome_Prato:       nomePrato || "",
       Confirmado:       extras.confirmado   ?? extras.Confirmado   ?? false,
       Data_Hora:        extras.dataHora     ?? extras.Data_Hora    ?? new Date().toISOString(),
-      Centro_Custo:     extras.centroCusto  ?? extras.Centro_Custo ?? "",
+      Centro_Custo:     centroCusto || "",
       Status:           extras.status       ?? extras.Status       ?? "Confirmado",
       Observacao:       extras.observacao   ?? extras.Observacao   ?? "",
       Origem:           extras.origem       ?? extras.Origem       ?? "Refeitório",
@@ -507,17 +612,138 @@ const SP = {
     );
   },
 
-  async addExtra(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor) {
+  async addExtra(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor, centroCusto = "") {
     return this.createItem("Extras", {
-      Title:         `${semanaId}-${dia}-${nome}`,
-      Semana_id:     semanaId,
-      Dia:           dia,
-      Nome:          nome,
-      tipo:          tipo,
-      Opcao:         opcao || "principal",
-      Observacao:    observacao || "",
-      Adicionado_Por: adicionadoPor || this.getUserName()
+      Title:          `${semanaId}-${dia}-${nome}`,
+      Semana_id:      semanaId,
+      Dia:            dia,
+      Nome:           nome,
+      tipo:           tipo,
+      Opcao:          opcao || "principal",
+      Observacao:     observacao || "",
+      Adicionado_Por: adicionadoPor || this.getUserName(),
+      Centro_Custo:   centroCusto || ""
     });
+  },
+
+  _normTexto(v) {
+    return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  },
+
+  _centroCustoPadraoExtra(nome, tipo) {
+    const n = this._normTexto(`${nome} ${tipo}`);
+    if (n.includes("guarda") || n.includes("investigador") || n.includes("portaria")) {
+      return "120602 - PORTARIA";
+    }
+    return "120101 - ADM GERAL";
+  },
+
+  _pratoPadraoPorOpcao(opcao) {
+    const op = this._normTexto(opcao);
+    if (op === "light") return "Opção Light";
+    if (op === "carne") return "Opção Carne";
+    if (op === "massa") return "Opção Massa";
+    if (op === "lanche") return "Lanche";
+    return "Prato Principal";
+  },
+
+  _extraBate(e, semanaId, dia, nome, tipo, opcao) {
+    const nDia = this._normTexto(dia);
+    const nNome = this._normTexto(nome);
+    const nTipo = this._normTexto(tipo);
+    const nOpcao = this._normTexto(opcao || "principal");
+    return String(this.pick(e, "Semana_id", "Semana") || "") === String(semanaId) &&
+      this._normTexto(this.pick(e, "Dia", "dia")) === nDia &&
+      this._normTexto(this.pick(e, "Nome", "Title", "Colaborador_nome")) === nNome &&
+      (!nTipo || this._normTexto(this.pick(e, "tipo", "Tipo", "Origem")).includes(nTipo)) &&
+      this._normTexto(this.pick(e, "Opcao", "opcao") || "principal") === nOpcao;
+  },
+
+  _pedidoExtraBate(p, semanaId, dia, nome, tipo, opcao, extraId = "") {
+    const obs = String(this.pick(p, "Observacao", "Observação", "observacao") || "");
+    if (extraId && obs.includes(`ExtraID:${extraId}`)) return true;
+
+    return String(this.pick(p, "Semana_id", "Semana") || "") === String(semanaId) &&
+      this._normTexto(this.pick(p, "Dia", "dia")) === this._normTexto(dia) &&
+      this._normTexto(this.pick(p, "Colaborador_nome", "Nome", "Title")) === this._normTexto(nome) &&
+      this._normTexto(this.pick(p, "Opcao", "opcao") || "principal") === this._normTexto(opcao || "principal") &&
+      this._normTexto(this.pick(p, "Origem", "tipo", "Tipo") || "").includes(this._normTexto(tipo));
+  },
+
+  async _addExtraPedidoCC(semanaId, dia, nome, tipo, opcao = "principal", observacao = "", centroCusto = "", adicionadoPor = "") {
+    const cc = centroCusto || this._centroCustoPadraoExtra(nome, tipo);
+    const user = adicionadoPor || this.getUserName();
+
+    let extras = [];
+    try { extras = await this.getExtras(semanaId); } catch (_) { extras = []; }
+
+    let extra = (extras || []).find(e => this._extraBate(e, semanaId, dia, nome, tipo, opcao));
+    if (!extra) {
+      extra = await this.addExtra(semanaId, dia, nome, tipo, opcao, observacao, user, cc);
+      // createItem retorna o item bruto do Graph; normaliza id e campos para reaproveitar abaixo.
+      extra = { id: extra?.id, Semana_id: semanaId, Dia: dia, Nome: nome, tipo, Opcao: opcao, Observacao: observacao, Centro_Custo: cc };
+    }
+
+    const extraId = String(this.pick(extra, "id", "ID") || "");
+    let pedidos = [];
+    try { pedidos = await this.getPedidos(semanaId); } catch (_) { pedidos = []; }
+
+    const jaTemPedido = (pedidos || []).some(p =>
+      this._pedidoExtraBate(p, semanaId, dia, nome, tipo, opcao, extraId)
+    );
+
+    let pedido = null;
+    if (!jaTemPedido) {
+      const obsPedido = `${observacao || ""}${extraId ? ` | ExtraID:${extraId}` : ""}`.trim();
+      pedido = await this.savePedido(
+        semanaId,
+        extraId ? `extra-${extraId}` : `extra-${this._normTexto(nome)}-${dia}`,
+        nome,
+        dia,
+        opcao || "principal",
+        this._pratoPadraoPorOpcao(opcao),
+        {
+          confirmado:  true,
+          status:      "Confirmado",
+          origem:      tipo || "extra",
+          centroCusto: cc,
+          observacao:  obsPedido,
+          dataHora:    new Date().toISOString(),
+          alteradoPor: user
+        }
+      );
+    }
+
+    return { extra, pedido, criadoPedido: !!pedido };
+  },
+
+  async addExtraPedido(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor, centroCusto = "") {
+    return this._addExtraPedidoCC(semanaId, dia, nome, tipo, opcao, observacao, centroCusto, adicionadoPor);
+  },
+
+  async deleteExtraComPedido(extra) {
+    if (!extra) return false;
+    const semanaId = this.pick(extra, "Semana_id", "Semana");
+    const dia = this.pick(extra, "Dia", "dia");
+    const nome = this.pick(extra, "Nome", "Title", "Colaborador_nome") || "Refeição Extra";
+    const tipo = this.pick(extra, "tipo", "Tipo", "Origem") || "extra";
+    const opcao = this.pick(extra, "Opcao", "opcao") || "principal";
+    const extraId = String(this.pick(extra, "id", "ID") || "");
+
+    if (semanaId) {
+      let pedidos = [];
+      try { pedidos = await this.getPedidos(semanaId); } catch (_) { pedidos = []; }
+      const alvos = (pedidos || []).filter(p =>
+        this._pedidoExtraBate(p, semanaId, dia, nome, tipo, opcao, extraId)
+      );
+      for (const p of alvos) {
+        const id = this.pick(p, "id", "ID");
+        if (id) { try { await this.deletePedido(id); } catch (e) { console.warn("Falha ao remover pedido espelho do extra:", e); } }
+      }
+    }
+
+    if (extraId) await this.deleteExtra(extraId);
+    return true;
   },
 
   async updateExtra(id, dados) {
@@ -673,14 +899,49 @@ const SP = {
     return aus.length > 0 ? aus[0] : null;
   },
 
+  _pickCentroCusto(obj) {
+    return this.pick(
+      obj,
+      "Centro_Custo", "Centro Custo", "Centro de Custo", "CentroCusto",
+      "Centro_x0020_Custo", "Centro_x005f_Custo", "Centro_x005f_Custo0",
+      "CC", "Setor", "Departamento"
+    ) || "";
+  },
+
+  async _resolverCentroCustoColaborador(colaboradorId, colaboradorNome) {
+    const id = String(colaboradorId || "").trim();
+    const nomeNorm = this.norm(colaboradorNome || "");
+    if (!id && !nomeNorm) return "";
+
+    try {
+      const colaboradores = await this.getTodosColaboradores();
+      const encontrado = (colaboradores || []).find(c => {
+        const cid = String(c.id || this.pick(c, "ID", "Id") || "").trim();
+        const cnome = this.norm(this.pick(c, "Nome", "Title", "Colaborador_nome") || "");
+        return (id && cid === id) || (nomeNorm && cnome === nomeNorm);
+      });
+      return this._pickCentroCusto(encontrado) || "";
+    } catch (e) {
+      console.warn("[SharePoint] Não foi possível buscar centro de custo do colaborador:", e.message || e);
+      return "";
+    }
+  },
+
   async createAusencia(dados) {
     const nome   = dados.colaboradorNome || dados.Colaborador_nome || "";
     const motivo = dados.motivo || dados.Motivo || "nao_vai_almocar";
+    const colaboradorId = String(dados.colaboradorId || dados.Colaborador_id || "");
+    let centroCusto = dados.centroCusto || dados.Centro_Custo || dados.centro_custo || "";
+
+    if (!centroCusto) {
+      centroCusto = await this._resolverCentroCustoColaborador(colaboradorId, nome);
+    }
+
     return this.createItem("Ausencias do Refeitorio", {
       Title:            dados.title || `${nome} - ${motivo}`,
-      Colaborador_id:   String(dados.colaboradorId || dados.Colaborador_id || ""),
+      Colaborador_id:   colaboradorId,
       Colaborador_nome: nome,
-      Centro_Custo:     dados.centroCusto || dados.Centro_Custo || "",
+      Centro_Custo:     centroCusto || "",
       Data_Inicio:      dados.dataInicio  || dados.Data_Inicio,
       Data_Fim:         dados.dataFim     || dados.Data_Fim,
       Motivo:           motivo,
