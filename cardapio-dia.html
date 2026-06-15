@@ -188,6 +188,7 @@ body::after{
 /* garante que o conteúdo fique acima do fundo */
 .header,.main-content,.cards-area,.week-nav,.day-tabs-wrap,.view,.content,.app,#app,#splash,.modal-overlay,.modal-bg{position:relative;z-index:1}
 .option-aviso{font-size:0.75rem;color:rgba(255,200,100,0.8);background:rgba(255,180,0,0.07);border:1px solid rgba(255,180,0,0.15);border-radius:8px;padding:0.5rem 0.7rem;margin-top:0.5rem;line-height:1.45}
+.tag-feriado{background:rgba(192,40,28,.35);color:#ffb8b0;border:1px solid rgba(192,40,28,.45)}
 </style>
 </head>
 <body>
@@ -265,7 +266,7 @@ window.HOMY_SP_READY = (function(){
 <script>
 const DIAS = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
 const MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-const TAG_CLASS = {principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
+const TAG_CLASS = {feriado:"tag-feriado",principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
 let CARDAPIO_HOJE = [];
 let FUNCIONARIOS = [];
 
@@ -300,6 +301,16 @@ function openFuncModal(func){
 
 function renderCardapio(){
   const grid=document.getElementById("cardapioGrid"); grid.innerHTML="";
+  const feriado = CARDAPIO_HOJE.find(op => String(op.tag||"").toLowerCase()==="feriado" || String(op.nome||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes("feriado"));
+  if(feriado){
+    grid.innerHTML =
+      '<div style="grid-column:1/-1;border:1px solid rgba(255,80,80,.28);background:rgba(192,40,28,.12);border-radius:18px;padding:2.2rem 1rem;text-align:center">'+
+        '<div style="font-size:3.2rem;line-height:1">🚫</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:3rem;font-weight:800;letter-spacing:.14em;color:#fff;text-transform:uppercase;margin-top:.7rem">FERIADO</div>'+
+        '<div style="font-size:.92rem;color:rgba(255,210,210,.84);margin-top:.4rem">Não haverá marcação de refeição para hoje.</div>'+
+      '</div>';
+    return;
+  }
   if(!CARDAPIO_HOJE.length){ grid.innerHTML='<div class="modal-note">Nenhum cardápio real cadastrado para hoje no Admin.</div>'; return; }
   CARDAPIO_HOJE.forEach(op=>{
     const card=document.createElement("div");
@@ -346,22 +357,29 @@ document.getElementById("searchInput").addEventListener("input",function(){ cons
     const semanaId = SP.getSemanaId ? SP.getSemanaId(hoje) : "";
     const dia = diaHojeKey();
     const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId)]);
-const OPCOES_VALIDAS_DIA = ["principal","light","carne","massa","lanche"];
+const OPCOES_VALIDAS_DIA = ["principal","light","carne","massa","lanche","feriado"];
 CARDAPIO_HOJE = (cardapioSemana||[])
   .filter(i => {
     const opcao = String(val(i,"Opcao","opcao")||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     return normalizarDia(val(i,"Dia","dia"))===dia && OPCOES_VALIDAS_DIA.includes(opcao);
   })
   .map(i=>{
-    const tag = String(val(i,"Opcao","opcao")||"principal").toLowerCase();
+    const tag = String(val(i,"Opcao","opcao")||"principal").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     const nomeRaw = val(i,"Nome_Prato","nomePrato","Prato","Title")||"Prato não informado";
     const detRaw  = String(val(i,"Detalhes","detalhes")||"");
+    if(tag === "feriado" || String(nomeRaw).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes("feriado") || String(detRaw).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes("feriado")){
+      return { tag:"feriado", tagClass:"tag-feriado", nome:"FERIADO", detalhes:["Não haverá marcação de refeição para hoje."], aviso:null };
+    }
     const isTextoAviso = /sujeito a alterações|substitui|cardápio acima|opções.*substituem|carne do prato/i.test(detRaw);
     const detalhes = isTextoAviso ? [] : detalhesLista(detRaw);
     const aviso    = isTextoAviso ? detRaw.split(/\n|;/)[0].trim() : null;
     return { tag, tagClass:TAG_CLASS[tag]||"tag-principal", nome:nomeRaw, detalhes, aviso };
   });
-    FUNCIONARIOS = (pedidosSemana||[]).filter(p=>normalizarDia(val(p,"Dia","dia"))===dia).map(p=>({nome:val(p,"Colaborador_nome","colaborador_nome","Title")||"Colaborador", dept:val(p,"Departamento","departamento","Centro_Custo","centroCusto")||"", opcao:String(val(p,"Opcao","opcao")||"").toLowerCase()})).sort((a,b)=>a.nome.localeCompare(b.nome));
+    if(CARDAPIO_HOJE.some(op => op.tag === "feriado")) {
+      FUNCIONARIOS = [];
+    } else {
+      FUNCIONARIOS = (pedidosSemana||[]).filter(p=>normalizarDia(val(p,"Dia","dia"))===dia).map(p=>({nome:val(p,"Colaborador_nome","colaborador_nome","Title")||"Colaborador", dept:val(p,"Departamento","departamento","Centro_Custo","centroCusto")||"", opcao:String(val(p,"Opcao","opcao")||"").toLowerCase()})).sort((a,b)=>a.nome.localeCompare(b.nome));
+    }
     renderCardapio(); renderFuncs(FUNCIONARIOS);
   }catch(e){
     console.error("Erro ao carregar dados reais:", e);
