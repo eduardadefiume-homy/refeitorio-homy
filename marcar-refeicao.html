@@ -9,1005 +9,163 @@
 <link rel="shortcut icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="favicon.png">
 <title>Marcar Refeição · Homy</title>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
-
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;min-height:100%;font-family:"Barlow",sans-serif;color:#e8f0ff;background:#040c1a;overflow-x:hidden}
 
-html,body{
-  width:100%;
-  min-height:100%;
-  font-family:"Barlow",sans-serif;
-  color:#e8f0ff;
-  background:#040c1a;
-  overflow-x:hidden;
-}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 70% 42% at 18% 8%,rgba(35,98,210,.20),transparent 60%),radial-gradient(ellipse 62% 40% at 88% 88%,rgba(24,190,125,.12),transparent 64%),radial-gradient(ellipse 50% 34% at 50% 105%,rgba(192,40,28,.10),transparent 70%),linear-gradient(180deg,#040c1a 0%,#041126 58%,#030912 100%);}
+body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(72,138,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(72,138,255,.045) 1px,transparent 1px);background-size:56px 56px;-webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.25));mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.25));}
 
-body::before{
-  content:"";
-  position:fixed;
-  inset:0;
-  z-index:0;
-  pointer-events:none;
-  background:
-    radial-gradient(ellipse 70% 42% at 18% 8%,rgba(35,98,210,.20),transparent 60%),
-    radial-gradient(ellipse 62% 40% at 88% 88%,rgba(24,190,125,.12),transparent 64%),
-    radial-gradient(ellipse 50% 34% at 50% 105%,rgba(192,40,28,.10),transparent 70%),
-    linear-gradient(180deg,#040c1a 0%,#041126 58%,#030912 100%);
-}
-
-body::after{
-  content:"";
-  position:fixed;
-  inset:0;
-  z-index:0;
-  pointer-events:none;
-  background-image:
-    linear-gradient(rgba(72,138,255,.045) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(72,138,255,.045) 1px,transparent 1px);
-  background-size:56px 56px;
-  -webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.25));
-  mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.25));
-}
-
-.homy-tech-bg{
-  position:fixed;
-  inset:0;
-  z-index:0;
-  pointer-events:none;
-  overflow:hidden;
-}
-
-#homyTechCanvas{
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  opacity:.82;
-}
-
-.homy-scan-line{
-  position:absolute;
-  left:-20%;
-  right:-20%;
-  top:-12%;
-  height:160px;
-  background:linear-gradient(180deg,transparent,rgba(80,170,255,.055),rgba(34,200,121,.03),transparent);
-  transform:rotate(-7deg);
-  animation:homyScanMove 11s ease-in-out infinite;
-}
-
-@keyframes homyScanMove{
-  0%{top:-20%;opacity:0}
-  16%{opacity:1}
-  70%{opacity:.75}
-  100%{top:108%;opacity:0}
-}
-
-.homy-chem-symbol{
-  position:absolute;
-  width:150px;
-  height:132px;
-  opacity:.12;
-  filter:drop-shadow(0 0 22px rgba(80,170,255,.25));
-  animation:homyChemFloat 12s ease-in-out infinite alternate;
-}
-
+.homy-tech-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+#homyTechCanvas{position:absolute;inset:0;width:100%;height:100%;opacity:.82}
+.homy-scan-line{position:absolute;left:-20%;right:-20%;top:-12%;height:160px;background:linear-gradient(180deg,transparent,rgba(80,170,255,.055),rgba(34,200,121,.03),transparent);transform:rotate(-7deg);animation:homyScanMove 11s ease-in-out infinite;}
+@keyframes homyScanMove{0%{top:-20%;opacity:0}16%{opacity:1}70%{opacity:.75}100%{top:108%;opacity:0}}
+.homy-chem-symbol{position:absolute;width:150px;height:132px;opacity:.12;filter:drop-shadow(0 0 22px rgba(80,170,255,.25));animation:homyChemFloat 12s ease-in-out infinite alternate;}
 .homy-chem-symbol.s1{left:8%;top:14%;animation-duration:15s}
 .homy-chem-symbol.s2{right:8%;top:16%;animation-duration:18s;transform:scale(.8) rotate(18deg)}
 .homy-chem-symbol.s3{left:52%;bottom:7%;animation-duration:20s;transform:scale(1.15) rotate(-10deg)}
+.homy-chem-symbol::before{content:"";position:absolute;inset:18px;border:1px solid rgba(122,190,255,.52);clip-path:polygon(25% 6%,75% 6%,100% 50%,75% 94%,25% 94%,0 50%);}
+.homy-chem-symbol::after{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:rgba(34,200,121,.75);box-shadow:-48px -42px 0 rgba(97,184,255,.75),48px -42px 0 rgba(97,184,255,.7),65px 0 0 rgba(192,40,28,.68),48px 42px 0 rgba(97,184,255,.72),-48px 42px 0 rgba(97,184,255,.72),-65px 0 0 rgba(34,200,121,.65);}
+@keyframes homyChemFloat{0%{translate:0 0;opacity:.08}50%{translate:14px -18px;opacity:.16}100%{translate:-10px 12px;opacity:.11}}
 
-.homy-chem-symbol::before{
-  content:"";
-  position:absolute;
-  inset:18px;
-  border:1px solid rgba(122,190,255,.52);
-  clip-path:polygon(25% 6%,75% 6%,100% 50%,75% 94%,25% 94%,0 50%);
-}
-
-.homy-chem-symbol::after{
-  content:"";
-  position:absolute;
-  left:50%;
-  top:50%;
-  width:9px;
-  height:9px;
-  border-radius:50%;
-  background:rgba(34,200,121,.75);
-  box-shadow:
-    -48px -42px 0 rgba(97,184,255,.75),
-    48px -42px 0 rgba(97,184,255,.7),
-    65px 0 0 rgba(192,40,28,.68),
-    48px 42px 0 rgba(97,184,255,.72),
-    -48px 42px 0 rgba(97,184,255,.72),
-    -65px 0 0 rgba(34,200,121,.65);
-}
-
-@keyframes homyChemFloat{
-  0%{translate:0 0;opacity:.08}
-  50%{translate:14px -18px;opacity:.16}
-  100%{translate:-10px 12px;opacity:.11}
-}
-
-.view{
-  display:none;
-  position:relative;
-  z-index:1;
-  min-height:100vh;
-  flex-direction:column;
-}
-
+/* VIEWS */
+.view{display:none;position:relative;z-index:1;min-height:100vh;flex-direction:column}
 .view.active{display:flex}
 
-.header{
-  position:sticky;
-  top:0;
-  z-index:50;
-  background:rgba(5,15,34,0.95);
-  backdrop-filter:blur(20px);
-  -webkit-backdrop-filter:blur(20px);
-  border-bottom:1px solid rgba(255,255,255,0.08);
-}
+/* HEADER */
+.header{position:sticky;top:0;z-index:50;background:rgba(5,15,34,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.08)}
+.header-inner{max-width:900px;margin:0 auto;display:flex;align-items:center;gap:0.9rem;padding:0.8rem 1.4rem}
+.back-btn{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.3rem;text-decoration:none;flex-shrink:0;transition:background .15s}
+.back-btn:hover,.back-btn-view:hover{background:rgba(255,255,255,0.1)}
+.back-btn-view{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8fa0be;font-size:1.3rem;flex-shrink:0;transition:background .15s}
+.header-logo{display:block;width:32px;height:32px;object-fit:contain;flex-shrink:0;image-rendering:auto}
+.header-titles{flex:1}
+.header-title{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#fff;line-height:1}
+.header-sub{font-size:0.7rem;color:rgba(143,170,210,0.55);letter-spacing:0.14em;text-transform:uppercase;margin-top:2px}
+.prazo-badge{font-size:0.82rem;font-weight:700;background:rgba(255,150,0,0.15);border:1px solid rgba(255,150,0,0.3);color:rgba(255,180,80,0.95);padding:8px 14px;border-radius:8px;white-space:nowrap;min-width:max-content}
 
-.header-inner{
-  max-width:980px;
-  margin:0 auto;
-  display:flex;
-  align-items:center;
-  gap:0.9rem;
-  padding:0.8rem 1.4rem;
-}
+/* CONTENT */
+.content{max-width:900px;margin:0 auto;padding:1.2rem 1.4rem 3rem;flex:1;width:100%}
+.section-title{font-family:"Barlow Condensed",sans-serif;font-size:1.4rem;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.6rem}
 
-.back-btn,
-.back-btn-view{
-  width:38px;
-  height:38px;
-  border-radius:10px;
-  background:rgba(255,255,255,0.06);
-  border:1px solid rgba(255,255,255,0.1);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  color:#8fa0be;
-  font-size:1.3rem;
-  text-decoration:none;
-  flex-shrink:0;
-  transition:background .15s;
-}
-
-.back-btn:hover,
-.back-btn-view:hover{background:rgba(255,255,255,0.1)}
-
-.header-logo{
-  display:block;
-  width:32px;
-  height:32px;
-  object-fit:contain;
-  flex-shrink:0;
-}
-
-.header-titles{
-  flex:1;
-  min-width:0;
-}
-
-.header-title{
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:clamp(1rem,2.4vw,1.18rem);
-  font-weight:700;
-  letter-spacing:0.06em;
-  text-transform:uppercase;
-  color:#fff;
-  line-height:1;
-  overflow-wrap:anywhere;
-}
-
-.header-sub{
-  font-size:0.7rem;
-  color:rgba(143,170,210,0.55);
-  letter-spacing:0.14em;
-  text-transform:uppercase;
-  margin-top:2px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-
-.prazo-badge{
-  font-size:clamp(.68rem,1.7vw,.82rem);
-  font-weight:700;
-  background:rgba(255,150,0,0.15);
-  border:1px solid rgba(255,150,0,0.3);
-  color:rgba(255,180,80,0.95);
-  padding:8px 14px;
-  border-radius:8px;
-  white-space:nowrap;
-  min-width:max-content;
-}
-
-.content{
-  max-width:980px;
-  margin:0 auto;
-  padding:1.2rem 1.4rem 3rem;
-  flex:1;
-  width:100%;
-}
-
-.section-title{
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:clamp(1.2rem,3.5vw,1.45rem);
-  font-weight:700;
-  color:#fff;
-  text-transform:uppercase;
-  letter-spacing:0.04em;
-  margin-bottom:0.8rem;
-  display:flex;
-  align-items:center;
-  gap:0.6rem;
-}
-
-.search-wrap{
-  position:relative;
-  margin-bottom:1rem;
-}
-
-.search-input{
-  width:100%;
-  min-width:0;
-  padding:0.9rem 1rem 0.9rem 3rem;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,0.1);
-  background:rgba(255,255,255,0.06);
-  color:#fff;
-  font-family:"Barlow",sans-serif;
-  font-size:1rem;
-  outline:none;
-  transition:border-color .18s,background .18s;
-}
-
+/* SEARCH */
+.search-wrap{position:relative;margin-bottom:1rem}
+.search-input{width:100%;padding:0.9rem 1rem 0.9rem 3rem;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.06);color:#fff;font-family:"Barlow",sans-serif;font-size:1rem;outline:none;transition:border-color .18s,background .18s}
 .search-input::placeholder{color:rgba(143,170,210,0.45)}
 .search-input:focus{border-color:rgba(60,140,255,0.4);background:rgba(255,255,255,0.08)}
+.search-icon{position:absolute;left:1rem;top:50%;transform:translateY(-50%);color:rgba(143,170,210,0.45);font-size:1rem;pointer-events:none}
+.search-count{font-size:0.72rem;color:rgba(143,170,210,0.45);margin-bottom:0.7rem;padding-left:2px}
 
-.search-icon{
-  position:absolute;
-  left:1rem;
-  top:50%;
-  transform:translateY(-50%);
-  color:rgba(143,170,210,0.45);
-  font-size:1rem;
-  pointer-events:none;
-}
-
-.search-count{
-  font-size:0.72rem;
-  color:rgba(143,170,210,0.45);
-  margin-bottom:0.7rem;
-  padding-left:2px;
-}
-
-.func-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));
-  gap:0.65rem;
-  align-items:stretch;
-}
-
-.func-card{
-  min-width:0;
-  max-width:100%;
-  border-radius:14px;
-  border:1px solid rgba(255,255,255,0.08);
-  background:rgba(255,255,255,0.04);
-  padding:0.85rem 1rem;
-  cursor:pointer;
-  display:flex;
-  align-items:center;
-  gap:0.75rem;
-  transition:all .18s;
-  width:100%;
-  box-sizing:border-box;
-}
-
-.func-card:hover{
-  background:rgba(26,58,110,0.3);
-  border-color:rgba(60,140,255,0.3);
-  transform:translateY(-2px);
-}
-
+/* FUNC GRID */
+.func-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0.65rem;align-items:stretch}
+@media(max-width:900px){.func-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.func-grid{grid-template-columns:1fr}}
+.func-card{border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);padding:0.85rem 1rem;cursor:pointer;display:flex;align-items:center;gap:0.75rem;transition:all .18s;width:100%;box-sizing:border-box}
+.func-card:hover{background:rgba(26,58,110,0.3);border-color:rgba(60,140,255,0.3);transform:translateY(-2px)}
 .func-card:active{transform:scale(0.98)}
+.func-card.confirmado{opacity:0.4;pointer-events:none;filter:grayscale(0.5)}
+.func-avatar{width:40px;height:40px;border-radius:50%;background:rgba(26,58,110,0.6);border:2px solid rgba(60,140,255,0.3);display:flex;align-items:center;justify-content:center;font-family:"Barlow Condensed",sans-serif;font-size:0.88rem;font-weight:700;color:rgba(140,200,255,0.95);flex-shrink:0}
+.func-info{flex:1;min-width:0;overflow:hidden}
+.func-name{font-size:0.85rem;font-weight:600;color:#fff;line-height:1.3;word-break:break-word;overflow-wrap:break-word;white-space:normal}
+.func-dept{font-size:0.68rem;color:rgba(143,170,210,0.55);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.func-status-badge{font-size:0.58rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:2px 7px;border-radius:4px;margin-top:4px;display:inline-block}
+.badge-confirmado{background:rgba(64,208,144,0.15);color:#40d090;border:1px solid rgba(64,208,144,0.25)}
+.badge-pendente{background:rgba(255,150,0,0.12);color:rgba(255,180,80,0.85);border:1px solid rgba(255,150,0,0.2)}
 
-.func-card.confirmado{
-  opacity:0.4;
-  pointer-events:none;
-  filter:grayscale(0.5);
-}
-
-.func-avatar{
-  width:40px;
-  height:40px;
-  border-radius:50%;
-  background:rgba(26,58,110,0.6);
-  border:2px solid rgba(60,140,255,0.3);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:0.88rem;
-  font-weight:700;
-  color:rgba(140,200,255,0.95);
-  flex-shrink:0;
-}
-
-.func-info{
-  flex:1;
-  min-width:0;
-  overflow:hidden;
-}
-
-.func-name{
-  font-size:0.85rem;
-  font-weight:600;
-  color:#fff;
-  line-height:1.3;
-  overflow-wrap:anywhere;
-  word-break:normal;
-  white-space:normal;
-}
-
-.func-dept{
-  font-size:0.68rem;
-  color:rgba(143,170,210,0.55);
-  margin-top:2px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  max-width:100%;
-}
-
-.func-status-badge{
-  font-size:0.58rem;
-  font-weight:700;
-  letter-spacing:0.08em;
-  text-transform:uppercase;
-  padding:2px 7px;
-  border-radius:4px;
-  margin-top:4px;
-  display:inline-block;
-}
-
-.badge-confirmado{
-  background:rgba(64,208,144,0.15);
-  color:#40d090;
-  border:1px solid rgba(64,208,144,0.25);
-}
-
-.badge-pendente{
-  background:rgba(255,150,0,0.12);
-  color:rgba(255,180,80,0.85);
-  border:1px solid rgba(255,150,0,0.2);
-}
-
-.steps-header{
-  max-width:980px;
-  margin:0 auto;
-  padding:1rem 1.4rem 0.2rem;
-  display:flex;
-  align-items:center;
-  gap:0.5rem;
-  overflow-x:auto;
-  scrollbar-width:none;
-  width:100%;
-}
-
+/* STEPS */
+.steps-header{max-width:900px;margin:0 auto;padding:1rem 1.4rem 0.2rem;display:flex;align-items:center;gap:0.5rem;overflow-x:auto;scrollbar-width:none}
 .steps-header::-webkit-scrollbar{display:none}
-
-.step-item{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:3px;
-  flex-shrink:0;
-  cursor:pointer;
-  opacity:0.4;
-  transition:opacity .2s;
-}
-
+.step-item{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;cursor:pointer;opacity:0.4;transition:opacity .2s}
 .step-item.active{opacity:1}
 .step-item.done{opacity:0.7}
-
-.step-dot{
-  width:28px;
-  height:28px;
-  border-radius:50%;
-  border:2px solid rgba(255,255,255,0.15);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:0.7rem;
-  font-weight:700;
-  color:#fff;
-  transition:all .2s;
-}
-
-.step-item.active .step-dot{
-  border-color:#c0281c;
-  background:rgba(192,40,28,0.3);
-  color:#fff;
-}
-
-.step-item.done .step-dot{
-  border-color:#40d090;
-  background:rgba(64,208,144,0.2);
-  color:#40d090;
-}
-
-.step-item.done.ausencia-step .step-dot{
-  border-color:rgba(255,150,50,0.8);
-  background:rgba(255,100,20,0.2);
-  color:rgba(255,180,100,0.9);
-}
-
-.step-label{
-  font-size:0.58rem;
-  font-weight:600;
-  letter-spacing:0.06em;
-  text-transform:uppercase;
-  color:rgba(143,170,210,0.6);
-  white-space:nowrap;
-}
-
+.step-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:#fff;transition:all .2s}
+.step-item.active .step-dot{border-color:#c0281c;background:rgba(192,40,28,0.3);color:#fff}
+.step-item.done .step-dot{border-color:#40d090;background:rgba(64,208,144,0.2);color:#40d090}
+.step-item.done.ausencia-step .step-dot{border-color:rgba(255,150,50,0.8);background:rgba(255,100,20,0.2);color:rgba(255,180,100,0.9)}
+.step-label{font-size:0.58rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:rgba(143,170,210,0.6);white-space:nowrap}
 .step-item.active .step-label{color:rgba(255,160,140,0.9)}
-
-.step-connector{
-  width:24px;
-  height:2px;
-  background:rgba(255,255,255,0.1);
-  flex-shrink:0;
-  margin-bottom:12px;
-}
-
+.step-connector{width:24px;height:2px;background:rgba(255,255,255,0.1);flex-shrink:0;margin-bottom:12px}
 .step-item.done+.step-connector{background:rgba(64,208,144,0.3)}
 .step-item.done.ausencia-step+.step-connector{background:rgba(255,150,50,0.4)}
 
-.day-content{
-  max-width:980px;
-  margin:0 auto;
-  padding:1rem 1.4rem;
-  flex:1;
-  width:100%;
-}
+/* DAY CONTENT */
+.day-content{max-width:900px;margin:0 auto;padding:1rem 1.4rem;flex:1}
+.day-title{font-family:"Barlow Condensed",sans-serif;font-size:1.5rem;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem}
+.day-subtitle{font-size:0.8rem;color:rgba(143,170,210,0.55);margin-bottom:1rem}
 
-.day-title{
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:clamp(1.3rem,4vw,1.55rem);
-  font-weight:700;
-  color:#fff;
-  text-transform:uppercase;
-  letter-spacing:0.04em;
-  margin-bottom:0.3rem;
-}
+/* OPCOES */
+.opcoes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;margin-bottom:1.2rem}
+.opcao-card{border-radius:16px;border:2px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);padding:1rem;cursor:pointer;transition:all .18s;position:relative;display:flex;flex-direction:column;gap:0.5rem}
+.opcao-card:hover{background:rgba(255,255,255,0.07);transform:translateY(-2px)}
+.opcao-card.selected{border-color:rgba(192,40,28,0.7)!important;background:rgba(192,40,28,0.12)!important;box-shadow:0 0 20px rgba(192,40,28,0.2)}
+.opcao-card .check{width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:transparent;transition:all .18s;flex-shrink:0}
+.opcao-card.selected .check{border-color:#40d090;background:rgba(64,208,144,0.2);color:#40d090}
+.opcao-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
+.opcao-tag{font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:3px 8px;border-radius:5px;flex-shrink:0}
+.tag-principal{background:rgba(26,58,110,0.7);color:rgba(140,200,255,0.95);border:1px solid rgba(60,140,255,0.3)}
+.tag-light{background:rgba(16,110,90,0.6);color:rgba(80,220,160,0.95);border:1px solid rgba(16,160,120,0.35)}
+.tag-carne{background:rgba(192,40,28,0.45);color:rgba(255,160,140,0.95);border:1px solid rgba(192,40,28,0.38)}
+.tag-massa{background:rgba(100,60,10,0.6);color:rgba(255,200,100,0.95);border:1px solid rgba(180,120,20,0.35)}
+.tag-lanche{background:rgba(80,20,140,0.65);color:rgba(200,160,255,0.95);border:1px solid rgba(140,80,220,0.4)}
+.opcao-nome{font-size:1rem;font-weight:600;color:#fff;line-height:1.3;margin-bottom:0.5rem}
+.opcao-detalhes{display:flex;flex-direction:column;gap:0.2rem;margin-top:0.3rem}
+.opcao-detalhe{font-size:0.78rem;color:rgba(143,170,210,0.7);display:flex;align-items:flex-start;gap:0.35rem;line-height:1.45}
+.opcao-detalhe::before{content:"·";color:rgba(192,40,28,0.7);font-size:1rem;line-height:1.2;flex-shrink:0}
+.opcao-aviso{font-size:0.75rem;color:rgba(255,200,100,0.75);line-height:1.45;padding:0.5rem 0.6rem;border-radius:8px;background:rgba(255,180,0,0.07);border:1px solid rgba(255,180,0,0.12);margin-top:0.2rem}
 
-.day-subtitle{
-  font-size:0.8rem;
-  color:rgba(143,170,210,0.55);
-  margin-bottom:1rem;
-}
+/* AUSÊNCIA CARD */
+.ausencia-card{border-radius:16px;border:2px solid rgba(255,150,50,0.2);background:rgba(255,255,255,0.03);padding:1rem;cursor:pointer;transition:all .18s;display:flex;flex-direction:column;gap:0.5rem;margin-top:0.2rem}
+.ausencia-card:hover{background:rgba(255,150,50,0.06);border-color:rgba(255,150,50,0.35);transform:translateY(-2px)}
+.ausencia-card.selected{border-color:rgba(255,100,20,0.7)!important;background:rgba(255,100,20,0.1)!important;box-shadow:0 0 20px rgba(255,100,20,0.15)}
+.ausencia-card .check{width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:transparent;transition:all .18s;flex-shrink:0}
+.ausencia-card.selected .check{border-color:rgba(255,150,50,0.9);background:rgba(255,120,30,0.2);color:rgba(255,180,80,0.95)}
+.tag-ausencia{font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:3px 8px;border-radius:5px;flex-shrink:0;background:rgba(255,100,20,0.2);color:rgba(255,180,100,0.95);border:1px solid rgba(255,120,30,0.35)}
+.ausencia-nome{font-size:0.95rem;font-weight:600;color:rgba(255,200,150,0.9);line-height:1.3}
+.ausencia-form{margin-top:0.8rem;display:flex;flex-direction:column;gap:0.6rem}
+.ausencia-field{display:flex;flex-direction:column;gap:0.3rem}
+.ausencia-label{font-size:0.68rem;font-weight:700;color:rgba(143,170,210,0.6);text-transform:uppercase;letter-spacing:0.08em}
+.ausencia-select,.ausencia-input{padding:0.55rem 0.8rem;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#e8f0ff;font-family:"Barlow",sans-serif;font-size:0.88rem;outline:none;transition:border-color .18s}
+.ausencia-select:focus,.ausencia-input:focus{border-color:rgba(255,150,50,0.4);background:rgba(255,255,255,0.07)}
+.ausencia-select option{background:#0a1628;color:#e8f0ff}
 
-.opcoes-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));
-  gap:0.75rem;
-  margin-bottom:1.2rem;
-}
-
-.opcao-card,
-.ausencia-card{
-  min-width:0;
-  max-width:100%;
-  border-radius:16px;
-  border:2px solid rgba(255,255,255,0.08);
-  background:rgba(255,255,255,0.04);
-  padding:1rem;
-  cursor:pointer;
-  transition:all .18s;
-  position:relative;
-  display:flex;
-  flex-direction:column;
-  gap:0.5rem;
-}
-
-.opcao-card:hover,
-.ausencia-card:hover{
-  background:rgba(255,255,255,0.07);
-  transform:translateY(-2px);
-}
-
-.opcao-card.selected{
-  border-color:rgba(192,40,28,0.7)!important;
-  background:rgba(192,40,28,0.12)!important;
-  box-shadow:0 0 20px rgba(192,40,28,0.2);
-}
-
-.opcao-card .check,
-.ausencia-card .check{
-  width:22px;
-  height:22px;
-  border-radius:50%;
-  border:2px solid rgba(255,255,255,0.2);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:0.75rem;
-  color:transparent;
-  transition:all .18s;
-  flex-shrink:0;
-}
-
-.opcao-card.selected .check{
-  border-color:#40d090;
-  background:rgba(64,208,144,0.2);
-  color:#40d090;
-}
-
-.opcao-top{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  margin-bottom:0.5rem;
-  gap:.6rem;
-}
-
-.opcao-tag{
-  font-size:0.6rem;
-  font-weight:700;
-  letter-spacing:0.1em;
-  text-transform:uppercase;
-  padding:3px 8px;
-  border-radius:5px;
-  flex-shrink:0;
-}
-
-.tag-principal{
-  background:rgba(26,58,110,0.7);
-  color:rgba(140,200,255,0.95);
-  border:1px solid rgba(60,140,255,0.3);
-}
-
-.tag-light{
-  background:rgba(16,110,90,0.6);
-  color:rgba(80,220,160,0.95);
-  border:1px solid rgba(16,160,120,0.35);
-}
-
-.tag-carne{
-  background:rgba(192,40,28,0.45);
-  color:rgba(255,160,140,0.95);
-  border:1px solid rgba(192,40,28,0.38);
-}
-
-.tag-massa{
-  background:rgba(100,60,10,0.6);
-  color:rgba(255,200,100,0.95);
-  border:1px solid rgba(180,120,20,0.35);
-}
-
-.tag-lanche{
-  background:rgba(80,20,140,0.65);
-  color:rgba(200,160,255,0.95);
-  border:1px solid rgba(140,80,220,0.4);
-}
-
-.opcao-nome{
-  font-size:1rem;
-  font-weight:600;
-  color:#fff;
-  line-height:1.3;
-  margin-bottom:0.5rem;
-  overflow-wrap:anywhere;
-  word-break:normal;
-}
-
-.opcao-detalhes{
-  display:flex;
-  flex-direction:column;
-  gap:0.2rem;
-  margin-top:0.3rem;
-}
-
-.opcao-detalhe{
-  font-size:0.78rem;
-  color:rgba(143,170,210,0.7);
-  display:flex;
-  align-items:flex-start;
-  gap:0.35rem;
-  line-height:1.45;
-  overflow-wrap:anywhere;
-}
-
-.opcao-detalhe::before{
-  content:"·";
-  color:rgba(192,40,28,0.7);
-  font-size:1rem;
-  line-height:1.2;
-  flex-shrink:0;
-}
-
-.opcao-aviso{
-  font-size:0.75rem;
-  color:rgba(255,200,100,0.75);
-  line-height:1.45;
-  padding:0.5rem 0.6rem;
-  border-radius:8px;
-  background:rgba(255,180,0,0.07);
-  border:1px solid rgba(255,180,0,0.12);
-  margin-top:0.2rem;
-}
-
-.ausencia-card{
-  border-color:rgba(255,150,50,0.2);
-  background:rgba(255,255,255,0.03);
-}
-
-.ausencia-card:hover{
-  background:rgba(255,150,50,0.06);
-  border-color:rgba(255,150,50,0.35);
-}
-
-.ausencia-card.selected{
-  border-color:rgba(255,100,20,0.7)!important;
-  background:rgba(255,100,20,0.1)!important;
-  box-shadow:0 0 20px rgba(255,100,20,0.15);
-}
-
-.ausencia-card.selected .check{
-  border-color:rgba(255,150,50,0.9);
-  background:rgba(255,120,30,0.2);
-  color:rgba(255,180,80,0.95);
-}
-
-.tag-ausencia{
-  font-size:0.6rem;
-  font-weight:700;
-  letter-spacing:0.1em;
-  text-transform:uppercase;
-  padding:3px 8px;
-  border-radius:5px;
-  flex-shrink:0;
-  background:rgba(255,100,20,0.2);
-  color:rgba(255,180,100,0.95);
-  border:1px solid rgba(255,120,30,0.35);
-}
-
-.ausencia-nome{
-  font-size:0.95rem;
-  font-weight:600;
-  color:rgba(255,200,150,0.9);
-  line-height:1.3;
-  overflow-wrap:anywhere;
-}
-
-.ausencia-form{
-  margin-top:0.8rem;
-  display:flex;
-  flex-direction:column;
-  gap:0.6rem;
-}
-
-.ausencia-field{
-  display:flex;
-  flex-direction:column;
-  gap:0.3rem;
-}
-
-.ausencia-label{
-  font-size:0.68rem;
-  font-weight:700;
-  color:rgba(143,170,210,0.6);
-  text-transform:uppercase;
-  letter-spacing:0.08em;
-}
-
-.ausencia-select,
-.ausencia-input{
-  width:100%;
-  min-width:0;
-  padding:0.55rem 0.8rem;
-  border-radius:10px;
-  border:1px solid rgba(255,255,255,0.1);
-  background:rgba(255,255,255,0.05);
-  color:#e8f0ff;
-  font-family:"Barlow",sans-serif;
-  font-size:0.88rem;
-  outline:none;
-  transition:border-color .18s;
-}
-
-.ausencia-select:focus,
-.ausencia-input:focus{
-  border-color:rgba(255,150,50,0.4);
-  background:rgba(255,255,255,0.07);
-}
-
-.ausencia-select option{
-  background:#0a1628;
-  color:#e8f0ff;
-}
-
-.nav-bottom{
-  max-width:980px;
-  margin:0 auto;
-  padding:1rem 1.4rem 2rem;
-  display:flex;
-  gap:0.7rem;
-  align-items:center;
-  width:100%;
-}
-
-.btn-nav{
-  flex:1;
-  padding:0.9rem 1rem;
-  border-radius:12px;
-  font-family:"Barlow",sans-serif;
-  font-size:0.95rem;
-  font-weight:600;
-  cursor:pointer;
-  border:none;
-  transition:all .18s;
-  text-align:center;
-}
-
-.btn-prev{
-  background:rgba(255,255,255,0.06);
-  border:1px solid rgba(255,255,255,0.1);
-  color:#8fa0be;
-}
-
+/* NAV BOTTOM */
+.nav-bottom{max-width:900px;margin:0 auto;padding:1rem 1.4rem 2rem;display:flex;gap:0.7rem;align-items:center}
+.btn-nav{flex:1;padding:0.9rem 1rem;border-radius:12px;font-family:"Barlow",sans-serif;font-size:0.95rem;font-weight:600;cursor:pointer;border:none;transition:all .18s;text-align:center}
+.btn-prev{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#8fa0be}
 .btn-prev:hover{background:rgba(255,255,255,0.1)}
+.btn-next{background:rgba(192,40,28,0.8);color:#fff;box-shadow:0 4px 16px rgba(192,40,28,0.3)}
+.btn-next:hover{background:rgba(192,40,28,1);transform:translateY(-1px)}
+.btn-next:disabled{background:rgba(255,255,255,0.06);color:rgba(143,170,210,0.4);cursor:not-allowed;transform:none;box-shadow:none}
+.btn-confirm{background:rgba(64,208,144,0.8);color:#fff;box-shadow:0 4px 16px rgba(64,208,144,0.25)}
+.btn-confirm:hover{background:rgba(64,208,144,1);transform:translateY(-1px)}
 
-.btn-next{
-  background:rgba(192,40,28,0.8);
-  color:#fff;
-  box-shadow:0 4px 16px rgba(192,40,28,0.3);
-}
+/* RESUMO */
+.resumo-wrap{display:flex;flex-direction:column;gap:0.6rem;margin-bottom:1rem}
+.resumo-dia{border-radius:13px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);padding:0.85rem 1rem;display:flex;align-items:center;gap:0.8rem}
+.resumo-dia.resumo-ausencia{border-color:rgba(255,150,50,0.2);background:rgba(255,100,20,0.05)}
+.resumo-dia-label{font-family:"Barlow Condensed",sans-serif;font-size:1rem;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.04em;min-width:80px}
+.resumo-dia-opcao{display:flex;align-items:center;gap:0.5rem;flex:1;flex-wrap:wrap}
+.resumo-dia-nome{font-size:0.88rem;color:rgba(200,220,255,0.85)}
+.resumo-ausencia-obs{font-size:0.75rem;color:rgba(255,180,100,0.7);margin-top:2px}
+.resumo-aviso{border-radius:11px;border:1px solid rgba(255,150,0,0.2);background:rgba(255,150,0,0.06);padding:0.75rem 1rem;font-size:0.8rem;color:rgba(255,180,80,0.85);line-height:1.5}
 
-.btn-next:hover{
-  background:rgba(192,40,28,1);
-  transform:translateY(-1px);
-}
-
-.btn-next:disabled{
-  background:rgba(255,255,255,0.06);
-  color:rgba(143,170,210,0.4);
-  cursor:not-allowed;
-  transform:none;
-  box-shadow:none;
-}
-
-.btn-confirm{
-  background:rgba(64,208,144,0.8);
-  color:#fff;
-  box-shadow:0 4px 16px rgba(64,208,144,0.25);
-}
-
-.btn-confirm:hover{
-  background:rgba(64,208,144,1);
-  transform:translateY(-1px);
-}
-
-.resumo-wrap{
-  display:flex;
-  flex-direction:column;
-  gap:0.6rem;
-  margin-bottom:1rem;
-}
-
-.resumo-dia{
-  min-width:0;
-  max-width:100%;
-  border-radius:13px;
-  border:1px solid rgba(255,255,255,0.08);
-  background:rgba(255,255,255,0.04);
-  padding:0.85rem 1rem;
-  display:flex;
-  align-items:center;
-  gap:0.8rem;
-}
-
-.resumo-dia.resumo-ausencia{
-  border-color:rgba(255,150,50,0.2);
-  background:rgba(255,100,20,0.05);
-}
-
-.resumo-dia-label{
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:1rem;
-  font-weight:700;
-  color:#fff;
-  text-transform:uppercase;
-  letter-spacing:0.04em;
-  min-width:80px;
-}
-
-.resumo-dia-opcao{
-  display:flex;
-  align-items:center;
-  gap:0.5rem;
-  flex:1;
-  flex-wrap:wrap;
-  min-width:0;
-  overflow-wrap:anywhere;
-}
-
-.resumo-dia-nome{
-  font-size:0.88rem;
-  color:rgba(200,220,255,0.85);
-  overflow-wrap:anywhere;
-}
-
-.resumo-ausencia-obs{
-  font-size:0.75rem;
-  color:rgba(255,180,100,0.7);
-  margin-top:2px;
-  overflow-wrap:anywhere;
-}
-
-.resumo-aviso{
-  border-radius:11px;
-  border:1px solid rgba(255,150,0,0.2);
-  background:rgba(255,150,0,0.06);
-  padding:0.75rem 1rem;
-  font-size:0.8rem;
-  color:rgba(255,180,80,0.85);
-  line-height:1.5;
-}
-
-.modal-overlay{
-  position:fixed;
-  inset:0;
-  z-index:9999;
-  background:rgba(3,8,20,0.85);
-  backdrop-filter:blur(8px);
-  -webkit-backdrop-filter:blur(8px);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:1.5rem;
-  opacity:0;
-  pointer-events:none;
-  transition:opacity 0.22s ease;
-}
-
-.modal-overlay.open{
-  opacity:1;
-  pointer-events:all;
-}
-
-.modal{
-  background:#0b1a35;
-  border:1px solid rgba(255,255,255,0.12);
-  border-radius:22px;
-  width:100%;
-  max-width:400px;
-  box-shadow:0 24px 80px rgba(0,0,0,0.7);
-  overflow:hidden;
-  transform:scale(0.92) translateY(16px);
-  transition:transform 0.25s cubic-bezier(.22,1,.36,1);
-  text-align:center;
-  padding:2rem 1.5rem;
-}
-
-.modal-overlay.open .modal{
-  transform:scale(1) translateY(0);
-}
-
-.modal-icon{
-  font-size:2.5rem;
-  margin-bottom:0.8rem;
-}
-
-.modal-title{
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:1.6rem;
-  font-weight:700;
-  color:#fff;
-  margin-bottom:0.5rem;
-}
-
-.modal-text{
-  font-size:0.88rem;
-  color:rgba(143,170,210,0.75);
-  line-height:1.6;
-  margin-bottom:1.5rem;
-}
-
-.modal-btn{
-  width:100%;
-  padding:0.9rem;
-  border-radius:12px;
-  font-family:"Barlow",sans-serif;
-  font-size:1rem;
-  font-weight:600;
-  cursor:pointer;
-  border:none;
-  background:rgba(64,208,144,0.8);
-  color:#fff;
-  transition:all .18s;
-}
-
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;z-index:9999;background:rgba(3,8,20,0.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1.5rem;opacity:0;pointer-events:none;transition:opacity 0.22s ease}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal{background:#0b1a35;border:1px solid rgba(255,255,255,0.12);border-radius:22px;width:100%;max-width:400px;box-shadow:0 24px 80px rgba(0,0,0,0.7);overflow:hidden;transform:scale(0.92) translateY(16px);transition:transform 0.25s cubic-bezier(.22,1,.36,1);text-align:center;padding:2rem 1.5rem}
+.modal-overlay.open .modal{transform:scale(1) translateY(0)}
+.modal-icon{font-size:2.5rem;margin-bottom:0.8rem}
+.modal-title{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:700;color:#fff;margin-bottom:0.5rem}
+.modal-text{font-size:0.88rem;color:rgba(143,170,210,0.75);line-height:1.6;margin-bottom:1.5rem}
+.modal-btn{width:100%;padding:0.9rem;border-radius:12px;font-family:"Barlow",sans-serif;font-size:1rem;font-weight:600;cursor:pointer;border:none;background:rgba(64,208,144,0.8);color:#fff;transition:all .18s}
 .modal-btn:hover{background:rgba(64,208,144,1)}
 
-@media(max-width:1024px){
-  .header-inner,
-  .content,
-  .steps-header,
-  .day-content,
-  .nav-bottom{
-    max-width:100%;
-    padding-left:1rem;
-    padding-right:1rem;
-  }
-}
-
-@media(max-width:700px){
-  .header-inner{
-    gap:.65rem;
-    padding:.7rem .85rem;
-  }
-
-  .header-logo{
-    width:28px;
-    height:28px;
-  }
-
-  .prazo-badge{
-    font-size:.65rem;
-    padding:6px 8px;
-  }
-
-  .content{
-    padding:1rem .9rem 2.5rem;
-  }
-
-  .section-title{
-    font-size:1.25rem;
-  }
-
-  .func-grid,
-  .opcoes-grid{
-    grid-template-columns:1fr;
-  }
-
-  .steps-header{
-    padding:.8rem .9rem .2rem;
-  }
-
-  .day-content{
-    padding:1rem .9rem;
-  }
-
-  .nav-bottom{
-    position:sticky;
-    bottom:0;
-    background:rgba(5,15,34,.92);
-    backdrop-filter:blur(16px);
-    z-index:40;
-    padding:.75rem .9rem;
-  }
-
-  .resumo-dia{
-    align-items:flex-start;
-    flex-direction:column;
-    gap:.45rem;
-  }
-
-  .resumo-dia-label{
-    min-width:0;
-  }
-}
+@media(max-width:480px){.opcoes-grid{grid-template-columns:1fr}}
+@media(min-width:768px) and (orientation:landscape){.opcoes-grid{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:1024px){.opcoes-grid{grid-template-columns:repeat(4,1fr)}}
 </style>
 </head>
-
 <body>
 
 <div class="homy-tech-bg" aria-hidden="true">
@@ -1018,6 +176,7 @@ body::after{
   <div class="homy-chem-symbol s3"></div>
 </div>
 
+<!-- VIEW 1: SELECIONAR COLABORADOR -->
 <div class="view active" id="view1">
   <div class="header">
     <div class="header-inner">
@@ -1030,7 +189,6 @@ body::after{
       <div class="prazo-badge" id="prazoBadgeV1">⏱ Carregando...</div>
     </div>
   </div>
-
   <div class="content">
     <div class="section-title"><span>👤</span> Quem é você?</div>
     <div class="search-wrap">
@@ -1042,6 +200,7 @@ body::after{
   </div>
 </div>
 
+<!-- VIEW 2: ESCOLHER OPÇÕES -->
 <div class="view" id="view2">
   <div class="header">
     <div class="header-inner">
@@ -1054,16 +213,15 @@ body::after{
       <div class="prazo-badge" id="prazoBadgeV2">⏱ Carregando...</div>
     </div>
   </div>
-
   <div class="steps-header" id="stepsHeader"></div>
   <div class="day-content" id="dayContent"></div>
-
   <div class="nav-bottom">
     <button class="btn-nav btn-prev" id="btnPrev">← Anterior</button>
     <button class="btn-nav btn-next" id="btnNext">Próximo →</button>
   </div>
 </div>
 
+<!-- VIEW 3: RESUMO -->
 <div class="view" id="view3">
   <div class="header">
     <div class="header-inner">
@@ -1076,7 +234,6 @@ body::after{
       <div class="prazo-badge" id="prazoBadgeV3">⏱ Carregando...</div>
     </div>
   </div>
-
   <div class="content">
     <div class="section-title"><span>📋</span> Resumo da semana</div>
     <div class="resumo-wrap" id="resumoWrap"></div>
@@ -1087,6 +244,7 @@ body::after{
   </div>
 </div>
 
+<!-- MODAL SUCESSO -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-icon">✅</div>
@@ -1096,10 +254,34 @@ body::after{
   </div>
 </div>
 
-<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
-<script src="sharepoint.js?v=homy-login-unico-20260610-2"></script>
+<script>
+// ── Carrega MSAL + sharepoint.js ────────────────────────────────────────────
+window.HOMY_SP_READY = (function(){
+  function loadScript(src){
+    return new Promise(function(resolve,reject){
+      var s=document.createElement("script");
+      s.src=src; s.onload=resolve;
+      s.onerror=function(){reject(new Error("Falha: "+src));};
+      document.head.appendChild(s);
+    });
+  }
+  return loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js")
+    .catch(function(){
+      return loadScript("https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js");
+    })
+    .then(function(){
+      if(!window.msal) throw new Error("MSAL não ficou disponível.");
+      return loadScript("sharepoint.js?v=fix-publico-refeitorio-20260615-1");
+    })
+    .then(function(){
+      if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
+      return window.SP;
+    });
+})();
+</script>
 
 <script>
+// ── Constantes ───────────────────────────────────────────────────────────────
 const DIAS_SEMANA = [
   {key:"seg", label:"Segunda-feira", dia:"segunda"},
   {key:"ter", label:"Terça-feira",   dia:"terca"},
@@ -1109,77 +291,57 @@ const DIAS_SEMANA = [
 ];
 
 const TAG_CLASS = {
-  principal:"tag-principal",
-  light:"tag-light",
-  fitness:"tag-light",
-  vegetariano:"tag-light",
-  carne:"tag-carne",
-  massa:"tag-massa",
-  lanche:"tag-lanche"
+  principal:"tag-principal", light:"tag-light", fitness:"tag-light",
+  vegetariano:"tag-light",   carne:"tag-carne", massa:"tag-massa", lanche:"tag-lanche"
 };
 
+// Observação específica por opção
 const OBS_POR_OPCAO = {
   principal: "O cardápio acima está sujeito a alterações.",
-  light: "A opção Light substitui o prato principal completo.",
-  lanche: "A opção Lanche substitui o prato principal completo.",
-  carne: "A opção Carne substitui a carne do prato principal.",
-  massa: "A opção Massa substitui a carne do prato principal."
+  light:     "Esta opção substitui o prato principal completo. Sujeito a alterações.",
+  lanche:    "Esta opção substitui o prato principal completo. Sujeito a alterações.",
+  carne:     "Esta opção substitui a carne do prato principal. Sujeito a alterações.",
+  massa:     "Esta opção substitui a carne do prato principal. Sujeito a alterações."
 };
 
+// Motivos de ausência disponíveis para o colaborador
 const MOTIVOS_AUSENCIA = [
   {value:"nao_vai_almocar", label:"Não vou almoçar"},
-  {value:"homy_office", label:"Homy Office"},
-  {value:"banco_horas", label:"Banco de Horas"},
-  {value:"outro", label:"Outros"}
+  {value:"homy_office",     label:"Homy Office"},
+  {value:"banco_horas",     label:"Banco de Horas"},
+  {value:"outro",           label:"Outros"}
 ];
 
 const NOMES_GENERICOS = [
-  "prato principal",
-  "principal",
-  "light",
-  "carne",
-  "massa",
-  "lanche",
-  "cardapio nao cadastrado",
-  "cardapio",
-  "prato",
-  "sem nome",
-  ""
+  "prato principal","principal","light","carne","massa","lanche",
+  "cardapio nao cadastrado","cardapio","prato","sem nome",""
 ];
 
 let FUNCIONARIOS = [];
-let CARDAPIO = {};
-let SEMANA_ID = null;
-let funcSelecionado = null;
-let stepAtual = 0;
-let pedidos = {};
+let CARDAPIO     = {};
+let SEMANA_ID    = null;
 
+let funcSelecionado = null;
+let stepAtual       = 0;
+// pedidos[diaKey] = {tag, tagClass, nome, dia} OU {_ausencia:true, motivo, observacao, dia}
+let pedidos         = {};
+
+// ── Utilitários ──────────────────────────────────────────────────────────────
 function esc(v){
-  return String(v || "")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;")
-    .replace(/'/g,"&#039;");
+  return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
 function norm(v){
-  return String(v || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g,"")
-    .toLowerCase()
-    .trim();
+  return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 }
 
 function pick(obj,...keys){
-  for(const k of keys){
-    if(obj && obj[k] != null) return obj[k];
-  }
+  for(const k of keys){ if(obj && obj[k]!=null) return obj[k]; }
   return "";
 }
 
 function normDia(v){
-  const s = norm(v);
+  const s=norm(v);
   if(s.startsWith("seg")) return "seg";
   if(s.startsWith("ter")) return "ter";
   if(s.startsWith("qua")) return "qua";
@@ -1189,33 +351,27 @@ function normDia(v){
 }
 
 function normOpcao(v){
-  const s = norm(v);
+  const s=norm(v);
   if(s.startsWith("prin")) return "principal";
-  if(s.startsWith("lig")) return "light";
-  if(s.startsWith("fit")) return "light";
-  if(s.startsWith("veg")) return "light";
-  if(s.startsWith("car")) return "carne";
-  if(s.startsWith("mas")) return "massa";
-  if(s.startsWith("lan")) return "lanche";
+  if(s.startsWith("lig"))  return "light";
+  if(s.startsWith("fit"))  return "light";
+  if(s.startsWith("veg"))  return "light";
+  if(s.startsWith("car"))  return "carne";
+  if(s.startsWith("mas"))  return "massa";
+  if(s.startsWith("lan"))  return "lanche";
   return "principal";
 }
 
 function ehDetalheSujo(texto){
-  const n = norm(texto);
-  return n.includes("extraido") ||
-    n.includes("pdf vascon") ||
-    n.includes("procure a") ||
-    /^-+$/.test(n) ||
-    !n ||
-    n.length < 2;
+  const n=norm(texto);
+  return n.includes("extraido") || n.includes("pdf vascon") ||
+         n.includes("procure a") || /^-+$/.test(n) || !n || n.length<2;
 }
 
 function splitDetalhes(v){
-  return String(v || "")
-    .replace(/\r/g,"\n")
-    .split(/\n|;/)
-    .map(x => x.replace(/^[-•·\s]+/,"").trim())
-    .filter(x => x.length > 1 && !ehDetalheSujo(x));
+  return String(v||"").replace(/\r/g,"\n")
+    .split(/\n|;/).map(x=>x.replace(/^[-•·\s]+/,"").trim())
+    .filter(x=>x.length>1 && !ehDetalheSujo(x));
 }
 
 function ehNomeGenerico(v){
@@ -1223,37 +379,27 @@ function ehNomeGenerico(v){
 }
 
 function getInitials(nome){
-  const p = String(nome || "").trim().split(/\s+/).filter(Boolean);
+  const p=String(nome||"").trim().split(/\s+/).filter(Boolean);
   if(!p.length) return "?";
-  return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
+  return (p[0][0]+(p.length>1?p[p.length-1][0]:"")).toUpperCase();
 }
 
 function getSemanaAtual(){
   if(window.SP && SP.getSemanaId) return SP.getSemanaId(new Date());
-
-  const d = new Date();
-  d.setHours(0,0,0,0);
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-
-  const w1 = new Date(d.getFullYear(),0,4);
-  const wn = 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
-
-  return d.getFullYear() + "-W" + String(wn).padStart(2,"0");
+  const d=new Date(); d.setHours(0,0,0,0);
+  d.setDate(d.getDate()+3-((d.getDay()+6)%7));
+  const w1=new Date(d.getFullYear(),0,4);
+  const wn=1+Math.round(((d-w1)/86400000-3+((w1.getDay()+6)%7))/7);
+  return d.getFullYear()+"-W"+String(wn).padStart(2,"0");
 }
 
 function getWeekDatesLocal(semanaId){
   if(window.SP && SP.getWeekDates) return SP.getWeekDates(semanaId);
-
-  const [year,week] = semanaId.split("-W").map(Number);
-  const jan4 = new Date(year,0,4);
-  const start = new Date(jan4);
-  start.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1 + (week - 1) * 7);
-
-  return Array.from({length:5},(_,i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    return d;
-  });
+  const [year,week]=semanaId.split("-W").map(Number);
+  const jan4=new Date(year,0,4);
+  const start=new Date(jan4);
+  start.setDate(jan4.getDate()-(jan4.getDay()||7)+1+(week-1)*7);
+  return Array.from({length:5},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d;});
 }
 
 function formatDataCurta(date){
@@ -1261,56 +407,51 @@ function formatDataCurta(date){
 }
 
 function ehObsVascon(texto){
-  const n = norm(texto);
+  const n=norm(texto);
   return n.includes("cardapio acima esta sujeito") ||
-    n.includes("sujeito a alteracoes") ||
-    n.includes("opcoes carne e massa substituem") ||
-    n.includes("opcao carne substitui") ||
-    n.includes("opcao massa substitui") ||
-    n.includes("opcoes light e lanche substituem") ||
-    n.includes("opcao light substitui") ||
-    n.includes("opcao lanche substitui") ||
-    n.includes("esta opcao substitui") ||
-    n.includes("substitui o prato principal") ||
-    n.includes("substitui a carne");
+         n.includes("sujeito a alteracoes") ||
+         n.includes("opcoes carne e massa substituem") ||
+         n.includes("opcao carne substitui") ||
+         n.includes("opcao massa substitui") ||
+         n.includes("opcoes light e lanche substituem") ||
+         n.includes("opcao light substitui") ||
+         n.includes("opcao lanche substitui") ||
+         n.includes("esta opcao substitui");
 }
 
 function normalizarItemCardapio(item){
-  const tag = normOpcao(pick(item,"Opcao","opcao"));
-  const nomeRaw = String(pick(item,"Nome_Prato","nomePrato","Prato","Title") || "").trim();
-  const detRaw = String(pick(item,"Detalhes","detalhes") || "").trim();
+  const tag     = normOpcao(pick(item,"Opcao","opcao"));
+  const nomeRaw = String(pick(item,"Nome_Prato","nomePrato","Prato","Title")||"").trim();
+  const detRaw  = String(pick(item,"Detalhes","detalhes")||"").trim();
 
-  let nome = nomeRaw;
+  let nome     = nomeRaw;
   let detalhes = splitDetalhes(detRaw).filter(x => !ehObsVascon(x));
 
   if(nome.includes(";")){
-    const partes = nome.split(";").map(x => x.trim()).filter(Boolean);
-
-    if(partes.length > 1){
-      nome = partes[0];
-      if(!detalhes.length){
-        detalhes = partes.slice(1).filter(x => !ehDetalheSujo(x) && !ehObsVascon(x));
-      }
+    const partes=nome.split(";").map(x=>x.trim()).filter(Boolean);
+    if(partes.length>1){
+      nome=partes[0];
+      if(!detalhes.length) detalhes=partes.slice(1).filter(x=>!ehDetalheSujo(x)&&!ehObsVascon(x));
     }
   }
 
-  if(ehNomeGenerico(nome) && detalhes.length > 0){
-    if(tag === "principal"){
-      nome = "Cardápio do Dia";
+  if(ehNomeGenerico(nome) && detalhes.length>0){
+    if(tag==="principal"){
+      nome="Cardápio do Dia";
     } else {
-      nome = detalhes[0];
-      detalhes = detalhes.slice(1);
+      nome=detalhes[0];
+      detalhes=detalhes.slice(1);
     }
   }
 
   if(ehNomeGenerico(nome)){
-    nome = "Cardápio não cadastrado";
-    detalhes = [];
+    nome="Cardápio não cadastrado";
+    detalhes=[];
   }
 
   return {
     tag,
-    tagClass: TAG_CLASS[tag] || "tag-principal",
+    tagClass: TAG_CLASS[tag]||"tag-principal",
     nome,
     detalhes,
     aviso: OBS_POR_OPCAO[tag] || null
@@ -1318,116 +459,94 @@ function normalizarItemCardapio(item){
 }
 
 function mapCardapio(items){
-  const map = {seg:[],ter:[],qua:[],qui:[],sex:[]};
-  const mapa = new Map();
-
-  for(const item of items || []){
-    const semana = String(pick(item,"Semana_id","SemanaId") || "").trim();
-    const dia = normDia(pick(item,"Dia","dia"));
-    const opcao = normOpcao(pick(item,"Opcao","opcao"));
-
+  const map={seg:[],ter:[],qua:[],qui:[],sex:[]};
+  const mapa=new Map();
+  for(const item of items||[]){
+    const semana=String(pick(item,"Semana_id","SemanaId")||"").trim();
+    const dia=normDia(pick(item,"Dia","dia"));
+    const opcao=normOpcao(pick(item,"Opcao","opcao"));
     if(!dia) continue;
-
-    const key = semana + "|" + dia + "|" + opcao;
-
+    const key=semana+"|"+dia+"|"+opcao;
     if(!mapa.has(key)){
       mapa.set(key,item);
     } else {
-      const det = String(pick(item,"Detalhes","detalhes") || "");
-      const cur = String(pick(mapa.get(key),"Detalhes","detalhes") || "");
-      if(det.length > cur.length) mapa.set(key,item);
+      const det=String(pick(item,"Detalhes","detalhes")||"");
+      const cur=String(pick(mapa.get(key),"Detalhes","detalhes")||"");
+      if(det.length>cur.length) mapa.set(key,item);
     }
   }
 
   for(const item of mapa.values()){
-    const dia = normDia(pick(item,"Dia","dia"));
+    const dia=normDia(pick(item,"Dia","dia"));
     if(!map[dia]) continue;
     map[dia].push(normalizarItemCardapio(item));
   }
 
-  const ORDEM = ["principal","light","carne","massa","lanche"];
-
-  Object.keys(map).forEach(dia => {
-    map[dia].sort((a,b) => {
-      const ia = ORDEM.indexOf(a.tag);
-      const ib = ORDEM.indexOf(b.tag);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  const ORDEM=["principal","light","carne","massa","lanche"];
+  Object.keys(map).forEach(dia=>{
+    map[dia].sort((a,b)=>{
+      const ia=ORDEM.indexOf(a.tag); const ib=ORDEM.indexOf(b.tag);
+      return (ia<0?99:ia)-(ib<0?99:ib);
     });
-
     if(!map[dia].length){
-      map[dia] = [{
-        tag:"principal",
-        tagClass:"tag-principal",
-        nome:"Cardápio não cadastrado",
-        detalhes:[],
-        aviso:null
-      }];
+      map[dia]=[{tag:"principal",tagClass:"tag-principal",nome:"Cardápio não cadastrado",detalhes:[],aviso:null}];
     }
   });
 
   return map;
 }
 
+// ── Prazo ────────────────────────────────────────────────────────────────────
 function formatarPrazo(valor){
   if(!valor) return "Prazo não configurado";
-
-  const data = new Date(valor);
+  const data=new Date(valor);
   if(isNaN(data.getTime())) return "Prazo não definido";
-
-  const dias = ["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
-  const hora = String(data.getHours()).padStart(2,"0") + "h" + (data.getMinutes() > 0 ? String(data.getMinutes()).padStart(2,"0") : "");
-
-  return "⏱ Até " + dias[data.getDay()] + " às " + hora;
+  const dias=["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
+  const hora=String(data.getHours()).padStart(2,"0")+"h"+(data.getMinutes()>0?String(data.getMinutes()).padStart(2,"0"):"");
+  return "⏱ Até "+dias[data.getDay()]+" às "+hora;
 }
 
 function atualizarBadgesPrazo(txt){
-  ["prazoBadgeV1","prazoBadgeV2","prazoBadgeV3"].forEach(id => {
-    const el = document.getElementById(id);
-    if(el) el.textContent = txt;
+  ["prazoBadgeV1","prazoBadgeV2","prazoBadgeV3"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.textContent=txt;
   });
-}
-
-function mostrarBloqueio(titulo, mensagem, prazoVencido){
-  const grid = document.getElementById("funcGrid");
-  const count = document.getElementById("searchCount");
-
-  if(count) count.textContent = "";
-
-  if(grid){
-    grid.innerHTML =
-      '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;text-align:center;grid-column:1/-1">' +
-        '<div style="font-size:2.5rem">' + (prazoVencido ? "⏰" : "🔒") + '</div>' +
-        '<div style="font-size:1.1rem;font-weight:700;color:#fff">' + esc(titulo) + '</div>' +
-        '<div style="font-size:.88rem;color:rgba(143,170,210,.75);max-width:380px;line-height:1.6">' + esc(mensagem) + '</div>' +
-        (prazoVencido ? '<div style="font-size:.78rem;color:rgba(255,160,100,.75);margin-top:.5rem">Fale com a Luana para verificar sua refeição.</div>' : '') +
-      '</div>';
-  }
 }
 
 async function verificarBloqueioMarcacao(){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
-
-    const liberado = await SP.isCardapioLiberado().catch(() => true);
-
+    const liberado = await SP.isCardapioLiberado().catch(()=>true);
     if(!liberado){
-      mostrarBloqueio(
-        "Marcação encerrada",
+      mostrarBloqueio("🔒 Marcação encerrada",
         "A marcação de refeições está bloqueada pelo administrador.",
-        false
-      );
+        false);
       return false;
     }
-
-    const prazo = await SP.getPrazoMarcacao().catch(() => null);
+    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
-
     return true;
   } catch(e){
     console.warn("[prazo]",e);
-    atualizarBadgesPrazo("Prazo não configurado");
     return true;
+  }
+}
+
+function mostrarBloqueio(titulo, mensagem, prazoVencido){
+  const grid = document.getElementById("funcGrid");
+  const count = document.getElementById("searchCount");
+  if(count) count.textContent = "";
+  if(grid){
+    grid.innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;text-align:center">' +
+        '<div style="font-size:2.5rem">'+(prazoVencido?"⏰":"🔒")+'</div>' +
+        '<div style="font-size:1.1rem;font-weight:700;color:#fff">'+titulo+'</div>' +
+        '<div style="font-size:.88rem;color:rgba(143,170,210,.75);max-width:380px;line-height:1.6">'+mensagem+'</div>' +
+        (prazoVencido
+          ? '<div style="font-size:.78rem;color:rgba(255,160,100,.75);margin-top:.5rem">Fale com a Luana para verificar sua refeição.</div>'
+          : '') +
+      '</div>';
   }
 }
 
@@ -1435,50 +554,45 @@ async function carregarPrazo(){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
-
-    const prazo = await SP.getPrazoMarcacao().catch(() => null);
+    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
   } catch(e){
     console.warn("[prazo]",e);
-    atualizarBadgesPrazo("Prazo não configurado");
+    atualizarBadgesPrazo("⏱ Até sex 18h");
   }
 }
 
+// ── Carregamento principal do SharePoint ─────────────────────────────────────
 async function carregarDadosSharePoint(){
-  const grid = document.getElementById("funcGrid");
+  const grid  = document.getElementById("funcGrid");
   const count = document.getElementById("searchCount");
-
-  grid.innerHTML = '<div style="color:rgba(143,170,210,.6);font-size:.88rem;padding:1rem;grid-column:1/-1">Carregando...</div>';
+  grid.innerHTML  = '<div style="color:rgba(143,170,210,.6);font-size:.88rem;padding:1rem">Carregando...</div>';
   count.textContent = "";
 
   try{
     await window.HOMY_SP_READY;
+    const logado = await SP.init();
 
-    const ok = await SP.ensureLoginSilenciosoOuAviso();
-
-    if(!ok){
+    if(!logado){
       grid.innerHTML =
-        '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;color:rgba(143,170,210,.75);text-align:center;grid-column:1/-1">' +
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem;color:rgba(143,170,210,.75);text-align:center">' +
           '<div style="font-size:2rem">🔐</div>' +
           '<div style="font-size:.95rem;font-weight:600;color:#fff">Login necessário</div>' +
           '<div style="font-size:.82rem">Conecte com sua conta Microsoft para acessar o refeitório.</div>' +
           '<button id="btnLoginRefeitorio" style="margin-top:.5rem;padding:.8rem 1.8rem;border-radius:12px;border:none;background:rgba(192,40,28,.8);color:#fff;font-family:Barlow,sans-serif;font-size:.95rem;font-weight:700;cursor:pointer">Entrar com Microsoft</button>' +
         '</div>';
-
       document.getElementById("btnLoginRefeitorio").addEventListener("click", async function(){
         this.disabled = true;
         this.textContent = "⏳ Abrindo...";
-
         try{
           await SP.login();
           await carregarDadosSharePoint();
         } catch(e){
           this.disabled = false;
           this.textContent = "Entrar com Microsoft";
-          grid.innerHTML = '<div style="color:rgba(255,120,100,.8);font-size:.88rem;padding:1rem;grid-column:1/-1">Erro ao entrar: ' + esc(e.message || e) + '</div>';
+          grid.innerHTML = '<div style="color:rgba(255,120,100,.8);font-size:.88rem;padding:1rem">Erro ao entrar: ' + (e.message||e) + '</div>';
         }
       });
-
       return;
     }
 
@@ -1486,259 +600,217 @@ async function carregarDadosSharePoint(){
     if(!podeMarcar) return;
 
     SEMANA_ID = getSemanaAtual();
-
     const datas = getWeekDatesLocal(SEMANA_ID);
-    DIAS_SEMANA.forEach((d,i) => {
-      d.data = formatDataCurta(datas[i]);
-      d.dataISO = datas[i] ? datas[i].toISOString().slice(0,10) : "";
-    });
+    DIAS_SEMANA.forEach((d,i)=>{ d.data = formatDataCurta(datas[i]); });
 
     const [colabs, itensCardapio, pedidosExistentes] = await Promise.all([
-      SP.getColaboradoresAtivos().catch(() => []),
-      SP.getCardapio(SEMANA_ID).catch(() => []),
-      SP.getPedidos(SEMANA_ID).catch(() => [])
+      SP.getColaboradores().catch(()=>[]),
+      SP.getCardapio(SEMANA_ID).catch(()=>[]),
+      SP.getPedidos(SEMANA_ID).catch(()=>[])
     ]);
 
     CARDAPIO = mapCardapio(itensCardapio);
 
     const idsConfirmados = new Set(
-      (pedidosExistentes || [])
+      pedidosExistentes
         .filter(p => {
-          const s = norm(SP.pick(p,"Status","status") || "");
-          return s === "confirmado" ||
-            s.includes("nao vai almocar") ||
-            s.includes("ausente") ||
-            SP.isTrue(SP.pick(p,"Confirmado","confirmado"));
+          const s = String(SP.pick(p,"Status","status")||"").toLowerCase();
+          return s === "confirmado" || SP.isTrue(SP.pick(p,"Confirmado","confirmado"));
         })
-        .map(p => String(SP.pick(p,"Colaborador_id","colaboradorId") || ""))
-        .filter(Boolean)
+        .map(p => String(SP.pick(p,"Colaborador_id","colaboradorId")||""))
     );
 
-    FUNCIONARIOS = (colabs || []).map(c => ({
-      id: String(c.id || c.ID || ""),
-      nome: String(SP.pick(c,"Nome","Title") || "Sem nome"),
-      dept: String(SP.pick(c,"Departamento","") || ""),
-      cc: String(SP.pick(c,"Centro_Custo") || ""),
-      confirmado: idsConfirmados.has(String(c.id || c.ID || ""))
-    })).sort((a,b) => a.nome.localeCompare(b.nome,"pt-BR"));
+    FUNCIONARIOS = colabs.map(c=>({
+      id:         String(c.id||""),
+      nome:       String(SP.pick(c,"Nome","Title")||"Sem nome"),
+      dept:       String(SP.pick(c,"Departamento","")||""),
+      cc:         String(SP.pick(c,"Centro_Custo")||""),
+      confirmado: idsConfirmados.has(String(c.id||""))
+    })).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
 
     renderFuncs(FUNCIONARIOS);
     carregarPrazo();
 
   } catch(e){
     console.error("[carregarDados]",e);
-    grid.innerHTML = '<div style="color:rgba(255,120,100,.8);font-size:.88rem;padding:1rem;grid-column:1/-1">Erro ao carregar: ' + esc(e.message || e) + '</div>';
+    grid.innerHTML = '<div style="color:rgba(255,120,100,.8);font-size:.88rem;padding:1rem">Erro ao carregar: ' + esc(e.message||e) + '</div>';
   }
 }
 
+// ── Renderização colaboradores ────────────────────────────────────────────────
 function renderFuncs(lista){
-  const grid = document.getElementById("funcGrid");
-  const count = document.getElementById("searchCount");
-
-  count.textContent = lista.length + " colaborador" + (lista.length !== 1 ? "es" : "") + " encontrado" + (lista.length !== 1 ? "s" : "");
+  const grid=document.getElementById("funcGrid");
+  const count=document.getElementById("searchCount");
+  count.textContent=lista.length+" colaborador"+(lista.length!==1?"es":"")+" encontrado"+(lista.length!==1?"s":"");
 
   if(!lista.length){
-    grid.innerHTML = '<div style="color:rgba(143,170,210,.6);font-size:.88rem;padding:1rem;grid-column:1/-1">Nenhum colaborador encontrado.</div>';
+    grid.innerHTML='<div style="color:rgba(143,170,210,.6);font-size:.88rem;padding:1rem">Nenhum colaborador encontrado.</div>';
     return;
   }
 
-  grid.innerHTML = "";
-
-  lista.forEach(func => {
-    const card = document.createElement("div");
-    card.className = "func-card" + (func.confirmado ? " confirmado" : "");
-
-    card.innerHTML =
-      '<div class="func-avatar">' + esc(getInitials(func.nome)) + '</div>' +
-      '<div class="func-info">' +
-        '<div class="func-name">' + esc(func.nome) + '</div>' +
-        (func.dept ? '<div class="func-dept">' + esc(func.dept) + '</div>' : '') +
-        '<span class="func-status-badge ' + (func.confirmado ? "badge-confirmado" : "badge-pendente") + '">' + (func.confirmado ? "Confirmado" : "Pendente") + '</span>' +
+  grid.innerHTML="";
+  lista.forEach(func=>{
+    const card=document.createElement("div");
+    card.className="func-card"+(func.confirmado?" confirmado":"");
+    card.innerHTML=
+      '<div class="func-avatar">'+esc(getInitials(func.nome))+'</div>'+
+      '<div class="func-info">'+
+        '<div class="func-name">'+esc(func.nome)+'</div>'+
+        (func.dept?'<div class="func-dept">'+esc(func.dept)+'</div>':'')+
+        '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+(func.confirmado?"Confirmado":"Pendente")+'</span>'+
       '</div>';
-
-    if(!func.confirmado){
-      card.addEventListener("click", () => selecionarFunc(func));
-    }
-
+    if(!func.confirmado) card.addEventListener("click",()=>selecionarFunc(func));
     grid.appendChild(card);
   });
 }
 
 document.getElementById("searchInput").addEventListener("input",function(){
-  const q = norm(this.value);
-
-  renderFuncs(
-    q
-      ? FUNCIONARIOS.filter(f => norm(f.nome).includes(q) || norm(f.dept).includes(q) || norm(f.cc).includes(q))
-      : FUNCIONARIOS
-  );
+  const q=this.value.toLowerCase().trim();
+  renderFuncs(q?FUNCIONARIOS.filter(f=>f.nome.toLowerCase().includes(q)||String(f.dept||"").toLowerCase().includes(q)):FUNCIONARIOS);
 });
 
+// ── Seleção de colaborador ────────────────────────────────────────────────────
 function selecionarFunc(func){
-  funcSelecionado = func;
-  pedidos = {};
-  stepAtual = 0;
-
-  document.getElementById("v2Title").textContent = func.nome.split(" ")[0];
-  document.getElementById("v2Sub").textContent = "Escolha sua refeição por dia";
-  document.getElementById("v3Sub").textContent = func.nome;
-
+  funcSelecionado=func;
+  pedidos={};
+  stepAtual=0;
+  document.getElementById("v2Title").textContent=func.nome.split(" ")[0];
+  document.getElementById("v2Sub").textContent="Escolha sua refeição por dia";
+  document.getElementById("v3Sub").textContent=func.nome;
   showView("view2");
   renderStep();
 }
 
+// ── Captura campos de ausência antes de avançar step ─────────────────────────
 function capturarAusencia(diaKey){
   if(!pedidos[diaKey] || !pedidos[diaKey]._ausencia) return;
-
-  const motivoEl = document.getElementById("ausMotivoSel_" + diaKey);
-  const obsEl = document.getElementById("ausObsInput_" + diaKey);
-
-  if(motivoEl) pedidos[diaKey].motivo = motivoEl.value;
-  if(obsEl) pedidos[diaKey].observacao = obsEl.value.trim();
+  const motivoEl = document.getElementById("ausMotivoSel_"+diaKey);
+  const obsEl    = document.getElementById("ausObsInput_"+diaKey);
+  if(motivoEl) pedidos[diaKey].motivo      = motivoEl.value;
+  if(obsEl)    pedidos[diaKey].observacao  = obsEl.value.trim();
 }
 
+// ── Steps ─────────────────────────────────────────────────────────────────────
 function buildStepsHeader(){
-  const el = document.getElementById("stepsHeader");
-  el.innerHTML = "";
-
-  DIAS_SEMANA.forEach((dia,i) => {
-    if(i > 0){
-      const conn = document.createElement("div");
-      conn.className = "step-connector";
-      el.appendChild(conn);
-    }
-
-    const p = pedidos[dia.key];
-    const done = p != null;
-    const isAus = done && p._ausencia;
-    const active = i === stepAtual;
-
-    const item = document.createElement("div");
-    item.className = "step-item" + (active ? " active" : "") + (done && !active ? " done" : "") + (isAus && !active ? " ausencia-step" : "");
-
-    item.innerHTML =
-      '<div class="step-dot">' + (done && !active ? (isAus ? "🚫" : "✓") : (i + 1)) + '</div>' +
-      '<div class="step-label">' + dia.key.charAt(0).toUpperCase() + dia.key.slice(1) + '</div>';
-
-    item.addEventListener("click",() => {
-      if(done || active){
-        capturarAusencia(DIAS_SEMANA[stepAtual].key);
-        stepAtual = i;
-        renderStep();
-      }
-    });
-
+  const el=document.getElementById("stepsHeader");
+  el.innerHTML="";
+  DIAS_SEMANA.forEach((dia,i)=>{
+    if(i>0){ const conn=document.createElement("div"); conn.className="step-connector"; el.appendChild(conn); }
+    const p=pedidos[dia.key];
+    const done=p!=null;
+    const isAus=done && p._ausencia;
+    const active=i===stepAtual;
+    const item=document.createElement("div");
+    item.className="step-item"+(active?" active":"")+(done&&!active?" done":"")+(isAus&&!active?" ausencia-step":"");
+    item.innerHTML='<div class="step-dot">'+(done&&!active?(isAus?"🚫":"✓"):(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
+    item.addEventListener("click",()=>{ if(done||active){capturarAusencia(DIAS_SEMANA[stepAtual].key);stepAtual=i;renderStep();} });
     el.appendChild(item);
   });
 }
 
 function renderStep(){
   buildStepsHeader();
+  const dia=DIAS_SEMANA[stepAtual];
+  const opcoes=CARDAPIO[dia.key]||[];
+  const selecionada=pedidos[dia.key];
+  const isLast=stepAtual===DIAS_SEMANA.length-1;
 
-  const dia = DIAS_SEMANA[stepAtual];
-  const opcoes = CARDAPIO[dia.key] || [];
-  const selecionada = pedidos[dia.key];
-  const isLast = stepAtual === DIAS_SEMANA.length - 1;
+  const btnNext=document.getElementById("btnNext");
+  const btnPrev=document.getElementById("btnPrev");
+  btnPrev.style.display=stepAtual===0?"none":"block";
+  btnNext.textContent=isLast?"Ver resumo →":"Próximo →";
+  btnNext.disabled=!selecionada;
+  btnNext.className="btn-nav btn-next"+(isLast?" btn-confirm":"");
 
-  const btnNext = document.getElementById("btnNext");
-  const btnPrev = document.getElementById("btnPrev");
-
-  btnPrev.style.display = stepAtual === 0 ? "none" : "block";
-  btnNext.textContent = isLast ? "Ver resumo →" : "Próximo →";
-  btnNext.disabled = !selecionada;
-  btnNext.className = "btn-nav btn-next" + (isLast ? " btn-confirm" : "");
-
-  const content = document.getElementById("dayContent");
-
-  content.innerHTML =
-    '<div class="day-title">' + esc(dia.label) + '</div>' +
-    '<div class="day-subtitle">' + esc(dia.data || "") + ' — Escolha uma opção</div>' +
+  const content=document.getElementById("dayContent");
+  content.innerHTML=
+    '<div class="day-title">'+esc(dia.label)+'</div>'+
+    '<div class="day-subtitle">'+(dia.data||"")+'/2026 — Escolha uma opção</div>'+
     '<div class="opcoes-grid" id="opcoesGrid"></div>';
 
-  const grid = document.getElementById("opcoesGrid");
+  const grid=document.getElementById("opcoesGrid");
 
-  opcoes.forEach(op => {
-    const card = document.createElement("div");
-    const sel = selecionada && !selecionada._ausencia && selecionada.tag === op.tag;
+  // Cards das opções normais de cardápio
+  opcoes.forEach(op=>{
+    const card=document.createElement("div");
+    const sel=selecionada && !selecionada._ausencia && selecionada.tag===op.tag;
+    card.className="opcao-card"+(sel?" selected":"");
+    card.innerHTML=
+      '<div class="opcao-top">'+
+        '<span class="opcao-tag '+esc(op.tagClass)+'">'+esc(op.tag)+'</span>'+
+        '<div class="check">✓</div>'+
+      '</div>'+
+      '<div class="opcao-nome">'+esc(op.nome)+'</div>'+
+      (op.detalhes&&op.detalhes.length
+        ?'<div class="opcao-detalhes">'+op.detalhes.map(d=>'<div class="opcao-detalhe">'+esc(d)+'</div>').join("")+'</div>'
+        :"")+
+      (op.aviso?'<div class="opcao-aviso">ℹ️ '+esc(op.aviso)+'</div>':"");
 
-    card.className = "opcao-card" + (sel ? " selected" : "");
-
-    card.innerHTML =
-      '<div class="opcao-top">' +
-        '<span class="opcao-tag ' + esc(op.tagClass) + '">' + esc(op.tag) + '</span>' +
-        '<div class="check">✓</div>' +
-      '</div>' +
-      '<div class="opcao-nome">' + esc(op.nome) + '</div>' +
-      (op.detalhes && op.detalhes.length
-        ? '<div class="opcao-detalhes">' + op.detalhes.map(d => '<div class="opcao-detalhe">' + esc(d) + '</div>').join("") + '</div>'
-        : "") +
-      (op.aviso ? '<div class="opcao-aviso">ℹ️ ' + esc(op.aviso) + '</div>' : "");
-
-    card.addEventListener("click",() => {
-      pedidos[dia.key] = {
-        tag:op.tag,
-        tagClass:op.tagClass,
-        nome:op.nome,
-        dia:dia.dia
-      };
+    card.addEventListener("click",()=>{
+      pedidos[dia.key]={tag:op.tag,tagClass:op.tagClass,nome:op.nome,dia:dia.dia};
       renderStep();
     });
-
     grid.appendChild(card);
   });
 
+  // ── Card de Ausência ──────────────────────────────────────────────────────
   const ausenciaSelecionada = selecionada && selecionada._ausencia;
   const ausCard = document.createElement("div");
   ausCard.className = "ausencia-card" + (ausenciaSelecionada ? " selected" : "");
 
+  // Valores atuais do motivo/obs (preserva se já preencheu)
   const motivoAtual = ausenciaSelecionada ? (selecionada.motivo || "nao_vai_almocar") : "nao_vai_almocar";
-  const obsAtual = ausenciaSelecionada ? (selecionada.observacao || "") : "";
+  const obsAtual    = ausenciaSelecionada ? (selecionada.observacao || "") : "";
 
-  const optsMotivo = MOTIVOS_AUSENCIA.map(m =>
-    '<option value="' + esc(m.value) + '"' + (motivoAtual === m.value ? " selected" : "") + '>' + esc(m.label) + '</option>'
+  const optsMotivo = MOTIVOS_AUSENCIA.map(m=>
+    '<option value="'+m.value+'"'+(motivoAtual===m.value?' selected':'')+'>'+m.label+'</option>'
   ).join("");
 
   ausCard.innerHTML =
-    '<div class="opcao-top">' +
-      '<span class="tag-ausencia">🚫 Ausência</span>' +
-      '<div class="check">✓</div>' +
-    '</div>' +
-    '<div class="ausencia-nome">Não vou almoçar neste dia</div>' +
-    '<div class="ausencia-form" id="ausFormDia_' + esc(dia.key) + '" style="display:' + (ausenciaSelecionada ? "flex" : "none") + '">' +
-      '<div class="ausencia-field">' +
-        '<label class="ausencia-label">Motivo</label>' +
-        '<select class="ausencia-select" id="ausMotivoSel_' + esc(dia.key) + '">' + optsMotivo + '</select>' +
-      '</div>' +
-      '<div class="ausencia-field">' +
-        '<label class="ausencia-label">Observação opcional</label>' +
-        '<input class="ausencia-input" id="ausObsInput_' + esc(dia.key) + '" type="text" placeholder="Detalhe se necessário..." value="' + esc(obsAtual) + '">' +
-      '</div>' +
+    '<div class="opcao-top">'+
+      '<span class="tag-ausencia">🚫 Ausência</span>'+
+      '<div class="check">✓</div>'+
+    '</div>'+
+    '<div class="ausencia-nome">Não vou almoçar neste dia</div>'+
+    '<div class="ausencia-form" id="ausFormDia_'+dia.key+'" style="display:'+(ausenciaSelecionada?'flex':'none')+'">'+
+      '<div class="ausencia-field">'+
+        '<label class="ausencia-label">Motivo</label>'+
+        '<select class="ausencia-select" id="ausMotivoSel_'+dia.key+'">'+optsMotivo+'</select>'+
+      '</div>'+
+      '<div class="ausencia-field">'+
+        '<label class="ausencia-label">Observação (opcional)</label>'+
+        '<input class="ausencia-input" id="ausObsInput_'+dia.key+'" type="text" placeholder="Detalhe se necessário..." value="'+esc(obsAtual)+'">'+
+      '</div>'+
     '</div>';
 
   ausCard.addEventListener("click", function(e){
-    if(e.target.tagName === "SELECT" || e.target.tagName === "INPUT" || e.target.tagName === "LABEL") return;
+    // Não processa cliques dentro dos campos do formulário
+    if(e.target.tagName==="SELECT" || e.target.tagName==="INPUT" || e.target.tagName==="LABEL") return;
 
     if(ausenciaSelecionada){
+      // Deseleciona ausência
       delete pedidos[dia.key];
     } else {
+      // Seleciona ausência
       pedidos[dia.key] = {
-        _ausencia:true,
-        motivo:"nao_vai_almocar",
+        _ausencia: true,
+        motivo:    "nao_vai_almocar",
         observacao:"",
-        dia:dia.dia
+        dia:       dia.dia
       };
     }
-
     renderStep();
   });
 
   grid.appendChild(ausCard);
 }
 
-document.getElementById("btnNext").addEventListener("click",() => {
+// ── Navegação entre steps ────────────────────────────────────────────────────
+document.getElementById("btnNext").addEventListener("click",()=>{
+  // Captura dados de ausência antes de avançar
   capturarAusencia(DIAS_SEMANA[stepAtual].key);
 
-  if(stepAtual < DIAS_SEMANA.length - 1){
+  if(stepAtual<DIAS_SEMANA.length-1){
     stepAtual++;
     renderStep();
   } else {
@@ -1747,147 +819,141 @@ document.getElementById("btnNext").addEventListener("click",() => {
   }
 });
 
-document.getElementById("btnPrev").addEventListener("click",() => {
-  if(stepAtual > 0){
+document.getElementById("btnPrev").addEventListener("click",()=>{
+  if(stepAtual>0){
     capturarAusencia(DIAS_SEMANA[stepAtual].key);
     stepAtual--;
     renderStep();
   }
 });
 
-document.getElementById("btnVoltarView1").addEventListener("click",() => showView("view1"));
-document.getElementById("btnVoltarView2").addEventListener("click",() => {
-  showView("view2");
-  renderStep();
-});
+document.getElementById("btnVoltarView1").addEventListener("click",()=>showView("view1"));
+document.getElementById("btnVoltarView2").addEventListener("click",()=>{showView("view2");renderStep();});
 
+// ── Resumo ────────────────────────────────────────────────────────────────────
 function motivoLabel(motivo){
-  const m = MOTIVOS_AUSENCIA.find(x => x.value === motivo);
+  const m = MOTIVOS_AUSENCIA.find(x=>x.value===motivo);
   return m ? m.label : "Não vou almoçar";
 }
 
 function renderResumo(){
-  const wrap = document.getElementById("resumoWrap");
-  wrap.innerHTML = "";
-
-  DIAS_SEMANA.forEach(dia => {
-    const p = pedidos[dia.key];
-    const row = document.createElement("div");
+  const wrap=document.getElementById("resumoWrap");
+  wrap.innerHTML="";
+  DIAS_SEMANA.forEach(dia=>{
+    const p=pedidos[dia.key];
+    const row=document.createElement("div");
 
     if(p && p._ausencia){
-      row.className = "resumo-dia resumo-ausencia";
-      row.innerHTML =
-        '<div class="resumo-dia-label">' + esc(dia.label.split("-")[0].trim()) + '</div>' +
-        '<div class="resumo-dia-opcao" style="flex-direction:column;align-items:flex-start;gap:0.2rem">' +
-          '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">' +
-            '<span class="tag-ausencia" style="font-size:.55rem;padding:2px 7px">🚫 Ausência</span>' +
-            '<span class="resumo-dia-nome" style="color:rgba(255,180,100,.85)">' + esc(motivoLabel(p.motivo)) + '</span>' +
-          '</div>' +
-          (p.observacao ? '<div class="resumo-ausencia-obs">' + esc(p.observacao) + '</div>' : '') +
+      row.className="resumo-dia resumo-ausencia";
+      row.innerHTML=
+        '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+
+        '<div class="resumo-dia-opcao" style="flex-direction:column;align-items:flex-start;gap:0.2rem">'+
+          '<div style="display:flex;align-items:center;gap:0.5rem">'+
+            '<span class="tag-ausencia" style="font-size:.55rem;padding:2px 7px">🚫 Ausência</span>'+
+            '<span class="resumo-dia-nome" style="color:rgba(255,180,100,.85)">'+esc(motivoLabel(p.motivo))+'</span>'+
+          '</div>'+
+          (p.observacao
+            ? '<div class="resumo-ausencia-obs">'+esc(p.observacao)+'</div>'
+            : '')+
         '</div>';
     } else {
-      row.className = "resumo-dia";
-      row.innerHTML =
-        '<div class="resumo-dia-label">' + esc(dia.label.split("-")[0].trim()) + '</div>' +
-        '<div class="resumo-dia-opcao">' +
-          (p
-            ? '<span class="opcao-tag ' + esc(p.tagClass) + '" style="font-size:.55rem;padding:2px 7px">' + esc(p.tag) + '</span><span class="resumo-dia-nome">' + esc(p.nome) + '</span>'
-            : '<span style="color:rgba(143,170,210,.4);font-size:.85rem">Não marcado</span>') +
+      row.className="resumo-dia";
+      row.innerHTML=
+        '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+
+        '<div class="resumo-dia-opcao">'+
+        (p
+          ?'<span class="opcao-tag '+esc(p.tagClass)+'" style="font-size:.55rem;padding:2px 7px">'+esc(p.tag)+'</span><span class="resumo-dia-nome">'+esc(p.nome)+'</span>'
+          :'<span style="color:rgba(143,170,210,.4);font-size:.85rem">Não marcado</span>')+
         '</div>';
     }
-
     wrap.appendChild(row);
   });
 }
 
-document.getElementById("btnConfirmar").addEventListener("click",async() => {
-  if(!funcSelecionado){
-    alert("Selecione um colaborador.");
-    return;
-  }
+// ── Confirmar pedido ──────────────────────────────────────────────────────────
+document.getElementById("btnConfirmar").addEventListener("click",async()=>{
+  if(!funcSelecionado){ alert("Selecione um colaborador."); return; }
 
+  // Captura campos de ausência do step atual caso ainda esteja na view2
   capturarAusencia(DIAS_SEMANA[stepAtual].key);
 
-  const selecionados = Object.keys(pedidos);
+  const selecionados=Object.keys(pedidos);
+  if(!selecionados.length){ alert("Selecione pelo menos uma refeição."); return; }
 
-  if(!selecionados.length){
-    alert("Selecione pelo menos uma refeição.");
-    return;
-  }
-
-  const btn = document.getElementById("btnConfirmar");
-  btn.disabled = true;
-  btn.textContent = "Salvando pedido...";
+  const btn=document.getElementById("btnConfirmar");
+  btn.disabled=true; btn.textContent="Salvando pedido...";
 
   try{
     await SP.init();
 
     for(const key of selecionados){
-      const diaInfo = DIAS_SEMANA.find(d => d.key === key);
-      const pedido = pedidos[key];
-
-      if(!diaInfo || !pedido) continue;
+      const diaInfo=DIAS_SEMANA.find(d=>d.key===key);
+      const pedido=pedidos[key];
 
       if(pedido._ausencia){
-        await SP.registrarAusenciaAlmoco({
-          semanaId: SEMANA_ID,
-          colaborador: {
-            id: funcSelecionado.id,
-            Nome: funcSelecionado.nome,
-            Centro_Custo: funcSelecionado.cc || ""
-          },
-          dia: diaInfo.dia,
-          motivo: motivoLabel(pedido.motivo) + (pedido.observacao ? " - " + pedido.observacao : "")
-        });
-      } else {
-        await SP.savePedido({
-          semanaId: SEMANA_ID,
-          colaboradorId: funcSelecionado.id,
+        // ── Grava na lista Ausencias do Refeitorio ──────────────────────────
+        // Calcula a data real daquele dia da semana
+        const datas = getWeekDatesLocal(SEMANA_ID);
+        const idxDia = DIAS_SEMANA.findIndex(d=>d.key===key);
+        const dataRef = datas[idxDia] ? datas[idxDia].toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+
+        await SP.createAusencia({
+          colaboradorId:   funcSelecionado.id,
           colaboradorNome: funcSelecionado.nome,
-          centroCusto: funcSelecionado.cc || "",
-          dia: diaInfo.dia,
-          opcao: pedido.tag,
-          nomePrato: pedido.nome,
-          confirmado: true,
-          status: "Confirmado",
-          origem: "Refeitório",
-          dataHora: new Date().toISOString(),
-          observacao: SP.getUserName ? "Alterado por: " + SP.getUserName() : ""
+          centroCusto:     funcSelecionado.cc || "",
+          dataInicio:      dataRef,
+          dataFim:         dataRef,
+          motivo:          pedido.motivo     || "nao_vai_almocar",
+          observacao:      pedido.observacao || "",
+          criadoPor:       funcSelecionado.nome
         });
+
+      } else {
+        // ── Grava pedido normal de refeição ─────────────────────────────────
+        await SP.savePedido(
+          SEMANA_ID,
+          funcSelecionado.id,
+          funcSelecionado.nome,
+          diaInfo.dia,
+          pedido.tag,
+          pedido.nome,
+          {
+            confirmado:  true,
+            status:      "Confirmado",
+            origem:      "Refeitório",
+            centroCusto: funcSelecionado.cc || "",
+            dataHora:    new Date().toISOString(),
+            alteradoPor: SP.getUserName ? SP.getUserName() : ""
+          }
+        );
       }
     }
 
-    const nomeFirst = funcSelecionado.nome.split(" ")[0];
-
-    document.getElementById("modalText").textContent =
-      nomeFirst + ", seu pedido da semana foi confirmado. Qualquer alteração deverá ser solicitada à Luana.";
-
-    const overlay = document.getElementById("modalOverlay");
-    overlay.style.display = "flex";
-    overlay.offsetHeight;
-    overlay.classList.add("open");
-
-    const idx = FUNCIONARIOS.findIndex(f => String(f.id) === String(funcSelecionado.id));
-    if(idx >= 0) FUNCIONARIOS[idx].confirmado = true;
+    const nomeFirst=funcSelecionado.nome.split(" ")[0];
+    document.getElementById("modalText").textContent=
+      nomeFirst+", seu pedido da semana foi confirmado! Qualquer alteração deverá ser solicitada à Luana.";
+    const overlay=document.getElementById("modalOverlay");
+    overlay.style.display="flex"; overlay.offsetHeight; overlay.classList.add("open");
+    const idx=FUNCIONARIOS.findIndex(f=>String(f.id)===String(funcSelecionado.id));
+    if(idx>=0) FUNCIONARIOS[idx].confirmado=true;
 
   } catch(e){
     console.error("[confirmar]",e);
-    alert("Erro ao salvar: " + (e.message || e));
+    alert("Erro ao salvar: "+(e.message||e));
   } finally{
-    btn.disabled = false;
-    btn.textContent = "✓ Confirmar pedido da semana";
+    btn.disabled=false; btn.textContent="✓ Confirmar pedido da semana";
   }
 });
 
-document.getElementById("modalBtn").addEventListener("click",() => {
+document.getElementById("modalBtn").addEventListener("click",()=>{
   document.getElementById("modalOverlay").classList.remove("open");
-  document.getElementById("searchInput").value = "";
+  document.getElementById("searchInput").value="";
   renderFuncs(FUNCIONARIOS);
   showView("view1");
 });
 
 function showView(id){
-  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   document.getElementById(id).classList.add("active");
   window.scrollTo(0,0);
 }
@@ -1896,139 +962,56 @@ window.addEventListener("load",carregarDadosSharePoint);
 </script>
 
 <script>
+// ── Fundo animado Homy Tech ──────────────────────────────────────────────────
 (function(){
-  const canvas = document.getElementById("homyTechCanvas");
-
-  if(!canvas || canvas.dataset.started === "true") return;
-
-  canvas.dataset.started = "true";
-
-  const ctx = canvas.getContext("2d");
-  let w = 0;
-  let h = 0;
-  let dpr = 1;
-  let particles = [];
-
+  const canvas=document.getElementById("homyTechCanvas");
+  if(!canvas||canvas.dataset.started==="true") return;
+  canvas.dataset.started="true";
+  const ctx=canvas.getContext("2d");
+  let w=0,h=0,dpr=1,particles=[];
   function resize(){
-    dpr = Math.min(window.devicePixelRatio || 1,2);
-    w = window.innerWidth;
-    h = window.innerHeight;
-
-    canvas.width = Math.floor(w * dpr);
-    canvas.height = Math.floor(h * dpr);
-    canvas.style.width = w + "px";
-    canvas.style.height = h + "px";
-
+    dpr=Math.min(window.devicePixelRatio||1,2); w=window.innerWidth; h=window.innerHeight;
+    canvas.width=Math.floor(w*dpr); canvas.height=Math.floor(h*dpr);
+    canvas.style.width=w+"px"; canvas.style.height=h+"px";
     ctx.setTransform(dpr,0,0,dpr,0,0);
-
-    particles = Array.from({length:Math.max(46,Math.min(82,Math.floor(w / 22)))},(_,i) => criarP(i));
+    particles=Array.from({length:Math.max(46,Math.min(82,Math.floor(w/22)))},(_,i)=>criarP(i));
   }
-
-  function criarP(i){
-    const tipo = i % 11 === 0 ? "red" : i % 5 === 0 ? "green" : "blue";
-
-    return {
-      x:Math.random() * w,
-      y:Math.random() * h,
-      vx:(Math.random() - .5) * .34,
-      vy:(Math.random() - .5) * .28,
-      r:tipo === "red" ? 2.4 : tipo === "green" ? 2.7 : 2.1 + Math.random() * 1.4,
-      tipo,
-      fase:Math.random() * Math.PI * 2
-    };
-  }
-
-  function cor(p,a){
-    if(p.tipo === "red") return `rgba(192,40,28,${a})`;
-    if(p.tipo === "green") return `rgba(34,200,121,${a})`;
-    return `rgba(97,184,255,${a})`;
-  }
-
-  function hex(t){
-    [
-      {x:w*.18,y:h*.18,s:58,a:.16},
-      {x:w*.82,y:h*.24,s:74,a:.12},
-      {x:w*.62,y:h*.78,s:86,a:.10}
-    ].forEach((m,idx) => {
-      ctx.save();
-      ctx.translate(m.x + Math.sin(t/1700 + idx) * 18,m.y + Math.cos(t/2100 + idx) * 14);
-      ctx.rotate(Math.sin(t/3600 + idx) * .18);
-      ctx.strokeStyle = `rgba(97,184,255,${m.a})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-
-      for(let i=0;i<6;i++){
-        const a = Math.PI / 3 * i + Math.PI / 6;
-        if(i === 0) ctx.moveTo(Math.cos(a) * m.s,Math.sin(a) * m.s);
-        else ctx.lineTo(Math.cos(a) * m.s,Math.sin(a) * m.s);
-      }
-
-      ctx.closePath();
-      ctx.stroke();
-
-      for(let i=0;i<6;i++){
-        const a = Math.PI / 3 * i + Math.PI / 6;
-        ctx.beginPath();
-        ctx.arc(Math.cos(a) * m.s,Math.sin(a) * m.s,3.2,0,Math.PI * 2);
-        ctx.fillStyle = i % 3 === 0 ? "rgba(34,200,121,.22)" : "rgba(97,184,255,.24)";
-        ctx.fill();
-      }
-
-      ctx.restore();
-    });
-  }
-
+  function criarP(i){const tipo=i%11===0?"red":i%5===0?"green":"blue";return{x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.34,vy:(Math.random()-.5)*.28,r:tipo==="red"?2.4:tipo==="green"?2.7:2.1+Math.random()*1.4,tipo,fase:Math.random()*Math.PI*2};}
+  function cor(p,a){if(p.tipo==="red")return`rgba(192,40,28,${a})`;if(p.tipo==="green")return`rgba(34,200,121,${a})`;return`rgba(97,184,255,${a})`;}
+  function hex(t){[{x:w*.18,y:h*.18,s:58,a:.16},{x:w*.82,y:h*.24,s:74,a:.12},{x:w*.62,y:h*.78,s:86,a:.10}].forEach((m,idx)=>{ctx.save();ctx.translate(m.x+Math.sin(t/1700+idx)*18,m.y+Math.cos(t/2100+idx)*14);ctx.rotate(Math.sin(t/3600+idx)*.18);ctx.strokeStyle=`rgba(97,184,255,${m.a})`;ctx.lineWidth=1;ctx.beginPath();for(let i=0;i<6;i++){const a=Math.PI/3*i+Math.PI/6;i===0?ctx.moveTo(Math.cos(a)*m.s,Math.sin(a)*m.s):ctx.lineTo(Math.cos(a)*m.s,Math.sin(a)*m.s);}ctx.closePath();ctx.stroke();for(let i=0;i<6;i++){const a=Math.PI/3*i+Math.PI/6;ctx.beginPath();ctx.arc(Math.cos(a)*m.s,Math.sin(a)*m.s,3.2,0,Math.PI*2);ctx.fillStyle=i%3===0?"rgba(34,200,121,.22)":"rgba(97,184,255,.24)";ctx.fill();}ctx.restore();});}
   function loop(t){
-    ctx.clearRect(0,0,w,h);
-    hex(t);
-
-    for(const p of particles){
-      p.x += p.vx + Math.sin(t / 1800 + p.fase) * .055;
-      p.y += p.vy + Math.cos(t / 2200 + p.fase) * .045;
-
-      if(p.x < -20) p.x = w + 20;
-      if(p.x > w + 20) p.x = -20;
-      if(p.y < -20) p.y = h + 20;
-      if(p.y > h + 20) p.y = -20;
-    }
-
-    for(let i=0;i<particles.length;i++){
-      for(let j=i+1;j<particles.length;j++){
-        const a = particles[i];
-        const b = particles[j];
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if(dist < 145){
-          ctx.beginPath();
-          ctx.moveTo(a.x,a.y);
-          ctx.lineTo(b.x,b.y);
-          ctx.strokeStyle = `rgba(97,184,255,${(1 - dist / 145) * .22})`;
-          ctx.lineWidth = .8;
-          ctx.stroke();
-        }
-      }
-    }
-
-    for(const p of particles){
-      const pulse = .65 + Math.sin(t / 650 + p.fase) * .35;
-
-      ctx.beginPath();
-      ctx.arc(p.x,p.y,p.r + pulse * .8,0,Math.PI * 2);
-      ctx.fillStyle = cor(p,.62);
-      ctx.shadowColor = p.tipo === "green" ? "rgba(34,200,121,.75)" : p.tipo === "red" ? "rgba(192,40,28,.72)" : "rgba(97,184,255,.75)";
-      ctx.shadowBlur = 12;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-
+    ctx.clearRect(0,0,w,h); hex(t);
+    for(const p of particles){p.x+=p.vx+Math.sin(t/1800+p.fase)*.055;p.y+=p.vy+Math.cos(t/2200+p.fase)*.045;if(p.x<-20)p.x=w+20;if(p.x>w+20)p.x=-20;if(p.y<-20)p.y=h+20;if(p.y>h+20)p.y=-20;}
+    for(let i=0;i<particles.length;i++)for(let j=i+1;j<particles.length;j++){const a=particles[i],b=particles[j],dx=a.x-b.x,dy=a.y-b.y,dist=Math.sqrt(dx*dx+dy*dy);if(dist<145){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(97,184,255,${(1-dist/145)*.22})`;ctx.lineWidth=.8;ctx.stroke();}}
+    for(const p of particles){const pulse=.65+Math.sin(t/650+p.fase)*.35;ctx.beginPath();ctx.arc(p.x,p.y,p.r+pulse*.8,0,Math.PI*2);ctx.fillStyle=cor(p,.62);ctx.shadowColor=p.tipo==="green"?"rgba(34,200,121,.75)":p.tipo==="red"?"rgba(192,40,28,.72)":"rgba(97,184,255,.75)";ctx.shadowBlur=12;ctx.fill();ctx.shadowBlur=0;}
     requestAnimationFrame(loop);
   }
-
   window.addEventListener("resize",resize);
-  resize();
-  requestAnimationFrame(loop);
+  resize(); requestAnimationFrame(loop);
+})();
+</script>
+
+<script>
+// ── Bloqueio de marcação via configuração do admin ────────────────────────────
+(function(){
+  async function verificar(){
+    try{
+      if(window.HOMY_SP_READY) await window.HOMY_SP_READY;
+      if(!window.SP) return;
+      await SP.init();
+      const liberado=SP.getMarcacaoLiberada?await SP.getMarcacaoLiberada():true;
+      let overlay=document.getElementById("homyBlockOverlay");
+      if(!liberado){
+        if(!overlay){
+          overlay=document.createElement("div"); overlay.id="homyBlockOverlay";
+          overlay.style.cssText="position:fixed;inset:0;z-index:99999;background:rgba(3,8,20,.92);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;text-align:center;padding:2rem;color:#e8f0ff;font-family:Barlow,sans-serif";
+          overlay.innerHTML='<div style="max-width:420px;border:1px solid rgba(255,180,0,.3);background:rgba(255,180,0,.08);border-radius:22px;padding:2rem"><div style="font-size:2.5rem;margin-bottom:.8rem">🔒</div><div style="font-family:Barlow Condensed,sans-serif;font-size:1.8rem;font-weight:700;text-transform:uppercase">Marcação bloqueada</div><p style="color:rgba(200,220,255,.75);margin-top:.7rem;line-height:1.5">A marcação foi bloqueada no painel administrador.</p><a href="index.html" style="display:inline-block;margin-top:1rem;padding:.7rem 1rem;border-radius:10px;background:rgba(26,100,200,.25);border:1px solid rgba(80,150,255,.35);color:#9bd2ff;text-decoration:none;font-weight:700">Voltar</a></div>';
+          document.body.appendChild(overlay);
+        }
+      } else if(overlay){ overlay.remove(); }
+    } catch(e){ console.warn("Bloqueio marcação:",e); }
+  }
+  window.addEventListener("load",()=>{ verificar(); setInterval(verificar,10000); });
 })();
 </script>
 
