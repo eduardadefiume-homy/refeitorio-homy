@@ -634,9 +634,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=fix-cardapio-travado-extra-seq-20260615")
-        .catch(function(){ return loadScript("./sharepoint.js?v=fix-cardapio-travado-extra-seq-20260615"); })
-        .catch(function(){ return loadScript("../sharepoint.js?v=fix-cardapio-travado-extra-seq-20260615"); });
+      return loadScript("sharepoint.js?v=fix-ausencia-pedido-visivel-20260615")
+        .catch(function(){ return loadScript("./sharepoint.js?v=fix-ausencia-pedido-visivel-20260615"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=fix-ausencia-pedido-visivel-20260615"); });
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -976,6 +976,83 @@ async function carregarCardapio(semanaId, dia){
   }
 }
 
+
+function formatarMotivoAusenciaCozinha(motivo){
+  const n = normalizar(motivo);
+  if(n === "nao_vai_almocar" || n === "nao vai almocar" || n === "não vai almoçar") return "Não vai almoçar";
+  if(n === "ferias" || n === "férias") return "Férias";
+  if(n === "afastado") return "Afastado";
+  if(n === "atestado") return "Atestado";
+  if(n === "licenca" || n === "licença") return "Licença";
+  return String(motivo || "Ausente");
+}
+
+function dataRefDiaCozinha(semanaId, dia){
+  try {
+    if (window.SP?.getDataRefBySemanaDia) return window.SP.getDataRefBySemanaDia(semanaId, dia);
+  } catch(_) {}
+  return new Date().toISOString().slice(0,10);
+}
+
+function ausenciaAtivaCozinha(a){
+  const ativo = itemValor(a,"Ativo","ativo");
+  const status = normalizar(itemValor(a,"Status","status"));
+  if(["inativo","cancelado","false","nao","não","0"].includes(status)) return false;
+  if(ativo === "") return true;
+  return window.SP?.isTrue ? window.SP.isTrue(ativo) : !!ativo;
+}
+
+function ausenciaParaPedidoCozinha(a, semanaId, dia){
+  const cid = String(itemValor(a,"Colaborador_id","colaborador_id","ColaboradorId") || "").trim();
+  const nome = String(itemValor(a,"Colaborador_nome","Colaborador","Nome","Title") || "Ausente").trim();
+  const motivo = formatarMotivoAusenciaCozinha(itemValor(a,"Motivo","motivo","Status","status") || "Ausente");
+  const id = `ausencia-${cid || normalizar(nome)}-${normalizar(dia)}`;
+  return {
+    id,
+    ID: id,
+    Title: nome,
+    Semana_id: semanaId,
+    Colaborador_id: cid || `ausencia-${normalizar(nome)}`,
+    Colaborador_nome: nome,
+    Dia: dia,
+    Opcao: "principal",
+    Nome_Prato: motivo,
+    Status: motivo,
+    Confirmado: true,
+    Origem: "Refeitório",
+    Centro_Custo: itemValor(a,"Centro_Custo","CentroCusto","Setor","Departamento") || "",
+    Observacao: itemValor(a,"Observacao","Observação","Obs") || "Ausência registrada no refeitório.",
+    _ausente: true,
+    _ausenciaCozinha: true
+  };
+}
+
+function incluirAusenciasSemPedidoCozinha(lista, ausencias, semanaId, dia){
+  const dataRef = dataRefDiaCozinha(semanaId, dia);
+  const existentes = new Set((lista || []).map(p => {
+    const cid = String(getColaboradorId(p) || "").trim();
+    const nome = normalizar(getNome(p));
+    return cid ? `id:${cid}` : `nome:${nome}`;
+  }));
+  const out = [...(lista || [])];
+
+  (ausencias || []).forEach(a => {
+    if(!ausenciaAtivaCozinha(a)) return;
+    const ini = String(itemValor(a,"Data_Inicio","Inicio","DataInicio") || "").slice(0,10);
+    const fim = String(itemValor(a,"Data_Fim","Fim","DataFim") || ini || "").slice(0,10);
+    if(!ini || !fim || dataRef < ini || dataRef > fim) return;
+
+    const cid = String(itemValor(a,"Colaborador_id","colaborador_id","ColaboradorId") || "").trim();
+    const nome = normalizar(itemValor(a,"Colaborador_nome","Colaborador","Nome","Title") || "");
+    const key = cid ? `id:${cid}` : `nome:${nome}`;
+    if(existentes.has(key)) return;
+
+    out.push(ausenciaParaPedidoCozinha(a, semanaId, dia));
+    existentes.add(key);
+  });
+  return out;
+}
+
 async function carregarAusenciasSeguras(){
   const tentativas = [
     () => window.SP.getAusenciasRefeitorio?.(),
@@ -1038,7 +1115,7 @@ async function sincronizar(silencioso = false){
     pedidosHoje = pedidosHoje.map(p => {
       const cid = String(getColaboradorId(p));
       const nome = normalizar(getNome(p));
-      const ausente = (ausencias || []).some(a => {
+      const ausenciaEncontrada = (ausencias || []).find(a => {
         const aCid = String(itemValor(a,"Colaborador_id","colaborador_id") || "");
         const aNome = normalizar(itemValor(a,"Colaborador_nome","Nome","Title") || "");
         const mesmoColab = (cid && aCid && aCid === cid) || (nome && aNome && aNome === nome);
@@ -1048,9 +1125,16 @@ async function sincronizar(silencioso = false){
         if (!ini || !fim) return false;
         return hoje >= String(ini).slice(0,10) && hoje <= String(fim).slice(0,10);
       });
-      if (ausente) return { ...p, Status: "Ausente", _ausente: true };
+      if (ausenciaEncontrada) {
+        const motivo = formatarMotivoAusenciaCozinha(itemValor(ausenciaEncontrada,"Motivo","motivo","Status","status") || "Ausente");
+        return { ...p, Status: motivo, Nome_Prato: motivo, _ausente: true };
+      }
       return p;
     });
+
+    // Se a ausência existe na lista Ausencias do Refeitorio mas ainda não tem pedido espelho,
+    // a cozinha também precisa enxergar o colaborador naquele dia.
+    pedidosHoje = incluirAusenciasSemPedidoCozinha(pedidosHoje, ausencias, semanaId, dia);
 
     try {
       checkinsHoje = await window.SP.getCheckIn(semanaId, dia);
