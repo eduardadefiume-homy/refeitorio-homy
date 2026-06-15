@@ -1083,6 +1083,52 @@ function limparBusca(){
 }
 
 
+function grupoOrdenacaoCozinha(p){
+  const nome = normalizar(getNome(p));
+  const tipo = normalizar(itemValor(p,"tipo","Tipo"));
+  const origem = normalizar(itemValor(p,"Origem","origem"));
+
+  // Regra da cozinha:
+  // 1) colaboradores e extras com nome real ficam em ordem alfabética juntos;
+  // 2) no fim aparecem Guarda, Investigadores e Refeição Extra automática.
+  const autoExtra = nome === "refeicao extra" ||
+                    nome === "refeicao extra automatica" ||
+                    tipo.includes("extra automat") ||
+                    origem.includes("extra automat");
+  const guarda = nome === "guarda" || /^guarda\s*\d*$/.test(nome) ||
+                 tipo.includes("guarda") || origem.includes("guarda");
+  const investigador = /^investigador(?:\s*\d+)?$/.test(nome) ||
+                       tipo.includes("investigador") || origem.includes("investigador");
+
+  if (guarda) return 2;
+  if (investigador) return 3;
+  if (autoExtra) return 4;
+  return 1;
+}
+
+function numeroEspecialCozinha(p){
+  const nome = normalizar(getNome(p));
+  const m = nome.match(/(\d+)\s*$/);
+  return m ? Number(m[1]) : 0;
+}
+
+function ordenarListaCozinha(a,b){
+  const ga = grupoOrdenacaoCozinha(a);
+  const gb = grupoOrdenacaoCozinha(b);
+  if (ga !== gb) return ga - gb;
+
+  if (ga === 2 || ga === 3 || ga === 4) {
+    const na = numeroEspecialCozinha(a);
+    const nb = numeroEspecialCozinha(b);
+    if (na !== nb) return na - nb;
+  }
+
+  const nomeA = String(getNome(a) || "").localeCompare(String(getNome(b) || ""), "pt-BR", { sensitivity:"base", numeric:true });
+  if (nomeA !== 0) return nomeA;
+  return String(getColaboradorId(a) || "").localeCompare(String(getColaboradorId(b) || ""), "pt-BR", { numeric:true });
+}
+
+
 function setTxtCozinha(id, valor){
   const el = document.getElementById(id);
   if (el) el.textContent = String(valor ?? 0);
@@ -1118,7 +1164,7 @@ function atualizarResumoCozinha(){
 function renderLista(){
   const lista = document.getElementById("lista");
   const termo = normalizar(document.getElementById("busca").value);
-  const filtrados = pedidosHoje.filter(p => normalizar(getNome(p)).includes(termo));
+  const filtrados = pedidosHoje.filter(p => normalizar(getNome(p)).includes(termo)).sort(ordenarListaCozinha);
   const entregues = pedidosHoje.filter(isCheckinFeito).length;
 
   document.getElementById("cntDone").textContent  = `${entregues} entregues`;
