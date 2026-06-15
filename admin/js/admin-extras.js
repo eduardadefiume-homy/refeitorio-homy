@@ -1,5 +1,5 @@
 // admin-extras.js — Extras / Visitantes do Admin Homy
-// Versão limpa: preserva o fluxo original, adiciona Centro de Custo e cria/atualiza pedido espelho corretamente.
+// Correção: sequencial de Investigador/Guarda e pedido espelho sem sobrescrever outro extra.
 
 const AdminExtras = window.AdminExtras = {
   _lista: [],
@@ -269,9 +269,9 @@ const AdminExtras = window.AdminExtras = {
     return new Date().toISOString();
   },
 
-  async _criarExtra(semanaId, dia, nome, tipo, opcao, obs) {
+  async _criarExtra(semanaId, dia, nome, tipo, opcao, obs, centroCusto = "") {
     if (typeof SP.addExtra === "function") {
-      return await SP.addExtra(semanaId, dia, nome, tipo, opcao, obs, SP.getUserName ? SP.getUserName() : "Admin");
+      return await SP.addExtra(semanaId, dia, nome, tipo, opcao, obs, SP.getUserName ? SP.getUserName() : "Admin", centroCusto);
     }
     return await SP.createItem("Extras", {
       Title: `${semanaId}-${dia}-${nome}`,
@@ -281,24 +281,34 @@ const AdminExtras = window.AdminExtras = {
       tipo: tipo,
       Opcao: opcao || "principal",
       Observacao: obs || "",
-      Adicionado_Por: SP.getUserName ? SP.getUserName() : "Admin"
+      Adicionado_Por: SP.getUserName ? SP.getUserName() : "Admin",
+      Centro_Custo: centroCusto || this.PORTARIA_CC
     });
   },
 
-  _pedidoExtraValido(p, dia, nome, tipo) {
+  _pedidoExtraValido(p, dia, nome, tipo, extraId = "") {
     const pDia = this._norm(this._pick(p, "Dia"));
     const pNome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
     const pOrigem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+    const pObs = this._norm(this._pick(p, "Observacao", "Observação", "Obs"));
+    const pColabId = String(this._pick(p, "Colaborador_id", "colaboradorId") || "").trim();
+    const nomeNorm = this._norm(nome);
+    const tipoNorm = this._norm(tipo);
+
     if (pDia !== this._norm(dia)) return false;
     if (!pNome) return false;
-    if (pNome === this._norm(nome)) return true;
-    if (pNome.includes(this._norm(nome))) return true;
-    return pOrigem.includes(this._norm(tipo)) && pNome.includes(this._norm(tipo));
+
+    // Quando o pedido foi criado a partir de um Extra, o vínculo mais seguro é o ExtraID.
+    if (extraId && (pObs.includes(`extraid:${this._norm(extraId)}`) || pColabId === `extra-${extraId}`)) return true;
+
+    // Sem ExtraID, só considera o MESMO extra quando nome e origem batem exatamente.
+    // Isso evita que Investigador 2 atualize o pedido do Investigador 1.
+    return pNome === nomeNorm && (!tipoNorm || pOrigem.includes(tipoNorm));
   },
 
   async _salvarPedidoEspelho(semanaId, dia, nome, tipo, opcao, obs, centroCusto, extraId = "") {
     const pedidos = typeof SP.getPedidos === "function" ? await SP.getPedidos(semanaId).catch(() => []) : [];
-    const existente = pedidos.find(p => this._pedidoExtraValido(p, dia, nome, tipo));
+    const existente = pedidos.find(p => this._pedidoExtraValido(p, dia, nome, tipo, extraId));
     const nomePrato = await this._pratoPorOpcao(semanaId, dia, opcao);
     const cc = this._formatarCC(centroCusto || this.PORTARIA_CC);
     const dataHora = this._dataHoraDoDia(semanaId, dia);
@@ -368,6 +378,38 @@ const AdminExtras = window.AdminExtras = {
     });
   },
 
+  async _proximoNumeroTipo(semanaId, dia, tipo) {
+    const tipoNorm = this._norm(tipo);
+    const numeros = [];
+
+    const coletar = (item, nomeKeys, tipoKeys) => {
+      const itemDia = this._norm(this._pick(item, "Dia", "dia"));
+      if (itemDia !== this._norm(dia)) return;
+
+      const nome = String(this._pick(item, ...nomeKeys) || "").trim();
+      const origem = this._norm(this._pick(item, ...tipoKeys));
+      const nomeNorm = this._norm(nome);
+      if (!nomeNorm && !origem) return;
+      if (!origem.includes(tipoNorm) && !nomeNorm.includes(tipoNorm)) return;
+
+      const m = nomeNorm.match(new RegExp(`${tipoNorm}\\s*(\\d+)$`));
+      if (m) numeros.push(Number(m[1]));
+      else if (nomeNorm === tipoNorm || nomeNorm.startsWith(`${tipoNorm} `)) numeros.push(1);
+    };
+
+    try {
+      const extras = typeof SP.getExtras === "function" ? await SP.getExtras(semanaId).catch(() => []) : [];
+      (extras || []).forEach(e => coletar(e, ["Nome", "Title", "Colaborador_nome"], ["tipo", "Tipo", "Origem"]));
+    } catch (_) {}
+
+    try {
+      const pedidos = typeof SP.getPedidos === "function" ? await SP.getPedidos(semanaId).catch(() => []) : [];
+      (pedidos || []).forEach(p => coletar(p, ["Colaborador_nome", "Nome", "Title"], ["Origem", "tipo", "Tipo"]));
+    } catch (_) {}
+
+    return numeros.length ? Math.max(...numeros) + 1 : 1;
+  },
+
   async salvar() {
     const modal = document.getElementById("modalExtra");
     const predefinido = modal?.dataset.predefinido || "";
@@ -378,22 +420,14 @@ const AdminExtras = window.AdminExtras = {
     let nome, tipo, opcao, obs;
 
     if (predefinido === "investigador") {
-      const pedidos = await SP.getPedidos(semanaId).catch(() => []);
-      const qtd = pedidos.filter(p =>
-        this._norm(this._pick(p, "Dia")) === this._norm(dia) &&
-        this._norm(this._pick(p, "Origem", "tipo", "Tipo", "Colaborador_nome")).includes("investigador")
-      ).length;
-      nome = `Investigador ${qtd + 1}`;
+      const prox = await this._proximoNumeroTipo(semanaId, dia, "investigador");
+      nome = `Investigador ${prox}`;
       tipo = "investigador";
       opcao = AdminUtils.getVal("extraOpcao") || "principal";
       obs = `Investigador — Centro de custo ${centroCusto}`;
     } else if (predefinido === "guarda") {
-      const pedidos = await SP.getPedidos(semanaId).catch(() => []);
-      const qtd = pedidos.filter(p =>
-        this._norm(this._pick(p, "Dia")) === this._norm(dia) &&
-        this._norm(this._pick(p, "Origem", "tipo", "Tipo", "Colaborador_nome")).includes("guarda")
-      ).length;
-      nome = qtd > 0 ? `Guarda ${qtd + 1}` : "Guarda";
+      const prox = await this._proximoNumeroTipo(semanaId, dia, "guarda");
+      nome = prox > 1 ? `Guarda ${prox}` : "Guarda";
       tipo = "guarda";
       opcao = AdminUtils.getVal("extraOpcao") || "principal";
       obs = `Guarda — Centro de custo ${this.PORTARIA_CC}`;
@@ -413,7 +447,7 @@ const AdminExtras = window.AdminExtras = {
 
     try {
       await SP.init();
-      const extraCriado = await this._criarExtra(semanaId, dia, nome, tipo, opcao, obs);
+      const extraCriado = await this._criarExtra(semanaId, dia, nome, tipo, opcao, obs, centroCusto);
       const extraId = extraCriado?.id || extraCriado?.fields?.id || "";
       await this._salvarPedidoEspelho(semanaId, dia, nome, tipo, opcao, obs, centroCusto, extraId);
 
