@@ -1,5 +1,5 @@
 // admin-operacao-dia.js — Operação do Dia do Admin Homy
-// Versão limpa: mantém funcionamento original e sincroniza extras/guarda/prestador com Pedidos.
+// Correção: operação do dia deduplica pedidos, mostra ausências e sincroniza todos os extras/investigadores.
 
 const AdminOperacao = window.AdminOperacao = {
   _lista: [],
@@ -109,6 +109,144 @@ const AdminOperacao = window.AdminOperacao = {
     return new Date().toISOString();
   },
 
+  _dateISO(v) {
+    if (!v) return "";
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+  },
+
+  _dataPorDia(semanaId, dia) {
+    try {
+      if (typeof SP.getDataRefBySemanaDia === "function") return SP.getDataRefBySemanaDia(semanaId, dia);
+    } catch (_) {}
+    try {
+      const datas = typeof SP.getWeekDates === "function" ? SP.getWeekDates(semanaId) : [];
+      const idx = { segunda:0, terca:1, terça:1, quarta:2, quinta:3, sexta:4 }[this._norm(dia)];
+      if (idx !== undefined && datas[idx]) return this._dateISO(datas[idx]);
+    } catch (_) {}
+    return "";
+  },
+
+  _motivoAusencia(a) {
+    return this._pick(a, "Motivo", "motivo", "Status", "status") || "Ausente";
+  },
+
+  _formatarMotivoAusencia(motivo) {
+    const n = this._norm(motivo);
+    if (n === "nao_vai_almocar" || n === "nao vai almocar" || n === "não vai almoçar") return "Não vai almoçar";
+    if (n === "ferias" || n === "férias") return "Férias";
+    if (n === "afastado") return "Afastado";
+    if (n === "atestado") return "Atestado";
+    if (n === "licenca" || n === "licença") return "Licença";
+    return String(motivo || "Ausente");
+  },
+
+  _ausenciaAtiva(a) {
+    const ativo = this._pick(a, "Ativo", "ativo");
+    const status = this._norm(this._pick(a, "Status", "status"));
+    if (["inativo", "cancelado", "false", "nao", "não", "0"].includes(status)) return false;
+    if (ativo === "") return true;
+    return SP.isTrue ? SP.isTrue(ativo) : !!ativo;
+  },
+
+  _ausenciaInicio(a) {
+    return this._dateISO(this._pick(a, "Data_Inicio", "Inicio", "DataInicio", "Data"));
+  },
+
+  _ausenciaFim(a) {
+    return this._dateISO(this._pick(a, "Data_Fim", "Fim", "DataFim", "Data")) || this._ausenciaInicio(a);
+  },
+
+  _mesmoColaboradorPedidoAusencia(p, a) {
+    const pId = String(this._pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const aId = String(this._pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    if (pId && aId && pId === aId) return true;
+
+    const pNome = this._norm(this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+    const aNome = this._norm(this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+    return !!pNome && !!aNome && pNome === aNome;
+  },
+
+  _ausenciaDoPedidoNoDia(p, ausencias, semanaId, dia) {
+    const dataRef = this._dataPorDia(semanaId, dia);
+    if (!dataRef) return null;
+    return (ausencias || []).find(a => {
+      if (!this._ausenciaAtiva(a)) return false;
+      if (!this._mesmoColaboradorPedidoAusencia(p, a)) return false;
+      const ini = this._ausenciaInicio(a);
+      const fim = this._ausenciaFim(a);
+      return !!ini && !!fim && ini <= dataRef && fim >= dataRef;
+    }) || null;
+  },
+
+  async _buscarAusencias() {
+    const tentativas = [
+      () => SP.getAusencias?.(true),
+      () => SP.getAusenciasRefeitorio?.(),
+      () => SP.getItems?.("Ausencias do Refeitorio"),
+      () => SP.getItems?.("Ausências do Refeitório"),
+      () => SP.getItems?.("Ausencias_Refeitorio"),
+      () => SP.getItems?.("Ausências")
+    ];
+    for (const fn of tentativas) {
+      try {
+        const r = await fn();
+        if (Array.isArray(r)) return r;
+      } catch (_) {}
+    }
+    return [];
+  },
+
+  _pedidoKeyOperacao(p) {
+    const dia = this._norm(this._pick(p, "Dia", "dia"));
+    const isEx = this._isExtraPedido(p);
+    const obs = this._norm(this._pick(p, "Observacao", "Observação", "Obs"));
+    const extraId = (obs.match(/extraid:\s*([^|\s]+)/i) || [])[1] || "";
+    const idColab = String(this._pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+    const opcao = this._norm(this._pick(p, "Opcao", "opcao"));
+
+    if (isEx) return `extra|${dia}|${extraId || idColab || nome + "|" + origem + "|" + opcao}`;
+    return `colab|${dia}|${idColab || nome}`;
+  },
+
+  _prioridadePedidoOperacao(p) {
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+    const status = this._norm(this._pick(p, "Status", "status"));
+    let score = 0;
+    if (this._pick(p, "id", "ID")) score += 2;
+    if (!origem.includes("travamento")) score += 2;
+    if (["confirmado", "aprovado"].includes(status)) score += 1;
+    return score;
+  },
+
+  _deduplicarPedidosOperacao(lista) {
+    const mapa = new Map();
+    for (const p of lista || []) {
+      const key = this._pedidoKeyOperacao(p);
+      const atual = mapa.get(key);
+      if (!atual || this._prioridadePedidoOperacao(p) >= this._prioridadePedidoOperacao(atual)) mapa.set(key, p);
+    }
+    return Array.from(mapa.values());
+  },
+
+  _statusDisplay(p) {
+    if (p?._ausenciaOperacao) return this._formatarMotivoAusencia(this._motivoAusencia(p._ausenciaOperacao));
+    const status = this._pick(p, "Status") || "Pendente";
+    const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
+    // Compatibilidade com pedidos antigos criados como Status Travado: para a cozinha/operação isso é pedido principal confirmado.
+    if (this._norm(status) === "travado" && origem.includes("travamento")) return "Confirmado";
+    return status;
+  },
+
+  _isAusenteOperacao(p) {
+    const s = this._norm(this._statusDisplay(p));
+    return ["ausente", "nao vai almocar", "não vai almoçar", "ferias", "férias", "afastado", "atestado", "licenca", "licença"].includes(s);
+  },
+
   async _pratoPorOpcao(semanaId, dia, opcao) {
     try {
       if (typeof SP.getCardapio !== "function") return "Cardápio do Dia";
@@ -152,14 +290,18 @@ const AdminOperacao = window.AdminOperacao = {
     if (this._norm(this._pick(p, "Dia")) !== this._norm(dia)) return false;
     const nome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
     if (!nome) return false;
-    const extraNome = this._norm(this._extraNome(extra));
-    const tipo = this._norm(this._extraTipo(extra));
-    const obs = this._norm(this._pick(p, "Observacao", "Observação"));
 
-    if (extra.id && obs.includes(`extraid:${String(extra.id).toLowerCase()}`)) return true;
+    const extraId = String(extra?.id || extra?.ID || "").trim();
+    const colabId = String(this._pick(p, "Colaborador_id", "colaboradorId", "ColaboradorId") || "").trim();
+    const extraNome = this._norm(this._extraNome(extra));
+    const obs = this._norm(this._pick(p, "Observacao", "Observação", "Obs"));
+
+    // vínculo seguro: ExtraID na observação ou colaborador_id extra-<id>.
+    if (extraId && (obs.includes(`extraid:${this._norm(extraId)}`) || colabId === `extra-${extraId}`)) return true;
+
+    // Sem id, só considera o mesmo extra por nome EXATO.
+    // Não usar apenas tipo "investigador", pois isso fazia Investigador 2/3 sobrescrever o 1.
     if (extraNome && nome === extraNome) return true;
-    if (extraNome && nome.includes(extraNome)) return true;
-    if (tipo && nome.includes(tipo)) return true;
     return false;
   },
 
@@ -249,7 +391,12 @@ const AdminOperacao = window.AdminOperacao = {
     if (typeof SP.getExtras !== "function") return pedidos;
 
     const todosExtras = await SP.getExtras(semanaId).catch(() => []);
-    const extrasDoDia = (todosExtras || []).filter(e => this._norm(this._extraDia(e)) === this._norm(dia));
+    const extrasDoDia = (todosExtras || []).filter(e => {
+      const status = this._norm(this._pick(e, "Status", "status"));
+      const ativo = this._pick(e, "Ativo", "ativo");
+      const inativo = ["cancelado", "bloqueado", "excluido", "excluído", "inativo"].includes(status) || (ativo !== "" && SP.isTrue && !SP.isTrue(ativo));
+      return this._norm(this._extraDia(e)) === this._norm(dia) && !inativo;
+    });
     if (!extrasDoDia.length) return pedidos;
 
     const resultado = [...(pedidos || [])];
@@ -272,11 +419,14 @@ const AdminOperacao = window.AdminOperacao = {
     try {
       await SP.init();
       const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
-      let pedidos = await SP.getPedidos(semanaId);
+      let [pedidos, ausencias] = await Promise.all([
+        SP.getPedidos(semanaId),
+        this._buscarAusencias()
+      ]);
       pedidos = await this._sincronizarExtrasParaPedidos(semanaId, dia, pedidos);
 
       const seenAuto = new Set();
-      this._lista = (pedidos || []).filter(p => {
+      let lista = (pedidos || []).filter(p => {
         if (!this._pedidoTemConteudo(p)) return false;
         if (this._norm(this._pick(p, "Dia")) !== this._norm(dia)) return false;
 
@@ -289,6 +439,13 @@ const AdminOperacao = window.AdminOperacao = {
         return true;
       });
 
+      lista = this._deduplicarPedidosOperacao(lista).map(p => {
+        const aus = this._ausenciaDoPedidoNoDia(p, ausencias, semanaId, dia);
+        return aus ? { ...p, _ausenciaOperacao: aus } : p;
+      });
+
+      this._lista = lista;
+
       this._renderTotais(dia);
       this._renderTabela();
     } catch (e) {
@@ -298,10 +455,10 @@ const AdminOperacao = window.AdminOperacao = {
 
   _renderTotais(dia) {
     const STATUS_PROD = ["confirmado", "extra", "aprovado"];
-    const STATUS_CANC = ["cancelado", "afastado", "ferias", "nao vai almocar", "bloqueado", "travado"];
+    const STATUS_CANC = ["cancelado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar", "bloqueado", "atestado", "ausente", "licenca", "licença"];
 
-    const isConf = p => STATUS_PROD.includes(this._norm(this._pick(p, "Status") || "")) || (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")));
-    const isCanc = p => STATUS_CANC.includes(this._norm(this._pick(p, "Status") || ""));
+    const isCanc = p => STATUS_CANC.includes(this._norm(this._statusDisplay(p) || ""));
+    const isConf = p => !isCanc(p) && (STATUS_PROD.includes(this._norm(this._statusDisplay(p) || "")) || (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado"))));
     const conf = this._lista.filter(isConf);
 
     const setCard = (id, val) => AdminUtils.setTxt(id, val);
@@ -334,6 +491,12 @@ const AdminOperacao = window.AdminOperacao = {
       this._pick(p, "Origem", "tipo", "Tipo")
     ].join(" ")).includes(busca));
 
+    lista = lista.slice().sort((a, b) => {
+      const na = String(this._pick(a, "Colaborador_nome", "Title", "Nome") || "");
+      const nb = String(this._pick(b, "Colaborador_nome", "Title", "Nome") || "");
+      return na.localeCompare(nb, "pt-BR", { sensitivity:"base", numeric:true });
+    });
+
     if (!lista.length) {
       tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">Nenhum pedido encontrado.</td></tr>`;
       return;
@@ -345,13 +508,15 @@ const AdminOperacao = window.AdminOperacao = {
       const cc = this._esc(this._centroCustoPedido(p));
       const opcao = this._esc(this._pick(p, "Opcao") || "—");
       const prato = this._esc(this._pick(p, "Nome_Prato") || "—");
-      const status = this._pick(p, "Status") || "Pendente";
+      const status = this._statusDisplay(p);
       const origem = this._esc(this._pick(p, "Origem", "tipo", "Tipo") || "Refeitório");
       const isEx = this._isExtraPedido(p);
+      const isAus = this._isAusenteOperacao(p);
       const disabled = p._virtualExtra ? "disabled title='Extra sem pedido espelho no SharePoint'" : "";
+      const nomeStyle = isAus ? ' style="color:#ff9a90;font-weight:700"' : (isEx ? ' style="color:#ffd36d;font-weight:700"' : "");
 
-      return `<tr>
-        <td${isEx ? ' style="color:#ffd36d;font-weight:700"' : ""}>${nome}</td>
+      return `<tr${isAus ? ' style="background:rgba(192,40,28,.055)"' : ""}>
+        <td${nomeStyle}>${nome}</td>
         <td>${cc}</td>
         <td><span class="badge badge-blue">${opcao}</span></td>
         <td>${prato}</td>
