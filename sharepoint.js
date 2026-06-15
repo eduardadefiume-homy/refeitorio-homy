@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-ausencias-com-centro-custo-20260615
+// v: fix-cardapio-travado-extra-seq-20260615
 // ============================================================
 
 const SP = {
@@ -344,6 +344,11 @@ const SP = {
     return n.includes("ausencia") || n.includes("ausencias");
   },
 
+  _isListaConfiguracoes(listName) {
+    const n = this._normCampo(listName);
+    return n.includes("configuracao") || n.includes("configuracoes");
+  },
+
   async _mapFieldsToListColumns(listName, fields) {
     const clean = this._cleanFields(fields || {});
     // Ausencias do Refeitorio agora possui Centro_Custo.
@@ -384,6 +389,13 @@ const SP = {
       // Se a lista não tiver essa coluna, o campo é omitido para não quebrar o salvamento.
       if (this._isCampoCentroCusto(campo)) {
         console.warn(`[SharePoint] Campo Centro_Custo não existe em ${listName}; envio omitido.`);
+        continue;
+      }
+
+      // Configurações tem variações de coluna entre ambientes.
+      // Nessa lista, campo não reconhecido deve ser omitido, não enviado ao Graph.
+      if (this._isListaConfiguracoes(listName)) {
+        console.warn(`[SharePoint] Campo ${campo} não existe em ${listName}; envio omitido.`);
         continue;
       }
 
@@ -794,7 +806,17 @@ const SP = {
   },
 
   async getCardapioVisivel() {
-    return this.isCardapioLiberado();
+    const v = await this.getConfig("cardapio_visivel").catch(() => null);
+    if (v !== null && v !== undefined && String(v) !== "") return this.isTrue(v);
+
+    // Compatibilidade com instalações antigas que usavam cardapio_liberado.
+    const legado = await this.getConfig("cardapio_liberado").catch(() => null);
+    return this.isTrue(legado);
+  },
+
+  async setCardapioVisivel(visivel) {
+    await this.setConfig("cardapio_visivel", visivel ? "sim" : "nao");
+    return true;
   },
 
   async isMarcacaoLiberada() {
