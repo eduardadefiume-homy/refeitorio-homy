@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-cardapio-travado-extra-seq-20260615
+// v: fix-ausencia-pedido-visivel-20260615
 // ============================================================
 
 const SP = {
