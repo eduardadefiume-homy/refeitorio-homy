@@ -164,6 +164,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 @media(max-width:480px){.opcoes-grid{grid-template-columns:1fr}}
 @media(min-width:768px) and (orientation:landscape){.opcoes-grid{grid-template-columns:repeat(4,1fr)}}
 @media(min-width:1024px){.opcoes-grid{grid-template-columns:repeat(4,1fr)}}
+.tag-feriado{background:rgba(192,40,28,.35);color:#ffb8b0;border:1px solid rgba(192,40,28,.45)}
 </style>
 </head>
 <body>
@@ -291,7 +292,7 @@ const DIAS_SEMANA = [
 ];
 
 const TAG_CLASS = {
-  principal:"tag-principal", light:"tag-light", fitness:"tag-light",
+  feriado:"tag-feriado", principal:"tag-principal", light:"tag-light", fitness:"tag-light",
   vegetariano:"tag-light",   carne:"tag-carne", massa:"tag-massa", lanche:"tag-lanche"
 };
 
@@ -359,6 +360,7 @@ function normOpcao(v){
   if(s.startsWith("car"))  return "carne";
   if(s.startsWith("mas"))  return "massa";
   if(s.startsWith("lan"))  return "lanche";
+  if(s.startsWith("fer"))  return "feriado";
   return "principal";
 }
 
@@ -424,6 +426,17 @@ function normalizarItemCardapio(item){
   const nomeRaw = String(pick(item,"Nome_Prato","nomePrato","Prato","Title")||"").trim();
   const detRaw  = String(pick(item,"Detalhes","detalhes")||"").trim();
 
+  if(tag === "feriado" || norm(nomeRaw).includes("feriado") || norm(detRaw).includes("feriado")){
+    return {
+      tag:"feriado",
+      tagClass:"tag-feriado",
+      nome:"FERIADO",
+      detalhes:["Não haverá marcação de refeição para este dia."],
+      aviso:null,
+      feriado:true
+    };
+  }
+
   let nome     = nomeRaw;
   let detalhes = splitDetalhes(detRaw).filter(x => !ehObsVascon(x));
 
@@ -482,12 +495,15 @@ function mapCardapio(items){
     map[dia].push(normalizarItemCardapio(item));
   }
 
-  const ORDEM=["principal","light","carne","massa","lanche"];
+  const ORDEM=["feriado","principal","light","carne","massa","lanche"];
   Object.keys(map).forEach(dia=>{
     map[dia].sort((a,b)=>{
       const ia=ORDEM.indexOf(a.tag); const ib=ORDEM.indexOf(b.tag);
       return (ia<0?99:ia)-(ib<0?99:ib);
     });
+    if(map[dia].some(op => op.tag === "feriado")){
+      map[dia] = map[dia].filter(op => op.tag === "feriado").slice(0,1);
+    }
     if(!map[dia].length){
       map[dia]=[{tag:"principal",tagClass:"tag-principal",nome:"Cardápio não cadastrado",detalhes:[],aviso:null}];
     }
@@ -699,10 +715,11 @@ function buildStepsHeader(){
     const p=pedidos[dia.key];
     const done=p!=null;
     const isAus=done && p._ausencia;
+    const isFer=done && p._feriado;
     const active=i===stepAtual;
     const item=document.createElement("div");
-    item.className="step-item"+(active?" active":"")+(done&&!active?" done":"")+(isAus&&!active?" ausencia-step":"");
-    item.innerHTML='<div class="step-dot">'+(done&&!active?(isAus?"🚫":"✓"):(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
+    item.className="step-item"+(active?" active":"")+(done&&!active?" done":"")+(isAus&&!active?" ausencia-step":"")+(isFer&&!active?" ausencia-step":"");
+    item.innerHTML='<div class="step-dot">'+(done&&!active?(isFer?"🚫":(isAus?"🚫":"✓")):(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
     item.addEventListener("click",()=>{ if(done||active){capturarAusencia(DIAS_SEMANA[stepAtual].key);stepAtual=i;renderStep();} });
     el.appendChild(item);
   });
@@ -729,6 +746,19 @@ function renderStep(){
     '<div class="opcoes-grid" id="opcoesGrid"></div>';
 
   const grid=document.getElementById("opcoesGrid");
+  const feriado = opcoes.find(op => op.tag === "feriado" || norm(op.nome).includes("feriado"));
+
+  if(feriado){
+    pedidos[dia.key] = {_feriado:true, dia:dia.dia};
+    btnNext.disabled = false;
+    grid.innerHTML =
+      '<div style="grid-column:1/-1;border:1px solid rgba(255,80,80,.28);background:rgba(192,40,28,.12);border-radius:18px;padding:2.2rem 1rem;text-align:center">'+
+        '<div style="font-size:3.2rem;line-height:1">🚫</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:3rem;font-weight:800;letter-spacing:.14em;color:#fff;text-transform:uppercase;margin-top:.7rem">FERIADO</div>'+
+        '<div style="font-size:.92rem;color:rgba(255,210,210,.84);margin-top:.4rem">Não haverá marcação de refeição neste dia.</div>'+
+      '</div>';
+    return;
+  }
 
   // Cards das opções normais de cardápio
   opcoes.forEach(op=>{
@@ -843,7 +873,15 @@ function renderResumo(){
     const p=pedidos[dia.key];
     const row=document.createElement("div");
 
-    if(p && p._ausencia){
+    if(p && p._feriado){
+      row.className="resumo-dia resumo-ausencia";
+      row.innerHTML=
+        '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+ 
+        '<div class="resumo-dia-opcao">'+
+          '<span class="tag-ausencia" style="font-size:.55rem;padding:2px 7px">🚫 Feriado</span>'+ 
+          '<span class="resumo-dia-nome" style="color:rgba(255,180,100,.85)">Sem marcação de refeição</span>'+ 
+        '</div>';
+    } else if(p && p._ausencia){
       row.className="resumo-dia resumo-ausencia";
       row.innerHTML=
         '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+
@@ -877,7 +915,7 @@ document.getElementById("btnConfirmar").addEventListener("click",async()=>{
   // Captura campos de ausência do step atual caso ainda esteja na view2
   capturarAusencia(DIAS_SEMANA[stepAtual].key);
 
-  const selecionados=Object.keys(pedidos);
+  const selecionados=Object.keys(pedidos).filter(key => !pedidos[key]._feriado);
   if(!selecionados.length){ alert("Selecione pelo menos uma refeição."); return; }
 
   const btn=document.getElementById("btnConfirmar");
@@ -889,6 +927,7 @@ document.getElementById("btnConfirmar").addEventListener("click",async()=>{
     for(const key of selecionados){
       const diaInfo=DIAS_SEMANA.find(d=>d.key===key);
       const pedido=pedidos[key];
+      if(pedido._feriado) continue;
 
       if(pedido._ausencia){
         // ── Grava na lista Ausencias do Refeitorio ──────────────────────────
