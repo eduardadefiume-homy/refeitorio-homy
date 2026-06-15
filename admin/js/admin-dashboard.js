@@ -1,5 +1,5 @@
 // admin-dashboard.js — Dashboard do Admin Homy
-// Versão limpa: métricas por colaborador, ausências por lista, travamento por colaboradores pendentes e setores resilientes
+// Correção: travamento cria principal confirmado e não conta como ausência
 
 const AdminDashboard = window.AdminDashboard = {
   _prazoTimer: null,
@@ -272,7 +272,7 @@ const AdminDashboard = window.AdminDashboard = {
 
   _isPedidoAusencia(p) {
     const s = this._norm(this._pick(p, "Status") || "");
-    return ["cancelado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar", "bloqueado", "travado", "atestado", "licenca", "licença"].includes(s);
+    return ["cancelado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar", "bloqueado", "atestado", "licenca", "licença"].includes(s);
   },
 
   _isExtraPedido(p) {
@@ -748,8 +748,9 @@ const AdminDashboard = window.AdminDashboard = {
 
   async _renderToggleStatus() {
     const liberado = await SP.isCardapioLiberado().catch(() => false);
-    const cardapio = await SP.getConfig("cardapio_visivel").catch(() => null);
-    const cardapioV = SP.isTrue(cardapio);
+    const cardapioV = typeof SP.getCardapioVisivel === "function"
+      ? await SP.getCardapioVisivel().catch(() => false)
+      : SP.isTrue(await SP.getConfig("cardapio_visivel").catch(() => null));
 
     const tMarcacao = document.getElementById("toggleMarcacao");
     const tCardapio = document.getElementById("toggleCardapio");
@@ -915,10 +916,10 @@ const AdminDashboard = window.AdminDashboard = {
         const nomePrato = this._pratoPrincipalPorDia(cardapio, dia);
         await SP.savePedido(semanaId, colaboradorId || this._norm(nomeFinal), nomeFinal, dia, "principal", nomePrato, {
           confirmado: true,
-          status: "Travado",
+          status: "Confirmado",
           centroCusto,
           origem: "Travamento automático",
-          observacao: "Marcado automaticamente — prazo encerrado",
+          observacao: "Marcado automaticamente como Principal — prazo encerrado",
           alteradoPor: SP.getUserName ? SP.getUserName() : "Admin"
         });
         existentes.add(chave);
