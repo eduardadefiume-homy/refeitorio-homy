@@ -215,10 +215,11 @@ const AdminOperacao = window.AdminOperacao = {
 
   _prioridadePedidoOperacao(p) {
     const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
-    const status = this._norm(this._pick(p, "Status", "status"));
+    const status = this._norm(this._statusDisplay(p) || this._pick(p, "Status", "status"));
     let score = 0;
     if (this._pick(p, "id", "ID")) score += 2;
     if (!origem.includes("travamento")) score += 2;
+    if (this._isAusenteOperacao(p) || ["nao vai almocar", "não vai almoçar", "ausente", "ferias", "férias", "afastado", "atestado"].includes(status)) score += 5;
     if (["confirmado", "aprovado"].includes(status)) score += 1;
     return score;
   },
@@ -443,6 +444,10 @@ const AdminOperacao = window.AdminOperacao = {
         const aus = this._ausenciaDoPedidoNoDia(p, ausencias, semanaId, dia);
         return aus ? { ...p, _ausenciaOperacao: aus } : p;
       });
+
+      // Se a ausência foi cadastrada no módulo Ausências ou no Marcar Refeição
+      // mas ainda não existe um pedido espelho, a Operação do Dia também precisa mostrar.
+      lista = this._incluirAusenciasSemPedido(lista, ausencias, semanaId, dia);
 
       this._lista = lista;
 
