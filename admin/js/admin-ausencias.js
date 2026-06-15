@@ -1,6 +1,6 @@
 // ============================================================
 // admin-ausencias.js — Férias, afastamentos, ausências e bloqueios
-// Correção: lista SharePoint resiliente + renderização completa
+// Correção: ausências com centro de custo do colaborador
 // ============================================================
 
 const AdminAusencias = window.AdminAusencias = {
@@ -142,7 +142,7 @@ const AdminAusencias = window.AdminAusencias = {
           Title: this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—",
           Colaborador_id: String(this._pick(p, "Colaborador_id", "ColaboradorId") || ""),
           Colaborador_nome: this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "—",
-          Centro_Custo: this._pick(p, "Centro_Custo", "Setor", "Departamento") || "",
+          Centro_Custo: this._pick(p, "Centro_Custo", "Centro Custo", "Centro de Custo", "CentroCusto", "Centro_x0020_Custo", "CC", "Setor", "Departamento") || "",
           Data_Inicio: data,
           Data_Fim: data,
           Motivo: motivo,
@@ -300,7 +300,7 @@ const AdminAusencias = window.AdminAusencias = {
     if (busca) {
       lista = lista.filter(a => AdminUtils.norm([
         this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title"),
-        this._pick(a, "Centro_Custo", "Setor", "Departamento"),
+        this._pick(a, "Centro_Custo", "Centro Custo", "Centro de Custo", "CentroCusto", "Centro_x0020_Custo", "CC", "Setor", "Departamento"),
         this._pick(a, "Motivo", "motivo"),
         this._pick(a, "Observacao", "Observação", "Obs")
       ].join(" ")).includes(busca));
@@ -384,7 +384,7 @@ const AdminAusencias = window.AdminAusencias = {
       .map(c => {
         const id = AdminUtils.esc(c.id || this._pick(c, "ID") || "");
         const nome = AdminUtils.esc(this._pick(c, "Nome", "Title") || "Sem nome");
-        const cc = AdminUtils.esc(this._pick(c, "Centro_Custo", "Setor", "Departamento") || "");
+        const cc = AdminUtils.esc(this._pick(c, "Centro_Custo", "Centro Custo", "Centro de Custo", "CentroCusto", "Centro_x0020_Custo", "CC", "Setor", "Departamento") || "");
         return `<option value="${id}" data-nome="${nome}" data-cc="${cc}">${nome}${cc ? " — " + cc : ""}</option>`;
       }).join("");
 
@@ -435,7 +435,7 @@ const AdminAusencias = window.AdminAusencias = {
     const colab = this._colaboradores.find(c => String(c.id) === String(colaboradorId));
 
     const colaboradorNome = opt?.dataset?.nome || this._pick(colab, "Nome", "Title") || this._val("ausenciaColaboradorNome", "ausenciaNome");
-    const centroCusto = opt?.dataset?.cc || this._pick(colab, "Centro_Custo", "Setor", "Departamento") || this._val("ausenciaCentroCusto", "ausenciaSetor");
+    const centroCusto = opt?.dataset?.cc || this._pick(colab, "Centro_Custo", "Centro Custo", "Centro de Custo", "CentroCusto", "Centro_x0020_Custo", "CC", "Setor", "Departamento") || this._val("ausenciaCentroCusto", "ausenciaSetor");
     const dataInicio = this._val("ausenciaDataInicio", "ausenciaInicio");
     const dataFim = this._val("ausenciaDataFim", "ausenciaFim");
     const motivo = this._val("ausenciaMotivo") || "nao_vai_almocar";
@@ -482,7 +482,7 @@ const AdminAusencias = window.AdminAusencias = {
       Title: dados.Title || `${dados.colaboradorNome || dados.Colaborador_nome || "Ausência"} - ${dados.motivo || dados.Motivo || ""}`,
       Colaborador_id: String(dados.colaboradorId || dados.Colaborador_id || ""),
       Colaborador_nome: dados.colaboradorNome || dados.Colaborador_nome || dados.Nome || "",
-      Centro_Custo: dados.centroCusto || dados.Centro_Custo || "",
+      Centro_Custo: dados.centroCusto || dados.Centro_Custo || dados["Centro Custo"] || "",
       Data_Inicio: dados.dataInicio || dados.Data_Inicio,
       Data_Fim: dados.dataFim || dados.Data_Fim,
       Motivo: dados.motivo || dados.Motivo || "nao_vai_almocar",
