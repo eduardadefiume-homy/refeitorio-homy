@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-prato-ao-editar-opcao-20260616
+// v: sync-operacao-pedidos-ausencias-20260616
 // ============================================================
 
 const SP = {
@@ -33,6 +33,12 @@ const SP = {
     if (value === true || value === 1) return true;
     const v = String(value ?? "").trim().toLowerCase();
     return v === "sim" || v === "true" || v === "yes" || v === "1";
+  },
+
+  norm(value) {
+    return String(value || "")
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .toLowerCase().trim();
   },
 
   getSemanaId(date = new Date()) {
@@ -1038,6 +1044,265 @@ const SP = {
   async deleteAusencia(id) {
     return this.deleteItem("Ausencias do Refeitorio", id);
   },
+
+  // ============================================================
+  // OPERAÇÃO DO DIA — sincronização Pedido x Ausência
+  // Regra: Pedidos é a base; Operação altera o próprio Pedido.
+  // Quando vira ausência, cria/ativa Ausencias do Refeitorio.
+  // Quando volta a comer, inativa a ausência do dia.
+  // ============================================================
+  _isStatusAusenciaOperacao(status) {
+    const s = this.norm(status);
+    return [
+      "nao vai almocar", "não vai almoçar", "nao_vai_almocar",
+      "ferias", "férias", "afastado", "atestado", "licenca", "licença", "ausente"
+    ].includes(s);
+  },
+
+  _motivoAusenciaOperacao(status) {
+    const s = this.norm(status);
+    if (s === "nao vai almocar" || s === "não vai almoçar" || s === "nao_vai_almocar" || s === "ausente") return "Não vai almoçar";
+    if (s === "ferias" || s === "férias") return "Férias";
+    if (s === "afastado") return "Afastado";
+    if (s === "atestado") return "Atestado";
+    if (s === "licenca" || s === "licença") return "Licença";
+    return status || "Não vai almoçar";
+  },
+
+  _pedidoDataRefeicao(semanaId, dia, pedido = {}) {
+    if (semanaId && dia && typeof this.getDataRefBySemanaDia === "function") {
+      return this.getDataRefBySemanaDia(semanaId, dia);
+    }
+    const data = this.pick(pedido, "Data_Refeicao", "Data_Referencia", "Data") || "";
+    if (/^\d{4}-\d{2}-\d{2}/.test(String(data))) return String(data).slice(0, 10);
+    return new Date().toISOString().slice(0, 10);
+  },
+
+  _mesmoColaboradorAusenciaPedido(a, p) {
+    const aid = String(this.pick(a, "Colaborador_id", "ColaboradorId", "colaborador_id") || "").trim();
+    const pid = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    if (aid && pid && aid === pid) return true;
+
+    const an = this.norm(this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title") || "");
+    const pn = this.norm(this.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "");
+    return !!an && !!pn && an === pn;
+  },
+
+  _ausenciaAtivaOperacao(a) {
+    const ativo = this.pick(a, "Ativo", "ativo");
+    const status = this.norm(this.pick(a, "Status", "status") || "");
+    if (["inativo", "cancelado", "false", "nao", "não", "0"].includes(status)) return false;
+    if (ativo === null || ativo === undefined || ativo === "") return true;
+    return this.isTrue(ativo);
+  },
+
+  _ausenciaCobreDataOperacao(a, dataRef) {
+    const iniRaw = this.pick(a, "Data_Inicio", "Inicio", "DataInicio", "Data") || "";
+    const fimRaw = this.pick(a, "Data_Fim", "Fim", "DataFim", "Data") || iniRaw;
+    const ini = String(iniRaw).slice(0, 10);
+    const fim = String(fimRaw).slice(0, 10);
+    return !!ini && !!fim && ini <= dataRef && fim >= dataRef;
+  },
+
+  async _buscarAusenciasDoPedidoOperacao(pedido, semanaId, dia) {
+    const dataRef = this._pedidoDataRefeicao(semanaId, dia, pedido);
+    let ausencias = [];
+    try { ausencias = await this.getAusencias(false); }
+    catch (e) { console.warn("[SharePoint] Não foi possível buscar ausências para sincronizar operação:", e); }
+    return (ausencias || []).filter(a =>
+      this._ausenciaAtivaOperacao(a) &&
+      this._mesmoColaboradorAusenciaPedido(a, pedido) &&
+      this._ausenciaCobreDataOperacao(a, dataRef)
+    );
+  },
+
+  async _inativarAusenciasDoPedidoOperacao(pedido, semanaId, dia) {
+    const ausencias = await this._buscarAusenciasDoPedidoOperacao(pedido, semanaId, dia);
+    for (const a of ausencias) {
+      const id = this.pick(a, "id", "ID");
+      if (!id) continue;
+      try { await this.updateAusencia(id, { Ativo: false }); }
+      catch (e) { console.warn("[SharePoint] Falha ao inativar ausência após ajuste da operação:", e); }
+    }
+    return ausencias.length;
+  },
+
+  async _garantirAusenciaDoPedidoOperacao(pedido, status, semanaId, dia) {
+    const motivo = this._motivoAusenciaOperacao(status);
+    const dataRef = this._pedidoDataRefeicao(semanaId, dia, pedido);
+    const existentes = await this._buscarAusenciasDoPedidoOperacao(pedido, semanaId, dia);
+    const idExistente = this.pick(existentes[0], "id", "ID") || "";
+
+    const colaboradorId = String(this.pick(pedido, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const nome = this.pick(pedido, "Colaborador_nome", "Colaborador", "Nome", "Title") || "";
+    let centroCusto = this.pick(pedido, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || "";
+    if (!centroCusto) centroCusto = await this._resolverCentroCustoColaborador(colaboradorId, nome);
+
+    if (idExistente) {
+      await this.updateAusencia(idExistente, {
+        Ativo: true,
+        Motivo: motivo,
+        Data_Inicio: dataRef,
+        Data_Fim: dataRef,
+        Observacao: this.pick(existentes[0], "Observacao", "Observação") || "Sincronizada pela Operação do Dia."
+      });
+      return idExistente;
+    }
+
+    const criada = await this.createAusencia({
+      colaboradorId,
+      colaboradorNome: nome,
+      centroCusto,
+      dataInicio: dataRef,
+      dataFim: dataRef,
+      motivo,
+      observacao: "Sincronizada pela Operação do Dia.",
+      ativo: true,
+      criadoPor: this.getUserName()
+    });
+    return this.pick(criada, "id", "ID") || "";
+  },
+
+
+
+  async _sincronizarPedidosDuplicadosOperacao(semanaId, dia, pedidoBase, fields, idPrincipal = "") {
+    // Corrige dados antigos com mais de um Pedido para o mesmo colaborador/dia.
+    // A Operação do Dia precisa deixar todos com a mesma verdade para Pedidos, Cozinha e Relatórios.
+    const colabId = String(this.pick(pedidoBase, "Colaborador_id", "ColaboradorId", "colaboradorId") || fields.Colaborador_id || "").trim();
+    const nomeNorm = this.norm(this.pick(pedidoBase, "Colaborador_nome", "Colaborador", "Nome", "Title") || fields.Colaborador_nome || "");
+    if (String(colabId).startsWith("extra-") || (!colabId && !nomeNorm)) return 0;
+
+    let pedidos = [];
+    try { pedidos = await this.getPedidos(semanaId); }
+    catch (e) { console.warn("[SharePoint] Não foi possível verificar duplicidades de pedidos:", e); return 0; }
+
+    let atualizados = 0;
+    for (const p of (pedidos || [])) {
+      const pid = String(this.pick(p, "id", "ID") || "");
+      if (!pid || String(pid) === String(idPrincipal || "")) continue;
+      if (this.norm(this.pick(p, "Dia", "dia") || "") !== this.norm(dia)) continue;
+
+      const pId = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+      const pNome = this.norm(this.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "");
+      const mesmo = (colabId && pId && pId === colabId) || (!colabId && nomeNorm && pNome === nomeNorm) || (colabId && !pId && nomeNorm && pNome === nomeNorm);
+      if (!mesmo) continue;
+
+      try {
+        await this.updatePedido(pid, {
+          Status: fields.Status,
+          Confirmado: fields.Confirmado,
+          Opcao: fields.Opcao,
+          Nome_Prato: fields.Nome_Prato,
+          Centro_Custo: fields.Centro_Custo,
+          Data_Hora: fields.Data_Hora,
+          Origem: fields.Origem,
+          Observacao: fields.Observacao,
+          Alterado_Por: fields.Alterado_Por || this.getUserName()
+        });
+        atualizados++;
+      } catch (e) {
+        console.warn("[SharePoint] Falha ao sincronizar pedido duplicado da operação:", e);
+      }
+    }
+    return atualizados;
+  },
+
+  async alterarPedidoOperacao(id, status, pedidoAtual = {}) {
+    const isVirtual = !id || String(id).startsWith("ausencia-") || pedidoAtual?._virtualAusencia;
+
+    let atual = {};
+    if (!isVirtual) {
+      try { atual = await this._getItemFieldsById("Pedidos", id); }
+      catch (e) { console.warn("[SharePoint] Não foi possível ler pedido atual na Operação do Dia:", e); }
+    }
+
+    const base = { ...(atual || {}), ...(pedidoAtual || {}) };
+    const semanaId = this.pick(base, "Semana_id", "Semana", "semanaId") || this.getCurrentWeekId();
+    const dia = this.pick(base, "Dia", "dia") || "segunda";
+    const colaboradorId = String(this.pick(base, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const colaboradorNome = this.pick(base, "Colaborador_nome", "Colaborador", "Nome", "Title") || "";
+    const opcao = this.pick(base, "Opcao", "Opção", "opcao") || "principal";
+    const origemAtual = this.pick(base, "Origem", "origem") || "Refeitório";
+    const centroCusto = this.pick(base, "Centro_Custo", "CentroCusto", "centroCusto", "Setor", "Departamento") || await this._resolverCentroCustoColaborador(colaboradorId, colaboradorNome);
+    const dataHora = `${this._pedidoDataRefeicao(semanaId, dia, base)}T12:00:00`;
+
+    if (!colaboradorId && !colaboradorNome) throw new Error("Não foi possível identificar o colaborador do pedido.");
+
+    const statusNorm = this.norm(status);
+    let fields = {
+      Semana_id: semanaId,
+      Colaborador_id: colaboradorId || this.norm(colaboradorNome),
+      Colaborador_nome: colaboradorNome,
+      Dia: dia,
+      Opcao: opcao,
+      Centro_Custo: centroCusto || "",
+      Data_Hora: dataHora,
+      Alterado_Por: this.getUserName()
+    };
+
+    if (this._isStatusAusenciaOperacao(status)) {
+      const motivo = this._motivoAusenciaOperacao(status);
+      fields = {
+        ...fields,
+        Nome_Prato: motivo,
+        Confirmado: false,
+        Status: motivo,
+        Origem: origemAtual || "Refeitório",
+        Observacao: this.pick(base, "Observacao", "Observação") || "Marcado como ausência pela Operação do Dia."
+      };
+
+      let pedido = null;
+      if (!isVirtual && id) pedido = await this.updatePedido(id, fields);
+      else pedido = await this.savePedido(semanaId, fields.Colaborador_id, colaboradorNome, dia, opcao, motivo, fields);
+      const pedidoIdFinal = !isVirtual && id ? id : this.pick(pedido, "id", "ID");
+      await this._sincronizarPedidosDuplicadosOperacao(semanaId, dia, { ...base, ...fields }, fields, pedidoIdFinal);
+      await this._garantirAusenciaDoPedidoOperacao({ ...base, ...fields, id: pedidoIdFinal }, status, semanaId, dia);
+      try { localStorage.setItem("homy_refeitorio_sync", JSON.stringify({ tipo:"pedido", ts:Date.now(), semanaId, dia })); } catch (_) {}
+      return pedido;
+    }
+
+    if (statusNorm === "confirmado" || statusNorm === "extra") {
+      const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, dia, opcao) || this._pratoPadraoPorOpcao(opcao);
+      fields = {
+        ...fields,
+        Nome_Prato: nomePrato,
+        Confirmado: true,
+        Status: "Confirmado",
+        Origem: origemAtual && this.norm(origemAtual) !== "ausencia" ? origemAtual : "Operação do Dia",
+        Observacao: this.pick(base, "Observacao", "Observação") || "Confirmado pela Operação do Dia."
+      };
+
+      let pedido = null;
+      if (!isVirtual && id) pedido = await this.updatePedido(id, fields);
+      else pedido = await this.savePedido(semanaId, fields.Colaborador_id, colaboradorNome, dia, opcao, nomePrato, fields);
+      const pedidoIdFinal = !isVirtual && id ? id : this.pick(pedido, "id", "ID");
+      await this._sincronizarPedidosDuplicadosOperacao(semanaId, dia, { ...base, ...fields }, fields, pedidoIdFinal);
+      await this._inativarAusenciasDoPedidoOperacao({ ...base, ...fields, id: pedidoIdFinal }, semanaId, dia);
+      try { localStorage.setItem("homy_refeitorio_sync", JSON.stringify({ tipo:"pedido", ts:Date.now(), semanaId, dia })); } catch (_) {}
+      return pedido;
+    }
+
+    if (statusNorm === "cancelado") {
+      fields = {
+        ...fields,
+        Confirmado: false,
+        Status: "Cancelado",
+        Origem: origemAtual || "Operação do Dia",
+        Observacao: this.pick(base, "Observacao", "Observação") || "Cancelado pela Operação do Dia."
+      };
+      let pedido = null;
+      if (!isVirtual && id) pedido = await this.updatePedido(id, fields);
+      else pedido = await this.savePedido(semanaId, fields.Colaborador_id, colaboradorNome, dia, opcao, this.pick(base, "Nome_Prato") || "Cancelado", fields);
+      const pedidoIdFinal = !isVirtual && id ? id : this.pick(pedido, "id", "ID");
+      await this._sincronizarPedidosDuplicadosOperacao(semanaId, dia, { ...base, ...fields }, fields, pedidoIdFinal);
+      await this._inativarAusenciasDoPedidoOperacao({ ...base, ...fields, id: pedidoIdFinal }, semanaId, dia);
+      try { localStorage.setItem("homy_refeitorio_sync", JSON.stringify({ tipo:"pedido", ts:Date.now(), semanaId, dia })); } catch (_) {}
+      return pedido;
+    }
+
+    return this.updatePedido(id, { Status: status, Alterado_Por: this.getUserName() });
+  },
+
 
   // ============================================================
   // CHECK-IN
