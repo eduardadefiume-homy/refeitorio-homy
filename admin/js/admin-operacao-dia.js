@@ -534,7 +534,7 @@ const AdminOperacao = window.AdminOperacao = {
     const busca = this._norm(AdminUtils.getVal("operacaoBusca"));
 
     let lista = this._lista;
-    if (statusFiltro) lista = lista.filter(p => this._norm(this._pick(p, "Status") || "") === statusFiltro);
+    if (statusFiltro) lista = lista.filter(p => this._norm(this._statusDisplay(p) || this._pick(p, "Status") || "") === statusFiltro);
     if (busca) lista = lista.filter(p => this._norm([
       this._pick(p, "Colaborador_nome", "Title", "Nome"),
       this._centroCustoPedido(p),
@@ -584,18 +584,23 @@ const AdminOperacao = window.AdminOperacao = {
 
   async alterarStatus(id, status) {
     if (!id) return;
+    const pedidoAtual = this._lista.find(x => String(x.id) === String(id)) || {};
     try {
       await SP.init();
-      await SP.updatePedido(id, {
-        Status: status,
-        Confirmado: ["Confirmado", "Extra"].includes(status),
-        Alterado_Por: SP.getUserName()
-      });
-      const p = this._lista.find(x => String(x.id) === String(id));
-      if (p) { p.Status = status; p.Confirmado = ["Confirmado", "Extra"].includes(status); }
-      const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
-      this._renderTotais(dia);
-      this._renderTabela();
+
+      // Operação do Dia é a tela de ajuste final:
+      // altera o Pedido base e sincroniza a Ausência do mesmo colaborador/dia.
+      if (typeof SP.alterarPedidoOperacao === "function") {
+        await SP.alterarPedidoOperacao(id, status, pedidoAtual);
+      } else {
+        await SP.updatePedido(id, {
+          Status: status,
+          Confirmado: ["Confirmado", "Extra"].includes(status),
+          Alterado_Por: SP.getUserName()
+        });
+      }
+
+      await this._carregar(AdminState.getSemanaId());
       AdminUtils.toast(`Status: ${status}`, "success");
     } catch (e) {
       AdminUtils.toast("Erro: " + (e.message || e), "error");
@@ -607,12 +612,15 @@ const AdminOperacao = window.AdminOperacao = {
     if (!confirm("Excluir este pedido?")) return;
     try {
       await SP.init();
-      await SP.deletePedido(id);
-      this._lista = this._lista.filter(p => String(p.id) !== String(id));
-      const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
-      this._renderTotais(dia);
-      this._renderTabela();
-      AdminUtils.toast("Pedido excluído.", "success");
+      const pedidoAtual = this._lista.find(p => String(p.id) === String(id));
+      if (pedidoAtual?._virtualAusencia) {
+        const ausId = this._pick(pedidoAtual._ausenciaOperacao, "id", "ID");
+        if (ausId && typeof SP.updateAusencia === "function") await SP.updateAusencia(ausId, { Ativo: false });
+      } else {
+        await SP.deletePedido(id);
+      }
+      await this._carregar(AdminState.getSemanaId());
+      AdminUtils.toast("Pedido excluído/inativado.", "success");
     } catch (e) {
       AdminUtils.toast("Erro: " + (e.message || e), "error");
     }
