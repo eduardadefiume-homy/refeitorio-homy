@@ -1,5 +1,5 @@
 // admin-operacao-dia.js — Operação do Dia do Admin Homy
-// Correção: operação do dia deduplica pedidos, mostra ausências e sincroniza todos os extras/investigadores.
+// Correção: operação do dia deduplica pedidos, mostra ausências sem pedido espelho e sincroniza todos os extras/investigadores.
 
 const AdminOperacao = window.AdminOperacao = {
   _lista: [],
@@ -407,6 +407,51 @@ const AdminOperacao = window.AdminOperacao = {
       const idx = resultado.findIndex(p => this._pedidoCorrespondeExtra(p, extra, dia));
       if (idx >= 0) resultado[idx] = { ...resultado[idx], ...espelho };
       else resultado.push(espelho);
+    }
+
+    return resultado;
+  },
+
+
+  _incluirAusenciasSemPedido(lista, ausencias, semanaId, dia) {
+    const dataRef = this._dataPorDia(semanaId, dia);
+    if (!dataRef) return lista || [];
+
+    const resultado = [...(lista || [])];
+
+    for (const a of (ausencias || [])) {
+      if (!this._ausenciaAtiva(a)) continue;
+
+      const ini = this._ausenciaInicio(a);
+      const fim = this._ausenciaFim(a);
+      if (!ini || !fim || ini > dataRef || fim < dataRef) continue;
+
+      const jaExiste = resultado.some(p => this._mesmoColaboradorPedidoAusencia(p, a));
+      if (jaExiste) continue;
+
+      const colabId = String(this._pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+      const nome = this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Colaborador ausente";
+      const motivo = this._formatarMotivoAusencia(this._motivoAusencia(a));
+      const centroCusto = this._formatarCC(this._pick(a, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || "Sem setor");
+      const idAus = String(this._pick(a, "id", "ID") || `${this._norm(nome)}-${dataRef}`);
+
+      resultado.push({
+        id: `ausencia-${idAus}-${this._norm(dia)}`,
+        _virtualAusencia: true,
+        _ausenciaOperacao: a,
+        Semana_id: semanaId,
+        Colaborador_id: colabId,
+        Colaborador_nome: nome,
+        Dia: dia,
+        Opcao: "principal",
+        Nome_Prato: motivo,
+        Confirmado: false,
+        Data_Hora: `${dataRef}T12:00:00`,
+        Centro_Custo: centroCusto,
+        Status: motivo,
+        Observacao: this._pick(a, "Observacao", "Observação", "Obs") || "Ausência cadastrada sem pedido espelho.",
+        Origem: "Ausência"
+      });
     }
 
     return resultado;
