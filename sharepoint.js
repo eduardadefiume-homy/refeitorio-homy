@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-ausencia-pedido-visivel-20260615
+// v: fix-prato-ao-editar-opcao-20260616
 // ============================================================
 
 const SP = {
@@ -569,6 +569,35 @@ const SP = {
     return this.createItem("Pedidos", fields);
   },
 
+  async _getItemFieldsById(listName, itemId) {
+    const siteId = await this.getSiteId();
+    const listId = await this.getListId(listName);
+    const data = await this.graph("GET", `/sites/${siteId}/lists/${listId}/items/${itemId}?$expand=fields`);
+    return { id: data?.id || itemId, ...(data?.fields || {}) };
+  },
+
+  async _nomePratoCardapioPorOpcao(semanaId, dia, opcao) {
+    if (!semanaId || !dia || !opcao) return "";
+    const norm = v => String(v || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().trim();
+
+    let cardapio = [];
+    try {
+      cardapio = typeof this.getCardapio === "function" ? await this.getCardapio(semanaId) : [];
+    } catch (e) {
+      console.warn("[SharePoint] Não foi possível buscar cardápio para atualizar Nome_Prato.", e);
+      cardapio = [];
+    }
+
+    const item = (cardapio || []).find(c =>
+      norm(this.pick(c, "Dia", "dia")) === norm(dia) &&
+      norm(this.pick(c, "Opcao", "Opção", "opcao")) === norm(opcao)
+    );
+
+    return this.pick(item, "Nome_Prato", "nomePrato", "Descricao", "Descrição", "Title") || "";
+  },
+
   async updatePedido(id, dados) {
     const map = {
       Semana_id:        ["Semana_id",        "semanaId"],
@@ -595,6 +624,28 @@ const SP = {
         }
       }
     }
+
+    // Quando o Admin altera Dia ou Opção, o prato precisa acompanhar o cardápio salvo.
+    // Ex.: se mudou Principal -> Massa, Nome_Prato deve virar o prato da Massa daquele dia.
+    const mudouDiaOuOpcao = fields.Dia !== undefined || fields.Opcao !== undefined;
+    const pratoFoiInformado = fields.Nome_Prato !== undefined && String(fields.Nome_Prato || "").trim() !== "";
+    if (mudouDiaOuOpcao && !pratoFoiInformado) {
+      let atual = {};
+      try { atual = await this._getItemFieldsById("Pedidos", id); }
+      catch (e) { console.warn("[SharePoint] Não foi possível ler pedido atual para atualizar Nome_Prato.", e); }
+
+      const semanaId = fields.Semana_id || this.pick(atual, "Semana_id", "Semana", "semanaId");
+      const dia = fields.Dia || this.pick(atual, "Dia", "dia");
+      const opcao = fields.Opcao || this.pick(atual, "Opcao", "Opção", "opcao");
+      const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, dia, opcao);
+
+      if (nomePrato) {
+        fields.Nome_Prato = nomePrato;
+      } else if (opcao && typeof this._pratoPadraoPorOpcao === "function") {
+        fields.Nome_Prato = this._pratoPadraoPorOpcao(opcao);
+      }
+    }
+
     return this.updateItem("Pedidos", id, fields);
   },
 
