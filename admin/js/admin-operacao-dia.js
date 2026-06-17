@@ -213,15 +213,35 @@ const AdminOperacao = window.AdminOperacao = {
     return `colab|${dia}|${idColab || nome}`;
   },
 
+  _timestampPedidoOperacao(p) {
+    const raw = this._pick(p, "Modified", "modified", "Data_Hora", "DataHora", "Created", "created", "Data") || "";
+    const dt = raw ? new Date(raw) : null;
+    if (dt && !isNaN(dt)) return dt.getTime();
+    const id = Number(this._pick(p, "id", "ID") || 0);
+    return Number.isFinite(id) ? id : 0;
+  },
+
   _prioridadePedidoOperacao(p) {
     const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
     const status = this._norm(this._statusDisplay(p) || this._pick(p, "Status", "status"));
     let score = 0;
     if (this._pick(p, "id", "ID")) score += 2;
     if (!origem.includes("travamento")) score += 2;
-    if (this._isAusenteOperacao(p) || ["nao vai almocar", "não vai almoçar", "ausente", "ferias", "férias", "afastado", "atestado"].includes(status)) score += 5;
-    if (["confirmado", "aprovado"].includes(status)) score += 1;
+    if (this._isAusenteOperacao(p) || ["nao vai almocar", "não vai almoçar", "ausente", "ferias", "férias", "afastado", "atestado"].includes(status)) score += 90;
+    else if (["confirmado", "aprovado", "extra"].includes(status) || (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")))) score += 80;
+    else if (status === "travado") score += 70;
+    else if (["cancelado", "bloqueado"].includes(status)) score += 50;
     return score;
+  },
+
+  _compararPedidoOperacao(a, b) {
+    // Quando existe mais de um Pedido para o mesmo colaborador/dia, a Operação
+    // precisa exibir a versão mais recente. Esse era o motivo de alguns colaboradores
+    // "sumirem" ou aparecerem com status antigo após novas marcações no Refeitório.
+    const ta = this._timestampPedidoOperacao(a);
+    const tb = this._timestampPedidoOperacao(b);
+    if (ta !== tb) return ta - tb;
+    return this._prioridadePedidoOperacao(a) - this._prioridadePedidoOperacao(b);
   },
 
   _deduplicarPedidosOperacao(lista) {
@@ -229,7 +249,7 @@ const AdminOperacao = window.AdminOperacao = {
     for (const p of lista || []) {
       const key = this._pedidoKeyOperacao(p);
       const atual = mapa.get(key);
-      if (!atual || this._prioridadePedidoOperacao(p) >= this._prioridadePedidoOperacao(atual)) mapa.set(key, p);
+      if (!atual || this._compararPedidoOperacao(p, atual) >= 0) mapa.set(key, p);
     }
     return Array.from(mapa.values());
   },
