@@ -549,6 +549,60 @@ const SP = {
     );
   },
 
+  _pedidoMesmoColaboradorDia(p, semanaId, colaboradorId, colaboradorNome, dia) {
+    const pSemana = String(this.pick(p, "Semana_id", "Semana", "semanaId") || "").trim();
+    const pDia = this.norm(this.pick(p, "Dia", "dia") || "");
+    if (pSemana !== String(semanaId || "").trim()) return false;
+    if (pDia !== this.norm(dia || "")) return false;
+
+    const idAlvo = String(colaboradorId || "").trim();
+    const nomeAlvo = this.norm(colaboradorNome || "");
+    const pId = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const pNome = this.norm(this.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title") || "");
+
+    if (idAlvo && pId && pId === idAlvo) return true;
+    if (!idAlvo && nomeAlvo && pNome === nomeAlvo) return true;
+    if (idAlvo && !pId && nomeAlvo && pNome === nomeAlvo) return true;
+    return false;
+  },
+
+  _pedidoTimestampOrdem(p) {
+    const raw = this.pick(p, "Modified", "modified", "Data_Hora", "DataHora", "Created", "created", "Data") || "";
+    const dt = raw ? new Date(raw) : null;
+    if (dt && !isNaN(dt)) return dt.getTime();
+    const id = Number(this.pick(p, "id", "ID") || 0);
+    return Number.isFinite(id) ? id : 0;
+  },
+
+  _pedidoStatusPeso(p) {
+    const status = this.norm(this.pick(p, "Status", "status") || "");
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    const confirmado = this.isTrue(this.pick(p, "Confirmado", "confirmado"));
+    if (["nao vai almocar", "não vai almoçar", "ausente", "ferias", "férias", "afastado", "atestado", "licenca", "licença"].includes(status)) return 90;
+    if (["confirmado", "aprovado", "extra"].includes(status) || confirmado) return origem.includes("travamento") ? 70 : 80;
+    if (status === "travado") return origem.includes("travamento") ? 70 : 65;
+    if (status === "cancelado" || status === "bloqueado") return 50;
+    return 10;
+  },
+
+  _ordenarPedidoMaisAtual(a, b) {
+    const ta = this._pedidoTimestampOrdem(a);
+    const tb = this._pedidoTimestampOrdem(b);
+    if (ta !== tb) return tb - ta;
+    return this._pedidoStatusPeso(b) - this._pedidoStatusPeso(a);
+  },
+
+  async _buscarPedidoExistenteParaUpsert(semanaId, colaboradorId, colaboradorNome, dia) {
+    let pedidos = [];
+    try { pedidos = await this.getPedidos(semanaId); }
+    catch (e) { console.warn("[SharePoint] Não foi possível verificar pedido existente antes de salvar.", e); return null; }
+
+    const candidatos = (pedidos || []).filter(p => this._pedidoMesmoColaboradorDia(p, semanaId, colaboradorId, colaboradorNome, dia));
+    if (!candidatos.length) return null;
+    candidatos.sort((a, b) => this._ordenarPedidoMaisAtual(a, b));
+    return candidatos[0];
+  },
+
   async savePedido(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato, extras = {}) {
     let centroCusto = extras.centroCusto ?? extras.Centro_Custo ?? "";
     if (!centroCusto) {
@@ -572,6 +626,15 @@ const SP = {
       Alterado_Por:     extras.alteradoPor  ?? extras.Alterado_Por ?? this.getUserName()
     };
     this._validarPedidoFields(fields);
+
+    // Regra importante: Pedido é 1 registro por colaborador + semana + dia.
+    // Antes o sistema criava novos registros sempre. Quando ficavam duplicados
+    // com status/origem diferentes, uma tela podia ler o antigo e o colaborador "sumia".
+    const existente = await this._buscarPedidoExistenteParaUpsert(semanaId, fields.Colaborador_id, fields.Colaborador_nome, dia);
+    if (existente?.id) {
+      return this.updatePedido(existente.id, fields);
+    }
+
     return this.createItem("Pedidos", fields);
   },
 
