@@ -566,6 +566,17 @@ const SP = {
     return false;
   },
 
+  _isPedidoAdicionalColaborador(p) {
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    const obs = this.norm(this.pick(p, "Observacao", "Observação", "observacao") || "");
+    const cid = this.norm(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "");
+    return origem.includes("segunda refeicao") || origem.includes("segunda refeição") ||
+           origem.includes("transferencia para hoje") || origem.includes("transferência para hoje") ||
+           origem.includes("refeicao adicional") || origem.includes("refeição adicional") ||
+           obs.includes("adicionalid:") || obs.includes("colaboradorbaseid:") ||
+           cid.includes("-adicional-");
+  },
+
   _pedidoTimestampOrdem(p) {
     const raw = this.pick(p, "Modified", "modified", "Data_Hora", "DataHora", "Created", "created", "Data") || "";
     const dt = raw ? new Date(raw) : null;
@@ -597,7 +608,7 @@ const SP = {
     try { pedidos = await this.getPedidos(semanaId); }
     catch (e) { console.warn("[SharePoint] Não foi possível verificar pedido existente antes de salvar.", e); return null; }
 
-    const candidatos = (pedidos || []).filter(p => this._pedidoMesmoColaboradorDia(p, semanaId, colaboradorId, colaboradorNome, dia));
+    const candidatos = (pedidos || []).filter(p => !this._isPedidoAdicionalColaborador(p) && this._pedidoMesmoColaboradorDia(p, semanaId, colaboradorId, colaboradorNome, dia));
     if (!candidatos.length) return null;
     candidatos.sort((a, b) => this._ordenarPedidoMaisAtual(a, b));
     return candidatos[0];
@@ -627,7 +638,13 @@ const SP = {
     };
     this._validarPedidoFields(fields);
 
-    // Regra importante: Pedido é 1 registro por colaborador + semana + dia.
+    // Refeição adicional vinculada ao colaborador é exceção controlada:
+    // deve criar uma segunda linha intencional no mesmo dia, sem sobrescrever o pedido normal.
+    if (this._isPedidoAdicionalColaborador(fields)) {
+      return this.createItem("Pedidos", fields);
+    }
+
+    // Regra importante: Pedido normal é 1 registro por colaborador + semana + dia.
     // Antes o sistema criava novos registros sempre. Quando ficavam duplicados
     // com status/origem diferentes, uma tela podia ler o antigo e o colaborador "sumia".
     const existente = await this._buscarPedidoExistenteParaUpsert(semanaId, fields.Colaborador_id, fields.Colaborador_nome, dia);
@@ -1243,6 +1260,7 @@ const SP = {
     for (const p of (pedidos || [])) {
       const pid = String(this.pick(p, "id", "ID") || "");
       if (!pid || String(pid) === String(idPrincipal || "")) continue;
+      if (this._isPedidoAdicionalColaborador(p)) continue;
       if (this.norm(this.pick(p, "Dia", "dia") || "") !== this.norm(dia)) continue;
 
       const pId = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
@@ -1268,6 +1286,132 @@ const SP = {
       }
     }
     return atualizados;
+  },
+
+  _slugAdicional(v) {
+    return this.norm(v || "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "colaborador";
+  },
+
+  async _buscarPedidoNormalColaboradorDia(semanaId, colaboradorId, colaboradorNome, dia) {
+    let pedidos = [];
+    try { pedidos = await this.getPedidos(semanaId); }
+    catch (e) { console.warn("[SharePoint] Não foi possível buscar pedido normal para transferência:", e); return null; }
+
+    const candidatos = (pedidos || []).filter(p =>
+      !this._isPedidoAdicionalColaborador(p) &&
+      this._pedidoMesmoColaboradorDia(p, semanaId, colaboradorId, colaboradorNome, dia)
+    );
+    if (!candidatos.length) return null;
+    candidatos.sort((a, b) => this._ordenarPedidoMaisAtual(a, b));
+    return candidatos[0];
+  },
+
+  async criarRefeicaoAdicionalColaborador(params = {}) {
+    const semanaId = params.semanaId || params.Semana_id || this.getCurrentWeekId();
+    const pedidoBase = params.pedidoBase || params.pedido || {};
+    const tipoAjuste = params.tipoAjuste || params.tipo || "segunda";
+    const diaDestino = params.diaDestino || params.dia || this.pick(pedidoBase, "Dia", "dia");
+    const opcaoDestino = params.opcaoDestino || params.opcao || "principal";
+    const diaOrigem = params.diaOrigem || params.diaRemover || "";
+    const observacaoUsuario = params.observacao || params.Observacao || "";
+
+    const pedidoIdBase = String(params.pedidoId || this.pick(pedidoBase, "id", "ID") || "");
+    let base = pedidoBase;
+    if (pedidoIdBase && !this.pick(base, "Colaborador_nome", "Nome", "Title")) {
+      try { base = await this._getItemFieldsById("Pedidos", pedidoIdBase); }
+      catch (e) { console.warn("[SharePoint] Não foi possível ler pedido base do adicional:", e); }
+    }
+
+    const colaboradorIdBase = String(params.colaboradorId || this.pick(base, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const colaboradorNome = params.colaboradorNome || this.pick(base, "Colaborador_nome", "Colaborador", "Nome", "Title") || "";
+    if (!colaboradorNome) throw new Error("Não foi possível identificar o colaborador para criar refeição adicional.");
+
+    let centroCusto = params.centroCusto || this.pick(base, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || "";
+    if (!centroCusto) centroCusto = await this._resolverCentroCustoColaborador(colaboradorIdBase, colaboradorNome);
+
+    const dataDestino = this._pedidoDataRefeicao(semanaId, diaDestino, base);
+    const nomePratoDestino = await this._nomePratoCardapioPorOpcao(semanaId, diaDestino, opcaoDestino) || this._pratoPadraoPorOpcao(opcaoDestino);
+    const ts = Date.now();
+    const baseSlug = colaboradorIdBase || this._slugAdicional(colaboradorNome);
+    const idAdicional = `${baseSlug}-adicional-${this._slugAdicional(diaDestino)}-${ts}`;
+    const origemAdicional = this.norm(tipoAjuste).includes("transfer")
+      ? "Transferência para hoje"
+      : "Segunda refeição";
+
+    const obsAdicional = [
+      "Refeição adicional vinculada ao colaborador.",
+      observacaoUsuario,
+      pedidoIdBase ? `PedidoBase:${pedidoIdBase}` : "",
+      colaboradorIdBase ? `ColaboradorBaseID:${colaboradorIdBase}` : "",
+      `AdicionalID:${ts}`
+    ].filter(Boolean).join(" | ");
+
+    const adicional = await this.createItem("Pedidos", {
+      Title:            `${semanaId}-${idAdicional}-${diaDestino}`,
+      Semana_id:        semanaId,
+      Colaborador_id:   String(idAdicional),
+      Colaborador_nome: colaboradorNome,
+      Dia:              diaDestino,
+      Opcao:            opcaoDestino,
+      Nome_Prato:       nomePratoDestino,
+      Confirmado:       true,
+      Data_Hora:        `${dataDestino}T12:00:00`,
+      Centro_Custo:     centroCusto || "",
+      Status:           "Confirmado",
+      Observacao:       obsAdicional,
+      Origem:           origemAdicional,
+      Alterado_Por:     this.getUserName()
+    });
+
+    let pedidoOrigem = null;
+    let ausenciaOrigem = null;
+
+    if (this.norm(tipoAjuste).includes("transfer")) {
+      if (!diaOrigem) throw new Error("Informe o dia que será removido na transferência.");
+      const dataOrigem = this._pedidoDataRefeicao(semanaId, diaOrigem, base);
+      const obsOrigem = [
+        "Refeição transferida para outro dia.",
+        `Transferida para:${diaDestino}`,
+        observacaoUsuario,
+        adicional?.id ? `PedidoAdicional:${adicional.id}` : ""
+      ].filter(Boolean).join(" | ");
+
+      const existenteOrigem = await this._buscarPedidoNormalColaboradorDia(semanaId, colaboradorIdBase, colaboradorNome, diaOrigem);
+      const camposOrigem = {
+        Semana_id: semanaId,
+        Colaborador_id: colaboradorIdBase,
+        Colaborador_nome: colaboradorNome,
+        Dia: diaOrigem,
+        Opcao: "principal",
+        Nome_Prato: "Não vai almoçar",
+        Confirmado: false,
+        Data_Hora: `${dataOrigem}T12:00:00`,
+        Centro_Custo: centroCusto || "",
+        Status: "Não vai almoçar",
+        Observacao: obsOrigem,
+        Origem: "Transferência - dia removido",
+        Alterado_Por: this.getUserName()
+      };
+
+      if (existenteOrigem?.id) pedidoOrigem = await this.updatePedido(existenteOrigem.id, camposOrigem);
+      else pedidoOrigem = await this.savePedido(semanaId, colaboradorIdBase, colaboradorNome, diaOrigem, "principal", "Não vai almoçar", camposOrigem);
+
+      await this._garantirAusenciaDoPedidoOperacao({
+        ...base,
+        ...camposOrigem,
+        id: this.pick(pedidoOrigem, "id", "ID") || this.pick(existenteOrigem, "id", "ID") || ""
+      }, "Não vai almoçar", semanaId, diaOrigem);
+
+      ausenciaOrigem = true;
+    }
+
+    try {
+      localStorage.setItem("homy_refeitorio_sync", JSON.stringify({ tipo:"pedido", acao:"adicional", semanaId, ts: Date.now() }));
+    } catch (_) {}
+
+    return { adicional, pedidoOrigem, ausenciaOrigem };
   },
 
   async alterarPedidoOperacao(id, status, pedidoAtual = {}) {
