@@ -199,6 +199,17 @@ const AdminOperacao = window.AdminOperacao = {
     return [];
   },
 
+  _isRefeicaoAdicionalColaborador(p) {
+    const origem = this._norm(this._pick(p, "Origem", "origem", "tipo", "Tipo"));
+    const obs = this._norm(this._pick(p, "Observacao", "Observação", "observacao"));
+    const cid = this._norm(this._pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId"));
+    return origem.includes("segunda refeicao") || origem.includes("segunda refeição") ||
+           origem.includes("transferencia para hoje") || origem.includes("transferência para hoje") ||
+           origem.includes("refeicao adicional") || origem.includes("refeição adicional") ||
+           obs.includes("adicionalid:") || obs.includes("colaboradorbaseid:") ||
+           cid.includes("-adicional-");
+  },
+
   _pedidoKeyOperacao(p) {
     const dia = this._norm(this._pick(p, "Dia", "dia"));
     const isEx = this._isExtraPedido(p);
@@ -209,6 +220,7 @@ const AdminOperacao = window.AdminOperacao = {
     const origem = this._norm(this._pick(p, "Origem", "tipo", "Tipo"));
     const opcao = this._norm(this._pick(p, "Opcao", "opcao"));
 
+    if (this._isRefeicaoAdicionalColaborador(p)) return `adicional|${dia}|${this._pick(p, "id", "ID") || idColab || nome + "|" + origem + "|" + opcao}`;
     if (isEx) return `extra|${dia}|${extraId || idColab || nome + "|" + origem + "|" + opcao}`;
     return `colab|${dia}|${idColab || nome}`;
   },
@@ -596,10 +608,190 @@ const AdminOperacao = window.AdminOperacao = {
           <button class="btn-icon" ${disabled} title="Confirmar" onclick="AdminOperacao.alterarStatus('${id}','Confirmado')">✅</button>
           <button class="btn-icon danger" ${disabled} title="Cancelar" onclick="AdminOperacao.alterarStatus('${id}','Cancelado')">❌</button>
           <button class="btn-icon" ${disabled} title="Não vai almoçar" onclick="AdminOperacao.alterarStatus('${id}','Não vai almoçar')">🚫</button>
+          ${(!isEx && !p._virtualAusencia && !p._virtualExtra) ? `<button class="btn-icon" ${disabled} title="Refeição adicional" onclick="AdminOperacao.abrirAdicional('${id}')">➕</button>` : ""}
           <button class="btn-icon danger" ${disabled} title="Excluir" onclick="AdminOperacao.excluir('${id}')">🗑️</button>
         </div></td>
       </tr>`;
     }).join("");
+  },
+
+  _diaSeguinteOperacao(dia) {
+    const dias = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    const idx = dias.indexOf(this._norm(dia));
+    return dias[Math.min((idx < 0 ? 0 : idx + 1), dias.length - 1)] || "sexta";
+  },
+
+  _labelDiaOperacao(dia) {
+    const labels = { segunda:"Segunda", terca:"Terça", terça:"Terça", quarta:"Quarta", quinta:"Quinta", sexta:"Sexta" };
+    return labels[this._norm(dia)] || dia || "—";
+  },
+
+  _opcoesRefeicaoHtml(dia) {
+    const ops = [
+      ["principal", "Principal"],
+      ["light", "Light"],
+      ["carne", "Carne"],
+      ["massa", "Massa"]
+    ];
+    if (this._norm(dia) === "sexta") ops.push(["lanche", "Lanche"]);
+    return ops.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+  },
+
+  _ensureModalAdicional() {
+    let modal = document.getElementById("modalOperacaoAdicional");
+    if (modal) return modal;
+
+    modal = document.createElement("div");
+    modal.id = "modalOperacaoAdicional";
+    modal.style.cssText = "display:none;position:fixed;inset:0;z-index:9999;background:rgba(3,8,20,.78);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:1rem";
+    modal.innerHTML = `
+      <div style="width:min(620px,96vw);background:#0b1a35;border:1px solid rgba(255,255,255,.14);border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.65);overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,.08)">
+          <div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.35rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff">➕ Refeição adicional</div>
+            <div id="opAdicionalSub" style="font-size:.78rem;color:rgba(143,170,210,.65);margin-top:2px">Ajuste vinculado ao colaborador</div>
+          </div>
+          <button type="button" id="opAdicionalFechar" class="btn-secondary" style="padding:.45rem .7rem">✕</button>
+        </div>
+        <div style="padding:1rem 1.2rem;display:grid;grid-template-columns:1fr 1fr;gap:.9rem">
+          <input type="hidden" id="opAdicionalPedidoId">
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Colaborador</label>
+            <input class="form-input" id="opAdicionalColaborador" disabled>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Tipo de ajuste</label>
+            <select class="form-select" id="opAdicionalTipo">
+              <option value="segunda">Segunda refeição para o colaborador</option>
+              <option value="transferir">Transferir refeição para hoje</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Dia que receberá a refeição</label>
+            <select class="form-select" id="opAdicionalDiaDestino">
+              <option value="segunda">Segunda</option>
+              <option value="terca">Terça</option>
+              <option value="quarta">Quarta</option>
+              <option value="quinta">Quinta</option>
+              <option value="sexta">Sexta</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Opção da refeição adicional</label>
+            <select class="form-select" id="opAdicionalOpcao"></select>
+          </div>
+          <div class="form-group" id="opAdicionalDiaOrigemBox" style="grid-column:1/-1;display:none">
+            <label class="form-label">Dia que será removido / marcado como não vai almoçar</label>
+            <select class="form-select" id="opAdicionalDiaOrigem">
+              <option value="segunda">Segunda</option>
+              <option value="terca">Terça</option>
+              <option value="quarta">Quarta</option>
+              <option value="quinta">Quinta</option>
+              <option value="sexta">Sexta</option>
+            </select>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Observação</label>
+            <textarea class="form-textarea" id="opAdicionalObs" placeholder="Ex.: colaboradora pediu para trazer a refeição de amanhã para hoje"></textarea>
+          </div>
+          <div id="opAdicionalAviso" style="grid-column:1/-1;font-size:.8rem;color:#ffcf8a;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.18);border-radius:10px;padding:.7rem .8rem;line-height:1.45"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:.6rem;padding:1rem 1.2rem;border-top:1px solid rgba(255,255,255,.08)">
+          <button type="button" id="opAdicionalCancelar" class="btn-secondary">Cancelar</button>
+          <button type="button" id="opAdicionalSalvar" class="btn-success">💾 Salvar ajuste</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const fechar = () => { modal.style.display = "none"; };
+    document.getElementById("opAdicionalFechar")?.addEventListener("click", fechar);
+    document.getElementById("opAdicionalCancelar")?.addEventListener("click", fechar);
+    document.getElementById("opAdicionalTipo")?.addEventListener("change", () => this._atualizarModalAdicional());
+    document.getElementById("opAdicionalDiaDestino")?.addEventListener("change", () => this._atualizarModalAdicional());
+    document.getElementById("opAdicionalSalvar")?.addEventListener("click", () => this.salvarAdicional());
+    return modal;
+  },
+
+  _atualizarModalAdicional() {
+    const tipo = AdminUtils.getVal("opAdicionalTipo") || "segunda";
+    const diaDestino = AdminUtils.getVal("opAdicionalDiaDestino") || AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
+    const boxOrigem = document.getElementById("opAdicionalDiaOrigemBox");
+    const opcao = document.getElementById("opAdicionalOpcao");
+    const aviso = document.getElementById("opAdicionalAviso");
+
+    if (boxOrigem) boxOrigem.style.display = tipo === "transferir" ? "" : "none";
+    if (opcao) opcao.innerHTML = this._opcoesRefeicaoHtml(diaDestino);
+
+    if (aviso) {
+      aviso.innerHTML = tipo === "transferir"
+        ? `Será criada uma refeição adicional para o colaborador em <b>${this._labelDiaOperacao(diaDestino)}</b> e o dia removido será marcado como <b>Não vai almoçar</b>. O relatório continuará no centro de custo do colaborador.`
+        : `Será criada uma segunda refeição para o colaborador em <b>${this._labelDiaOperacao(diaDestino)}</b>. O relatório contará 2 refeições no nome e centro de custo dele.`;
+    }
+  },
+
+  abrirAdicional(id) {
+    const pedido = this._lista.find(p => String(p.id) === String(id));
+    if (!pedido) { AdminUtils.toast("Pedido não encontrado para ajuste adicional.", "error"); return; }
+    if (this._isExtraPedido(pedido) || pedido._virtualAusencia || pedido._virtualExtra) {
+      AdminUtils.toast("Use essa função apenas para colaboradores do quadro.", "error");
+      return;
+    }
+
+    const modal = this._ensureModalAdicional();
+    const diaAtual = AdminUtils.getVal("operacaoDia") || this._pick(pedido, "Dia") || AdminUtils.DIA_HOJE();
+    AdminUtils.setVal("opAdicionalPedidoId", id);
+    AdminUtils.setVal("opAdicionalColaborador", this._pick(pedido, "Colaborador_nome", "Nome", "Title") || "—");
+    AdminUtils.setVal("opAdicionalTipo", "segunda");
+    AdminUtils.setVal("opAdicionalDiaDestino", this._norm(diaAtual));
+    AdminUtils.setVal("opAdicionalDiaOrigem", this._diaSeguinteOperacao(diaAtual));
+    AdminUtils.setVal("opAdicionalObs", "");
+    this._atualizarModalAdicional();
+    modal.style.display = "flex";
+  },
+
+  async salvarAdicional() {
+    const id = AdminUtils.getVal("opAdicionalPedidoId");
+    const pedido = this._lista.find(p => String(p.id) === String(id));
+    if (!pedido) { AdminUtils.toast("Pedido não encontrado.", "error"); return; }
+
+    const tipoAjuste = AdminUtils.getVal("opAdicionalTipo") || "segunda";
+    const diaDestino = AdminUtils.getVal("opAdicionalDiaDestino") || AdminUtils.getVal("operacaoDia") || this._pick(pedido, "Dia");
+    const opcaoDestino = AdminUtils.getVal("opAdicionalOpcao") || "principal";
+    const diaOrigem = AdminUtils.getVal("opAdicionalDiaOrigem") || "";
+    const observacao = AdminUtils.getVal("opAdicionalObs") || "";
+
+    if (tipoAjuste === "transferir" && this._norm(diaOrigem) === this._norm(diaDestino)) {
+      AdminUtils.toast("Na transferência, o dia removido precisa ser diferente do dia que recebe a refeição.", "error");
+      return;
+    }
+
+    const btn = document.getElementById("opAdicionalSalvar");
+    const old = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Salvando..."; }
+
+    try {
+      await SP.init();
+      if (typeof SP.criarRefeicaoAdicionalColaborador !== "function") {
+        throw new Error("sharepoint.js não possui criarRefeicaoAdicionalColaborador.");
+      }
+      await SP.criarRefeicaoAdicionalColaborador({
+        semanaId: AdminState.getSemanaId(),
+        pedidoBase: pedido,
+        pedidoId: id,
+        tipoAjuste,
+        diaDestino,
+        opcaoDestino,
+        diaOrigem,
+        observacao
+      });
+      document.getElementById("modalOperacaoAdicional").style.display = "none";
+      await this._carregar(AdminState.getSemanaId());
+      AdminUtils.toast(tipoAjuste === "transferir" ? "Transferência criada." : "Segunda refeição criada.", "success");
+    } catch (e) {
+      AdminUtils.toast("Erro ao salvar adicional: " + (e.message || e), "error");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = old || "💾 Salvar ajuste"; }
+    }
   },
 
   async alterarStatus(id, status) {
