@@ -1,6 +1,6 @@
 // ============================================================
 // admin-ausencias.js — Férias, afastamentos, ausências e bloqueios
-// Correção: ausências com centro de custo do colaborador
+// Correção: período encerrado, retorno automático e prevenção de duplicidade
 // ============================================================
 
 const AdminAusencias = window.AdminAusencias = {
@@ -180,6 +180,9 @@ const AdminAusencias = window.AdminAusencias = {
   },
 
   async _createAusencia(fields) {
+    // Usa a camada oficial para aplicar upsert, prevenção de duplicidade
+    // e sincronização automática Ausências → Pedidos.
+    if (typeof SP.createAusencia === "function") return SP.createAusencia(fields);
     const lista = await this._descobrirLista();
     return SP.createItem(lista, fields);
   },
@@ -213,6 +216,11 @@ const AdminAusencias = window.AdminAusencias = {
 
     try {
       await SP.init();
+      if (typeof SP.sincronizarAusenciasPedidosSemana === "function") {
+        await SP.sincronizarAusenciasPedidosSemana(this._semanaIdAtual()).catch(e => console.warn("[Ausências] Sincronização de ausências x pedidos ignorada:", e));
+      } else if (typeof SP.sincronizarAusenciasEncerradas === "function") {
+        await SP.sincronizarAusenciasEncerradas().catch(e => console.warn("[Ausências] Sincronização de períodos encerrados ignorada:", e));
+      }
       const [ausenciasSP, ausenciasRefeitorio] = await Promise.all([
         this._getAusencias().catch(e => { throw e; }),
         this._getAusenciasDoRefeitorio()
@@ -276,16 +284,71 @@ const AdminAusencias = window.AdminAusencias = {
     return `${d}/${m}/${a}`;
   },
 
+
+
+  _hojeISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  },
+
+  _periodoEncerrado(item) {
+    const fim = this._dateISO(this._pick(item, "Data_Fim", "Fim", "DataFim"));
+    return !!fim && fim < this._hojeISO();
+  },
+
   _ativo(item) {
-    const v = this._pick(item, "Ativo", "ativo", "Status");
-    const n = AdminUtils.norm(v);
-    if (["inativo", "cancelado", "excluido", "excluído", "false", "nao", "não", "0"].includes(n)) return false;
+    if (this._periodoEncerrado(item)) return false;
+    const status = AdminUtils.norm(this._pick(item, "Status", "status", "Status_Ausencia"));
+    if (["inativo", "cancelado", "excluido", "excluído", "encerrado", "periodo encerrado", "período encerrado", "false", "nao", "não", "0"].includes(status)) return false;
+    const v = this._pick(item, "Ativo", "ativo");
+    if (v === "") return true;
     if (v === false || v === 0) return false;
-    return true;
+    return SP.isTrue ? SP.isTrue(v) : !!v;
   },
 
   _statusLabel(item) {
+    if (this._periodoEncerrado(item)) return "Período encerrado";
     return this._ativo(item) ? "Ativo" : "Inativo";
+  },
+
+
+  _chaveDuplicidadeVisual(item) {
+    const cid = String(this._pick(item, "Colaborador_id", "ColaboradorId") || "").trim();
+    const nome = AdminUtils.norm(this._pick(item, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+    const ini = this._dateISO(this._pick(item, "Data_Inicio", "Inicio", "DataInicio"));
+    const motivo = AdminUtils.norm(this._pick(item, "Motivo", "motivo", "Status"));
+    return `${cid || nome}|${ini}|${motivo}`;
+  },
+
+  _filtrarDuplicatasVisual(lista) {
+    const grupos = new Map();
+    (lista || []).forEach(item => {
+      const k = this._chaveDuplicidadeVisual(item);
+      if (!k || k === "||") return;
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(item);
+    });
+
+    const ocultarIds = new Set();
+    for (const grupo of grupos.values()) {
+      if (grupo.length < 2) continue;
+      const preferido = [...grupo].sort((a, b) => {
+        const aa = this._ativo(a) ? 1 : 0;
+        const bb = this._ativo(b) ? 1 : 0;
+        if (aa !== bb) return bb - aa;
+        const fa = this._dateISO(this._pick(a, "Data_Fim", "Fim", "DataFim"));
+        const fb = this._dateISO(this._pick(b, "Data_Fim", "Fim", "DataFim"));
+        if (fa !== fb) return fb.localeCompare(fa);
+        return Number(this._pick(b, "id", "ID") || 0) - Number(this._pick(a, "id", "ID") || 0);
+      })[0];
+      const idPreferido = String(this._pick(preferido, "id", "ID") || "");
+      grupo.forEach(x => {
+        const id = String(this._pick(x, "id", "ID") || "");
+        if (id && id !== idPreferido) ocultarIds.add(id);
+      });
+    }
+
+    return (lista || []).filter(x => !ocultarIds.has(String(this._pick(x, "id", "ID") || "")));
   },
 
   _render() {
@@ -295,7 +358,7 @@ const AdminAusencias = window.AdminAusencias = {
     const busca = AdminUtils.norm(this._val("fAusenciaTexto", "ausenciaBusca", "searchAusencia", "filtroAusenciaTexto"));
     const statusFiltro = AdminUtils.norm(this._val("fAusenciaStatus", "ausenciaStatus", "filtroAusenciaStatus"));
 
-    let lista = [...this._lista];
+    let lista = this._filtrarDuplicatasVisual([...this._lista]);
 
     if (busca) {
       lista = lista.filter(a => AdminUtils.norm([
@@ -310,7 +373,7 @@ const AdminAusencias = window.AdminAusencias = {
       lista = lista.filter(a => {
         const ativo = this._ativo(a);
         if (["ativo", "sim", "true"].includes(statusFiltro)) return ativo;
-        if (["inativo", "cancelado", "nao", "não", "false"].includes(statusFiltro)) return !ativo;
+        if (["inativo", "cancelado", "nao", "não", "false", "encerrado", "periodo encerrado", "período encerrado"].includes(statusFiltro)) return !ativo;
         return AdminUtils.norm(this._statusLabel(a)) === statusFiltro || AdminUtils.norm(this._pick(a, "Status")) === statusFiltro;
       });
     }
@@ -333,18 +396,22 @@ const AdminAusencias = window.AdminAusencias = {
       const fim = this._dateBR(this._pick(a, "Data_Fim", "Fim", "DataFim"));
       const motivo = AdminUtils.esc(this._formatMotivo(this._pick(a, "Motivo", "motivo") || "—"));
       const ativo = this._ativo(a);
-      const status = ativo ? "Ativo" : "Inativo";
+      const encerrado = this._periodoEncerrado(a);
+      const status = this._statusLabel(a);
       const origemRefeitorio = !!a._origemPedido;
+      const badgeCls = encerrado ? "badge-yellow" : (ativo ? "badge-green" : "badge-red");
       const statusHtml = origemRefeitorio
         ? `<span class="badge badge-blue">Refeitório</span>`
-        : `<span class="badge ${ativo ? "badge-green" : "badge-red"}">${status}</span>`;
+        : `<span class="badge ${badgeCls}">${status}</span>`;
       const acoesHtml = origemRefeitorio
         ? `<span style="color:rgba(143,170,210,.45);font-size:.78rem">Via pedidos</span>`
         : `<div class="table-actions">
           <button class="btn-icon" title="Editar" onclick="AdminAusencias.abrirEdicao('${id}')">✏️</button>
-          ${ativo
-            ? `<button class="btn-icon danger" title="Inativar" onclick="AdminAusencias.inativar('${id}')">🚫</button>`
-            : `<button class="btn-icon" title="Reativar" onclick="AdminAusencias.reativar('${id}')">↩️</button>`}
+          ${encerrado
+            ? `<span style="color:rgba(143,170,210,.45);font-size:.78rem">Encerrado</span>`
+            : (ativo
+              ? `<button class="btn-icon danger" title="Inativar" onclick="AdminAusencias.inativar('${id}')">🚫</button>`
+              : `<button class="btn-icon" title="Reativar" onclick="AdminAusencias.reativar('${id}')">↩️</button>`)}
         </div>`;
       return `<tr>
         <td>${nome}</td>
@@ -496,7 +563,7 @@ const AdminAusencias = window.AdminAusencias = {
   async inativar(id) {
     if (!confirm("Inativar esta ausência?")) return;
     try {
-      await this._updateAusencia(id, { Ativo: false });
+      await this._updateAusencia(id, { Ativo: false, Status: "Inativo", Status_Ausencia: "Inativo" });
       AdminUtils.toast("Ausência inativada.", "success");
       await this._carregar();
     } catch (e) {
@@ -506,7 +573,7 @@ const AdminAusencias = window.AdminAusencias = {
 
   async reativar(id) {
     try {
-      await this._updateAusencia(id, { Ativo: true });
+      await this._updateAusencia(id, { Ativo: true, Status: "Ativo", Status_Ausencia: "Ativo" });
       AdminUtils.toast("Ausência reativada.", "success");
       await this._carregar();
     } catch (e) {
