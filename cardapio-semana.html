@@ -218,7 +218,7 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("sharepoint.js?v=" + Date.now());
+      return loadScript("sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623");
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível.");
@@ -598,10 +598,14 @@ async function carregarSemana(){
     await window.HOMY_SP_READY;
     await SP.ensureLogin();
 
-    // Calcula data base
+    // Semana pública: por padrão usa a semana visível liberada no Admin.
+    // Se o usuário navegar pelas setas, usa o deslocamento manual normalmente.
     const base = new Date();
     base.setDate(base.getDate() + weekOffset * 7);
-    const semanaId = SP.getSemanaId(base);
+    let semanaId = SP.getSemanaId(base);
+    if (weekOffset === 0 && typeof SP.getSemanaVisivelCardapio === "function") {
+      semanaId = await SP.getSemanaVisivelCardapio(semanaId);
+    }
     DATAS = SP.getWeekDates(semanaId);
     CARDAPIO = {seg:[],ter:[],qua:[],qui:[],sex:[]};
 
