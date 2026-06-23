@@ -429,7 +429,8 @@ const AdminOperacao = window.AdminOperacao = {
     const extrasDoDia = (todosExtras || []).filter(e => {
       const status = this._norm(this._pick(e, "Status", "status"));
       const ativo = this._pick(e, "Ativo", "ativo");
-      const inativo = ["cancelado", "bloqueado", "excluido", "excluído", "inativo"].includes(status) || (ativo !== "" && SP.isTrue && !SP.isTrue(ativo));
+      const inativo = ["cancelado", "bloqueado", "excluido", "excluído", "inativo"].includes(status) ||
+        (ativo !== "" && SP.isTrue && !SP.isTrue(ativo));
       return this._norm(this._extraDia(e)) === this._norm(dia) && !inativo;
     });
     if (!extrasDoDia.length) return pedidos;
@@ -437,10 +438,31 @@ const AdminOperacao = window.AdminOperacao = {
     const resultado = [...(pedidos || [])];
 
     for (const extra of extrasDoDia) {
-      const espelho = await this._criarOuAtualizarPedidoDoExtra(semanaId, dia, extra, resultado);
-      const idx = resultado.findIndex(p => this._pedidoCorrespondeExtra(p, extra, dia));
-      if (idx >= 0) resultado[idx] = { ...resultado[idx], ...espelho };
-      else resultado.push(espelho);
+      if (resultado.some(p => this._pedidoCorrespondeExtra(p, extra, dia))) continue;
+
+      // Performance: a Operação do Dia não grava espelho durante a renderização.
+      // Ela mostra a linha virtual imediatamente e o sharepoint.js repara o Pedido
+      // espelho em segundo plano com trava/TTL.
+      const tipo = this._pick(extra, "tipo", "Tipo") || "extra";
+      const nome = this._pick(extra, "Nome", "Title") || "Refeição Extra";
+      const opcao = this._pick(extra, "Opcao", "Opção") || "principal";
+      resultado.push({
+        id: `extra-virtual-${this._pick(extra, "id", "ID") || nome}-${this._norm(dia)}`,
+        _virtualExtra: true,
+        _extraRefId: this._pick(extra, "id", "ID") || "",
+        Semana_id: semanaId,
+        Colaborador_id: this._pick(extra, "Colaborador_id", "ColaboradorId") || `extra-${this._pick(extra, "id", "ID") || nome}`,
+        Colaborador_nome: nome,
+        Dia: dia,
+        Opcao: opcao,
+        Nome_Prato: this._nomePratoPorOpcao(dia, opcao) || "Prato Principal",
+        Confirmado: true,
+        Data_Hora: new Date().toISOString(),
+        Centro_Custo: this._pick(extra, "Centro_Custo", "Centro Custo") || (this._norm(tipo).includes("guarda") || this._norm(tipo).includes("investigador") ? "120602 - PORTARIA" : ""),
+        Status: "Confirmado",
+        Observacao: this._pick(extra, "Observacao", "Observação", "Obs") || "Extra cadastrado no SharePoint.",
+        Origem: tipo
+      });
     }
 
     return resultado;
@@ -588,13 +610,12 @@ const AdminOperacao = window.AdminOperacao = {
     try {
       await SP.init();
       const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
-      if (typeof SP.sincronizarAusenciasPedidosSemana === "function") {
-        await SP.sincronizarAusenciasPedidosSemana(semanaId).catch(e => console.warn("[Operação] Sincronização Ausências → Pedidos ignorada:", e));
-      } else if (typeof SP.sincronizarAusenciasEncerradas === "function") {
-        await SP.sincronizarAusenciasEncerradas().catch(e => console.warn("[Operação] Sincronização de ausências encerradas ignorada:", e));
-      }
-      if (typeof SP.garantirExtrasComoPedidos === "function") {
-        await SP.garantirExtrasComoPedidos(semanaId).catch(e => console.warn("[Operação] Reparação de extras ignorada:", e));
+      if (typeof SP.repararIntegridadeSemana === "function") {
+        SP.repararIntegridadeSemana(semanaId).then(r => {
+          if (r?.mudouDados && window.AdminState?.moduloAtivo === "operacao") {
+            setTimeout(() => this._carregar(semanaId).catch(console.warn), 900);
+          }
+        }).catch(e => console.warn("[Operação] Reparo de integridade em segundo plano ignorado:", e));
       }
       let [pedidos, ausencias, colaboradoresAtivos] = await Promise.all([
         SP.getPedidos(semanaId),
