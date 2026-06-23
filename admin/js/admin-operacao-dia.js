@@ -1,4 +1,4 @@
-// admin-operacao-dia.js — Operação do Dia do Admin Homy
+// admin-operacao-dia.js — Operação do Dia do Admin Homy · integridade extras/ausências
 // Correção: operação do dia deduplica pedidos, mostra ausências sem pedido espelho e sincroniza todos os extras/investigadores.
 
 const AdminOperacao = window.AdminOperacao = {
@@ -66,8 +66,10 @@ const AdminOperacao = window.AdminOperacao = {
     const nome = this._norm(this._pick(p, "Colaborador_nome", "Nome", "Title"));
     return origem.includes("extra") || origem.includes("guarda") || origem.includes("investigador") ||
            origem.includes("visitante") || origem.includes("motorista") || origem.includes("prestador") ||
+           origem.includes("fornecedor") || origem.includes("representante") || origem.includes("terceiro") ||
            origem.includes("marmita") || nome.includes("refeicao extra") || nome.includes("guarda") ||
-           nome.includes("investigador");
+           nome.includes("investigador") || nome.includes("prestador") || nome.includes("fornecedor") ||
+           nome.includes("representante");
   },
 
   _isExtraAutomatico(p) {
@@ -497,6 +499,9 @@ const AdminOperacao = window.AdminOperacao = {
     try {
       await SP.init();
       const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
+      if (typeof SP.garantirExtrasComoPedidos === "function") {
+        await SP.garantirExtrasComoPedidos(semanaId).catch(e => console.warn("[Operação] Reparação de extras ignorada:", e));
+      }
       let [pedidos, ausencias] = await Promise.all([
         SP.getPedidos(semanaId),
         this._buscarAusencias()
