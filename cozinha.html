@@ -227,6 +227,22 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   text-transform:uppercase;
   color:rgba(143,170,210,0.66);
 }
+
+.cozinha-stat-card{cursor:pointer;position:relative;user-select:none}
+.cozinha-stat-card:hover{background:rgba(80,150,255,0.12);border-color:rgba(80,150,255,0.32);transform:translateY(-1px)}
+.cozinha-stat-card:active{transform:scale(.985)}
+.cozinha-stat-card::after{content:"Toque para ver";position:absolute;right:.55rem;top:.45rem;font-size:.48rem;letter-spacing:.08em;text-transform:uppercase;color:rgba(143,170,210,.38);opacity:0;transition:opacity .15s}
+.cozinha-stat-card:hover::after{opacity:1}
+.resumo-lista-modal{max-height:min(62vh,520px);overflow:auto;display:flex;flex-direction:column;gap:.55rem;padding-right:.2rem}
+.resumo-modal-title{font-family:"Barlow Condensed";font-size:1.25rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff;margin-bottom:.2rem}
+.resumo-modal-sub{font-size:.78rem;color:var(--muted);margin-bottom:1rem}
+.resumo-row{display:flex;align-items:center;gap:.75rem;border:1px solid var(--border);background:rgba(255,255,255,.045);border-radius:14px;padding:.75rem .8rem}
+.resumo-row.done{opacity:.65;border-color:rgba(64,208,144,.18);background:rgba(64,208,144,.05)}
+.resumo-row .info{flex:1;min-width:0}.resumo-row .name{white-space:normal}.resumo-row .desc{font-size:.72rem}
+.resumo-row-actions{display:flex;gap:.45rem;align-items:center;flex-shrink:0}
+.btn-mini-confirm{border:1px solid rgba(64,208,144,.34);background:rgba(64,208,144,.13);color:var(--green);border-radius:10px;padding:.48rem .62rem;font-size:.74rem;font-weight:700;cursor:pointer;font-family:"Barlow",sans-serif}
+.btn-mini-confirm:disabled{opacity:.5;cursor:default}.resumo-empty{padding:1rem;text-align:center;color:var(--muted);font-size:.9rem}
+
 @media(max-width:720px){
   .cozinha-dashboard{padding:0.82rem;margin-bottom:0.85rem}
   .cozinha-dashboard-head{align-items:flex-start;flex-direction:column;gap:0.45rem}
@@ -561,14 +577,14 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
         <div class="cozinha-dashboard-sync" id="cozDashAtualizado">Tempo real</div>
       </div>
       <div class="cozinha-stats-grid">
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">✅</div><div class="cozinha-stat-value" id="cozDashConfirmados">0</div><div class="cozinha-stat-label">Confirmados</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🥗</div><div class="cozinha-stat-value" id="cozDashPrincipal">0</div><div class="cozinha-stat-label">Principal</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍃</div><div class="cozinha-stat-value" id="cozDashLight">0</div><div class="cozinha-stat-label">Light</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🥩</div><div class="cozinha-stat-value" id="cozDashCarne">0</div><div class="cozinha-stat-label">Carne</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍝</div><div class="cozinha-stat-value" id="cozDashMassa">0</div><div class="cozinha-stat-label">Massa</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍔</div><div class="cozinha-stat-value" id="cozDashLanche">0</div><div class="cozinha-stat-label">Lanche</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍱</div><div class="cozinha-stat-value" id="cozDashMarmitas">0</div><div class="cozinha-stat-label">Marmitas</div></div>
-        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">📦</div><div class="cozinha-stat-value" id="cozDashPendentes">0</div><div class="cozinha-stat-label">A retirar</div></div>
+        <div class="cozinha-stat-card" data-grupo="confirmados" onclick="abrirResumoCardCozinha('confirmados')"><div class="cozinha-stat-icon">✅</div><div class="cozinha-stat-value" id="cozDashConfirmados">0</div><div class="cozinha-stat-label">Confirmados</div></div>
+        <div class="cozinha-stat-card" data-grupo="principal" onclick="abrirResumoCardCozinha('principal')"><div class="cozinha-stat-icon">🥗</div><div class="cozinha-stat-value" id="cozDashPrincipal">0</div><div class="cozinha-stat-label">Principal</div></div>
+        <div class="cozinha-stat-card" data-grupo="light" onclick="abrirResumoCardCozinha('light')"><div class="cozinha-stat-icon">🍃</div><div class="cozinha-stat-value" id="cozDashLight">0</div><div class="cozinha-stat-label">Light</div></div>
+        <div class="cozinha-stat-card" data-grupo="carne" onclick="abrirResumoCardCozinha('carne')"><div class="cozinha-stat-icon">🥩</div><div class="cozinha-stat-value" id="cozDashCarne">0</div><div class="cozinha-stat-label">Carne</div></div>
+        <div class="cozinha-stat-card" data-grupo="massa" onclick="abrirResumoCardCozinha('massa')"><div class="cozinha-stat-icon">🍝</div><div class="cozinha-stat-value" id="cozDashMassa">0</div><div class="cozinha-stat-label">Massa</div></div>
+        <div class="cozinha-stat-card" data-grupo="lanche" onclick="abrirResumoCardCozinha('lanche')"><div class="cozinha-stat-icon">🍔</div><div class="cozinha-stat-value" id="cozDashLanche">0</div><div class="cozinha-stat-label">Lanche</div></div>
+        <div class="cozinha-stat-card" data-grupo="marmitas" onclick="abrirResumoCardCozinha('marmitas')"><div class="cozinha-stat-icon">🍱</div><div class="cozinha-stat-value" id="cozDashMarmitas">0</div><div class="cozinha-stat-label">Marmitas</div></div>
+        <div class="cozinha-stat-card" data-grupo="a-retirar" onclick="abrirResumoCardCozinha('a-retirar')"><div class="cozinha-stat-icon">📦</div><div class="cozinha-stat-value" id="cozDashPendentes">0</div><div class="cozinha-stat-label">A retirar</div></div>
       </div>
     </section>
 
@@ -603,6 +619,20 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   </main>
 </div>
 
+
+<!-- Modal lista por card do resumo -->
+<div class="modal-overlay" id="modalResumoOverlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="resumo-modal-title" id="modalResumoTitulo">Resumo</div>
+    <div class="resumo-modal-sub" id="modalResumoSub">Colaboradores desta opção.</div>
+    <div class="resumo-lista-modal" id="modalResumoLista"></div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn-cancel" onclick="fecharResumoCardCozinha()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal confirmação -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -635,9 +665,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=integridade-extras-ausencias-20260623")
-        .catch(function(){ return loadScript("./sharepoint.js?v=integridade-extras-ausencias-20260623"); })
-        .catch(function(){ return loadScript("../sharepoint.js?v=integridade-extras-ausencias-20260623"); });
+      return loadScript("sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623")
+        .catch(function(){ return loadScript("./sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623"); });
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -1357,6 +1387,89 @@ function renderLista(){
         <div class="badge">${esc(badgeLabel)}</div>
       </article>`;
   }).join("");
+}
+
+
+function pedidosResumoCozinha(grupo){
+  const validos = (pedidosHoje || []).filter(p => !(isAusente(p) || p?._ausente));
+  const g = normalizar(grupo);
+  let lista = validos;
+
+  if (["principal","light","carne","massa","lanche"].includes(g)) {
+    lista = validos.filter(p => normalizar(getOpcao(p)) === g);
+  } else if (g === "marmitas") {
+    lista = validos.filter(isMarmitaCozinha);
+  } else if (g === "a-retirar") {
+    lista = validos.filter(p => !isCheckinFeito(p));
+  } else if (g === "confirmados") {
+    lista = validos;
+  }
+
+  return lista.sort(ordenarListaCozinha);
+}
+
+function tituloResumoCozinha(grupo){
+  const mapa = {
+    "confirmados":"Confirmados",
+    "principal":"Principal",
+    "light":"Light",
+    "carne":"Carne",
+    "massa":"Massa",
+    "lanche":"Lanche",
+    "marmitas":"Marmitas",
+    "a-retirar":"A retirar"
+  };
+  return mapa[grupo] || "Resumo";
+}
+
+function abrirResumoCardCozinha(grupo){
+  const overlay = document.getElementById("modalResumoOverlay");
+  const listaEl = document.getElementById("modalResumoLista");
+  const tituloEl = document.getElementById("modalResumoTitulo");
+  const subEl = document.getElementById("modalResumoSub");
+  if (!overlay || !listaEl) return;
+
+  const lista = pedidosResumoCozinha(grupo);
+  const titulo = tituloResumoCozinha(grupo);
+  if (tituloEl) tituloEl.textContent = titulo;
+  if (subEl) subEl.textContent = `${lista.length} item(ns) • toque em Confirmar para registrar retirada sem procurar na lista geral.`;
+
+  if (!lista.length) {
+    listaEl.innerHTML = `<div class="resumo-empty">Nenhum item encontrado para ${esc(titulo)}.</div>`;
+  } else {
+    listaEl.innerHTML = lista.map(p => {
+      const done = isCheckinFeito(p);
+      const nome = getNome(p);
+      const opcao = getOpcao(p);
+      const prato = itemValor(p,"Nome_Prato","Prato","Title") || "—";
+      const id = esc(getPedidoId(p));
+      return `<article class="resumo-row ${done ? "done" : ""}">
+        <div class="avatar">${esc(iniciais(nome))}</div>
+        <div class="info">
+          <div class="name">${esc(nome)}</div>
+          <div class="desc">${esc(opcao)} • ${esc(prato)}</div>
+        </div>
+        <div class="resumo-row-actions">
+          ${done ? `<span class="badge">Entregue</span>` : `<button class="btn-mini-confirm" onclick="confirmarPeloResumoCozinha('${id}')">Confirmar</button>`}
+        </div>
+      </article>`;
+    }).join("");
+  }
+
+  overlay.classList.add("open");
+}
+
+function fecharResumoCardCozinha(){
+  const overlay = document.getElementById("modalResumoOverlay");
+  if (overlay) overlay.classList.remove("open");
+}
+
+async function confirmarPeloResumoCozinha(pedidoId){
+  const pedido = (pedidosHoje || []).find(p => String(getPedidoId(p)) === String(pedidoId));
+  if (!pedido) return;
+  pedidoSelecionado = pedido;
+  await confirmarRetirada();
+  fecharResumoCardCozinha();
 }
 
 function abrirModal(id){
