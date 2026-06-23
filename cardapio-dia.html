@@ -536,7 +536,7 @@ carregarDadosReais();
       }else if(overlay){ overlay.remove(); }
     }catch(e){ console.warn('Bloqueio cardápio:', e); }
   }
-  window.addEventListener('load',()=>{verificarCardapioVisivel(); setInterval(verificarCardapioVisivel,10000);});
+  window.addEventListener('load',()=>{verificarCardapioVisivel(); setInterval(verificarCardapioVisivel,60000);});
 })();
 </script>
 
