@@ -272,7 +272,7 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("sharepoint.js?v=fix-ausencia-pedido-visivel-20260615");
+      return loadScript("sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623");
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
@@ -350,6 +350,49 @@ function formatarMotivoAusenciaMarcacao(motivo){
   if(n === "atestado") return "Atestado";
   if(n === "licenca" || n === "licença") return "Licença";
   return String(motivo || "Ausente");
+}
+
+function statusResolvePedidoSemana(p){
+  const s = norm(SP.pick(p,"Status","status") || "");
+  return [
+    "confirmado","travado","extra","aprovado",
+    "nao vai almocar","não vai almoçar","nao_vai_almocar",
+    "ferias","férias","afastado","atestado","licenca","licença","banco_horas","banco horas","homy_office","homy office","ausente","falta"
+  ].includes(s) || SP.isTrue(SP.pick(p,"Confirmado","confirmado"));
+}
+
+function statusAusenciaPedidoSemana(p){
+  const s = norm(SP.pick(p,"Status","status") || "");
+  return ["ferias","férias","afastado","atestado","licenca","licença","nao vai almocar","não vai almoçar","nao_vai_almocar","banco_horas","banco horas","homy_office","homy office","ausente","falta"].includes(s);
+}
+
+function colabIdPedido(p){
+  return String(SP.pick(p,"Colaborador_id","colaboradorId","ColaboradorId") || "").trim();
+}
+
+function diaPedidoKey(p){
+  return normDia(SP.pick(p,"Dia","dia") || "");
+}
+
+function colaboradorSemanaResolvida(colab, pedidosSemana){
+  const id = String(colab.id || "").trim();
+  const diasComPedido = new Set();
+  let motivoAusenciaAtual = "";
+  (pedidosSemana || []).forEach(p => {
+    if(id && colabIdPedido(p) !== id) return;
+    if(!statusResolvePedidoSemana(p)) return;
+    const dk = diaPedidoKey(p);
+    if(dk) diasComPedido.add(dk);
+    if(statusAusenciaPedidoSemana(p) && !motivoAusenciaAtual) {
+      motivoAusenciaAtual = formatarMotivoAusenciaMarcacao(SP.pick(p,"Status","status"));
+    }
+  });
+  const diasNecessarios = ["seg","ter","qua","qui","sex"];
+  const completo = diasNecessarios.every(d => diasComPedido.has(d));
+  return {
+    confirmado: completo,
+    statusLabel: completo ? (motivoAusenciaAtual || "Confirmado") : "Pendente"
+  };
 }
 
 async function salvarPedidoAusenciaNoDia(semanaId, colaborador, diaInfo, dataRef, motivo, observacao){
@@ -475,6 +518,17 @@ function getSemanaAtual(){
   const w1=new Date(d.getFullYear(),0,4);
   const wn=1+Math.round(((d-w1)/86400000-3+((w1.getDay()+6)%7))/7);
   return d.getFullYear()+"-W"+String(wn).padStart(2,"0");
+}
+
+async function getSemanaMarcacaoAlvo(){
+  try{
+    if(window.SP && typeof SP.getSemanaAlvoMarcacao === "function") {
+      return await SP.getSemanaAlvoMarcacao(getSemanaAtual());
+    }
+  } catch(e){
+    console.warn("[semana alvo] usando semana atual como fallback:", e);
+  }
+  return getSemanaAtual();
 }
 
 function getWeekDatesLocal(semanaId){
@@ -615,15 +669,38 @@ async function verificarBloqueioMarcacao(){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
-    const liberado = await SP.isCardapioLiberado().catch(()=>true);
+
+    const estado = typeof SP.getEstadoMarcacao === "function"
+      ? await SP.getEstadoMarcacao().catch(()=>null)
+      : null;
+
+    if(estado && estado.semanaId) SEMANA_ID = estado.semanaId;
+
+    const liberado = estado ? !!estado.liberada : await SP.isCardapioLiberado().catch(()=>true);
+    const prazo = estado ? estado.prazoLimite : await SP.getPrazoMarcacao().catch(()=>null);
+    atualizarBadgesPrazo(formatarPrazo(prazo));
+
+    if(!estado?.semanaId){
+      mostrarBloqueio("🔒 Marcação indisponível",
+        "Nenhuma semana alvo foi liberada pela Administração.",
+        false);
+      return false;
+    }
+
     if(!liberado){
       mostrarBloqueio("🔒 Marcação encerrada",
         "A marcação de refeições está bloqueada pelo administrador.",
         false);
       return false;
     }
-    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
-    atualizarBadgesPrazo(formatarPrazo(prazo));
+
+    if(estado?.prazoVencido){
+      mostrarBloqueio("⏰ Prazo encerrado",
+        "O prazo de marcação desta semana já foi encerrado.",
+        true);
+      return false;
+    }
+
     return true;
   } catch(e){
     console.warn("[prazo]",e);
@@ -652,7 +729,8 @@ async function carregarPrazo(){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
-    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
+    const estado = typeof SP.getEstadoMarcacao === "function" ? await SP.getEstadoMarcacao().catch(()=>null) : null;
+    const prazo = estado?.prazoLimite || await SP.getPrazoMarcacao().catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
   } catch(e){
     console.warn("[prazo]",e);
@@ -697,9 +775,13 @@ async function carregarDadosSharePoint(){
     const podeMarcar = await verificarBloqueioMarcacao();
     if(!podeMarcar) return;
 
-    SEMANA_ID = getSemanaAtual();
+    SEMANA_ID = SEMANA_ID || await getSemanaMarcacaoAlvo();
     const datas = getWeekDatesLocal(SEMANA_ID);
     DIAS_SEMANA.forEach((d,i)=>{ d.data = formatDataCurta(datas[i]); });
+
+    if(typeof SP.sincronizarAusenciasPedidosSemana === "function") {
+      await SP.sincronizarAusenciasPedidosSemana(SEMANA_ID).catch(e => console.warn("Sincronização Ausências → Pedidos ignorada no Marcar Refeição:", e));
+    }
 
     const [colabs, itensCardapio, pedidosExistentes] = await Promise.all([
       SP.getColaboradores().catch(()=>[]),
@@ -709,22 +791,16 @@ async function carregarDadosSharePoint(){
 
     CARDAPIO = mapCardapio(itensCardapio);
 
-    const idsConfirmados = new Set(
-      pedidosExistentes
-        .filter(p => {
-          const s = String(SP.pick(p,"Status","status")||"").toLowerCase();
-          return s === "confirmado" || SP.isTrue(SP.pick(p,"Confirmado","confirmado"));
-        })
-        .map(p => String(SP.pick(p,"Colaborador_id","colaboradorId")||""))
-    );
-
-    FUNCIONARIOS = colabs.map(c=>({
-      id:         String(c.id||""),
-      nome:       String(SP.pick(c,"Nome","Title")||"Sem nome"),
-      dept:       String(SP.pick(c,"Departamento","")||""),
-      cc:         String(SP.pick(c,"Centro_Custo","Centro Custo","Centro de Custo","CentroCusto","Centro_x0020_Custo","Centro_x005f_Custo","CC","Setor","Departamento")||""),
-      confirmado: idsConfirmados.has(String(c.id||""))
-    })).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+    FUNCIONARIOS = colabs.map(c=>{
+      const base = {
+        id:         String(c.id||""),
+        nome:       String(SP.pick(c,"Nome","Title")||"Sem nome"),
+        dept:       String(SP.pick(c,"Departamento","")||""),
+        cc:         String(SP.pick(c,"Centro_Custo","Centro Custo","Centro de Custo","CentroCusto","Centro_x0020_Custo","Centro_x005f_Custo","CC","Setor","Departamento")||"")
+      };
+      const statusSemana = colaboradorSemanaResolvida(base, pedidosExistentes);
+      return {...base, confirmado: statusSemana.confirmado, statusLabel: statusSemana.statusLabel};
+    }).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
 
     renderFuncs(FUNCIONARIOS);
     carregarPrazo();
@@ -755,7 +831,7 @@ function renderFuncs(lista){
       '<div class="func-info">'+
         '<div class="func-name">'+esc(func.nome)+'</div>'+
         (func.dept?'<div class="func-dept">'+esc(func.dept)+'</div>':'')+
-        '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+(func.confirmado?"Confirmado":"Pendente")+'</span>'+
+        '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+(func.statusLabel || (func.confirmado?"Confirmado":"Pendente"))+'</span>'+
       '</div>';
     if(!func.confirmado) card.addEventListener("click",()=>selecionarFunc(func));
     grid.appendChild(card);
