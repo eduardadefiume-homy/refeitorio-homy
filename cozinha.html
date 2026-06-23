@@ -567,6 +567,7 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🥩</div><div class="cozinha-stat-value" id="cozDashCarne">0</div><div class="cozinha-stat-label">Carne</div></div>
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍝</div><div class="cozinha-stat-value" id="cozDashMassa">0</div><div class="cozinha-stat-label">Massa</div></div>
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍔</div><div class="cozinha-stat-value" id="cozDashLanche">0</div><div class="cozinha-stat-label">Lanche</div></div>
+        <div class="cozinha-stat-card"><div class="cozinha-stat-icon">🍱</div><div class="cozinha-stat-value" id="cozDashMarmitas">0</div><div class="cozinha-stat-label">Marmitas</div></div>
         <div class="cozinha-stat-card"><div class="cozinha-stat-icon">📦</div><div class="cozinha-stat-value" id="cozDashPendentes">0</div><div class="cozinha-stat-label">A retirar</div></div>
       </div>
     </section>
@@ -634,9 +635,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=fix-ausencia-pedido-visivel-20260615")
-        .catch(function(){ return loadScript("./sharepoint.js?v=fix-ausencia-pedido-visivel-20260615"); })
-        .catch(function(){ return loadScript("../sharepoint.js?v=fix-ausencia-pedido-visivel-20260615"); });
+      return loadScript("sharepoint.js?v=integridade-extras-ausencias-20260623")
+        .catch(function(){ return loadScript("./sharepoint.js?v=integridade-extras-ausencias-20260623"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=integridade-extras-ausencias-20260623"); });
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -662,6 +663,21 @@ let checkinsConfirmadosLocal = new Set();
 // ---- helpers ----
 function normalizar(v){ return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
 function itemValor(obj,...keys){ for(const k of keys){ if(obj && obj[k] != null) return obj[k]; } return ""; }
+function dataISOCozinha(v){
+  if(!v) return "";
+  const s = String(v);
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const d = new Date(s);
+  if(isNaN(d)) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const dia = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${dia}`;
+}
+function dataRefCozinha(semanaId, dia){
+  try { if(window.SP?.getDataRefBySemanaDia) return window.SP.getDataRefBySemanaDia(semanaId, dia); } catch(_) {}
+  return new Date().toISOString().slice(0,10);
+}
 function esc(v){ return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
 function getNome(p){ return itemValor(p,"Colaborador_nome","Title","Nome"); }
 function getOpcao(p){ return itemValor(p,"Opcao","opcao","Nome_Prato"); }
@@ -776,9 +792,13 @@ function isPedidoExtraCozinha(p){
   const titulo = normalizar(itemValor(p,"Title","Nome"));
 
   return origem.includes("extra") || origem.includes("investigador") || origem.includes("guarda") ||
+         origem.includes("prestador") || origem.includes("fornecedor") || origem.includes("representante") || origem.includes("motorista") || origem.includes("visitante") ||
          tipo.includes("extra")   || tipo.includes("investigador")   || tipo.includes("guarda")   ||
+         tipo.includes("prestador") || tipo.includes("fornecedor") || tipo.includes("representante") || tipo.includes("motorista") || tipo.includes("visitante") ||
          nome.includes("refeicao extra") || nome.includes("investigador") || nome.includes("guarda") ||
-         titulo.includes("refeicao extra") || titulo.includes("investigador") || titulo.includes("guarda");
+         nome.includes("prestador") || nome.includes("fornecedor") || nome.includes("representante") || nome.includes("motorista") ||
+         titulo.includes("refeicao extra") || titulo.includes("investigador") || titulo.includes("guarda") ||
+         titulo.includes("prestador") || titulo.includes("fornecedor") || titulo.includes("representante") || titulo.includes("motorista");
 }
 
 // Mantido por compatibilidade com versões anteriores.
@@ -862,6 +882,11 @@ function chaveHumanaExtraCozinha(p){
   let tipo = tipoRaw;
   if (nome.includes("guarda") || tipoRaw.includes("guarda")) tipo = "guarda";
   else if (nome.includes("investigador") || tipoRaw.includes("investigador")) tipo = "investigador";
+  else if (nome.includes("prestador") || tipoRaw.includes("prestador")) tipo = "prestador";
+  else if (nome.includes("fornecedor") || tipoRaw.includes("fornecedor")) tipo = "fornecedor";
+  else if (nome.includes("representante") || tipoRaw.includes("representante")) tipo = "representante";
+  else if (nome.includes("motorista") || tipoRaw.includes("motorista")) tipo = "motorista";
+  else if (nome.includes("visitante") || tipoRaw.includes("visitante")) tipo = "visitante";
   else if (nome.includes("refeicao extra") || tipoRaw.includes("extra")) tipo = "extra";
   return `${dia}|${tipo}|${nome || tipo}`;
 }
@@ -1038,8 +1063,10 @@ function incluirAusenciasSemPedidoCozinha(lista, ausencias, semanaId, dia){
 
   (ausencias || []).forEach(a => {
     if(!ausenciaAtivaCozinha(a)) return;
-    const ini = String(itemValor(a,"Data_Inicio","Inicio","DataInicio") || "").slice(0,10);
-    const fim = String(itemValor(a,"Data_Fim","Fim","DataFim") || ini || "").slice(0,10);
+    const ativo = itemValor(a,"Ativo","ativo");
+    if (ativo !== "" && window.SP?.isTrue && !window.SP.isTrue(ativo)) return;
+    const ini = dataISOCozinha(itemValor(a,"Data_Inicio","Inicio","DataInicio"));
+    const fim = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || ini;
     if(!ini || !fim || dataRef < ini || dataRef > fim) return;
 
     const cid = String(itemValor(a,"Colaborador_id","colaborador_id","ColaboradorId") || "").trim();
@@ -1094,6 +1121,9 @@ async function sincronizar(silencioso = false){
 
     // A lista de ausências NÃO pode impedir a cozinha de abrir.
     // Se a lista não existir no SharePoint, seguimos com os pedidos normalmente.
+    if (typeof window.SP.garantirExtrasComoPedidos === "function") {
+      await window.SP.garantirExtrasComoPedidos(semanaId).catch(e => console.warn("Reparação de extras ignorada na cozinha:", e));
+    }
     const pedidos = await window.SP.getPedidos(semanaId);
     const extras = await carregarExtrasCozinhaSeguros(semanaId, dia);
     const ausencias = await carregarAusenciasSeguras();
@@ -1111,19 +1141,21 @@ async function sincronizar(silencioso = false){
 
     pedidosHoje = juntarPedidosEExtrasCozinha(pedidosFiltrados, extras);
 
-    const hoje = new Date().toISOString().slice(0,10);
+    const dataRef = dataRefCozinha(semanaId, dia);
     pedidosHoje = pedidosHoje.map(p => {
       const cid = String(getColaboradorId(p));
       const nome = normalizar(getNome(p));
       const ausenciaEncontrada = (ausencias || []).find(a => {
+        const ativo = itemValor(a,"Ativo","ativo");
+        if (ativo !== "" && window.SP?.isTrue && !window.SP.isTrue(ativo)) return false;
         const aCid = String(itemValor(a,"Colaborador_id","colaborador_id") || "");
         const aNome = normalizar(itemValor(a,"Colaborador_nome","Nome","Title") || "");
         const mesmoColab = (cid && aCid && aCid === cid) || (nome && aNome && aNome === nome);
         if (!mesmoColab) return false;
-        const ini = itemValor(a,"Data_Inicio","Inicio","DataInicio");
-        const fim = itemValor(a,"Data_Fim","Fim","DataFim");
+        const ini = dataISOCozinha(itemValor(a,"Data_Inicio","Inicio","DataInicio"));
+        const fim = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || ini;
         if (!ini || !fim) return false;
-        return hoje >= String(ini).slice(0,10) && hoje <= String(fim).slice(0,10);
+        return dataRef >= ini && dataRef <= fim;
       });
       if (ausenciaEncontrada) {
         const motivo = formatarMotivoAusenciaCozinha(itemValor(ausenciaEncontrada,"Motivo","motivo","Status","status") || "Ausente");
@@ -1230,6 +1262,20 @@ function ordenarListaCozinha(a,b){
 }
 
 
+function isMarmitaCozinha(p){
+  const nome = normalizar(getNome(p));
+  const tipo = normalizar(itemValor(p,"tipo","Tipo") || "");
+  const origem = normalizar(itemValor(p,"Origem","origem") || "");
+
+  const isGuarda = nome === "guarda" || /^guarda\s*\d*$/.test(nome) ||
+                   tipo.includes("guarda") || origem.includes("guarda");
+
+  const isInvestigador = /^investigador(?:\s*\d+)?$/.test(nome) ||
+                         tipo.includes("investigador") || origem.includes("investigador");
+
+  return isGuarda || isInvestigador;
+}
+
 function setTxtCozinha(id, valor){
   const el = document.getElementById(id);
   if (el) el.textContent = String(valor ?? 0);
@@ -1238,12 +1284,15 @@ function setTxtCozinha(id, valor){
 function atualizarResumoCozinha(){
   const validos = (pedidosHoje || []).filter(p => !(isAusente(p) || p?._ausente));
   const entregues = validos.filter(isCheckinFeito).length;
-  const resumo = { principal:0, light:0, carne:0, massa:0, lanche:0, extras:0 };
+  const resumo = { principal:0, light:0, carne:0, massa:0, lanche:0, marmitas:0 };
 
   validos.forEach(p => {
     const op = normalizar(getOpcao(p));
     if (Object.prototype.hasOwnProperty.call(resumo, op)) resumo[op]++;
-    if (isPedidoExtraCozinha(p) || p?._extraCozinha || String(getColaboradorId(p) || "").startsWith("extra-")) resumo.extras++;
+
+    // Regra Homy: marmita no resumo da cozinha conta somente Guarda e Investigadores.
+    // Prestadores, visitantes, representantes e extra automático continuam apenas nas opções.
+    if (isMarmitaCozinha(p)) resumo.marmitas++;
   });
 
   setTxtCozinha("cozDashConfirmados", validos.length);
@@ -1252,6 +1301,7 @@ function atualizarResumoCozinha(){
   setTxtCozinha("cozDashCarne", resumo.carne);
   setTxtCozinha("cozDashMassa", resumo.massa);
   setTxtCozinha("cozDashLanche", resumo.lanche);
+  setTxtCozinha("cozDashMarmitas", resumo.marmitas);
   setTxtCozinha("cozDashPendentes", Math.max(validos.length - entregues, 0));
 
   const sync = document.getElementById("cozDashAtualizado");
