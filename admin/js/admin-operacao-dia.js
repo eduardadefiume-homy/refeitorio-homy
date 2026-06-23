@@ -1,5 +1,5 @@
 // admin-operacao-dia.js — Operação do Dia do Admin Homy · integridade extras/ausências
-// Correção: operação do dia deduplica pedidos, mostra ausências sem pedido espelho e sincroniza todos os extras/investigadores.
+// Correção: operação deduplica pedidos, sincroniza ausências como pedidos e aplica retorno automático como Principal.
 
 const AdminOperacao = window.AdminOperacao = {
   _lista: [],
@@ -146,9 +146,9 @@ const AdminOperacao = window.AdminOperacao = {
   },
 
   _ausenciaAtiva(a) {
+    const status = this._norm(this._pick(a, "Status", "status", "Status_Ausencia"));
+    if (["inativo", "cancelado", "encerrado", "periodo encerrado", "período encerrado", "false", "nao", "não", "0"].includes(status)) return false;
     const ativo = this._pick(a, "Ativo", "ativo");
-    const status = this._norm(this._pick(a, "Status", "status"));
-    if (["inativo", "cancelado", "false", "nao", "não", "0"].includes(status)) return false;
     if (ativo === "") return true;
     return SP.isTrue ? SP.isTrue(ativo) : !!ativo;
   },
@@ -447,6 +447,95 @@ const AdminOperacao = window.AdminOperacao = {
   },
 
 
+
+
+  async _buscarColaboradoresAtivos() {
+    const tentativas = [
+      () => SP.getTodosColaboradores?.(),
+      () => SP.getColaboradores?.(),
+      () => SP.getItems?.("Colaboradores")
+    ];
+    for (const fn of tentativas) {
+      try {
+        const r = await fn();
+        if (Array.isArray(r)) {
+          return r.filter(c => {
+            const ativo = this._pick(c, "Ativo", "ativo");
+            if (ativo === "") return true;
+            return SP.isTrue ? SP.isTrue(ativo) : !!ativo;
+          });
+        }
+      } catch (_) {}
+    }
+    return [];
+  },
+
+  _colabKeyFromColaborador(c) {
+    const id = String(this._pick(c, "id", "ID", "Colaborador_id", "Matricula", "Matrícula") || "").trim();
+    if (id) return `id:${id}`;
+    const nome = this._norm(this._pick(c, "Nome", "Title", "Colaborador_nome"));
+    return `nome:${nome}`;
+  },
+
+  _colabKeyFromPedido(p) {
+    const id = String(this._pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    if (id) return `id:${id}`;
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+    return `nome:${nome}`;
+  },
+
+  _colabAusenteNoDia(c, ausencias, semanaId, dia) {
+    const dataRef = this._dataPorDia(semanaId, dia);
+    const keyColab = this._colabKeyFromColaborador(c);
+    return (ausencias || []).some(a => {
+      if (!this._ausenciaAtiva(a)) return false;
+      const keyAus = this._colabKeyFromColaborador({
+        id: this._pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+        Nome: this._pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
+      });
+      if (keyAus !== keyColab) return false;
+      const ini = this._ausenciaInicio(a);
+      const fim = this._ausenciaFim(a);
+      return !!ini && !!fim && ini <= dataRef && fim >= dataRef;
+    });
+  },
+
+  _incluirColaboradoresSemPedido(lista, colaboradores, ausencias, semanaId, dia) {
+    const resultado = [...(lista || [])];
+    const existentes = new Set(resultado
+      .filter(p => !this._isExtraPedido(p) && !p._virtualExtra)
+      .map(p => this._colabKeyFromPedido(p)));
+
+    for (const c of (colaboradores || [])) {
+      const key = this._colabKeyFromColaborador(c);
+      if (!key || key === "nome:") continue;
+      if (existentes.has(key)) continue;
+      if (this._colabAusenteNoDia(c, ausencias, semanaId, dia)) continue;
+
+      const id = String(this._pick(c, "id", "ID", "Matricula", "Matrícula") || "").trim();
+      const nome = this._pick(c, "Nome", "Title", "Colaborador_nome") || "Colaborador sem nome";
+      const cc = this._formatarCC(this._pick(c, "Centro_Custo", "CentroCusto", "Centro Custo", "Centro de Custo", "Departamento", "Setor") || "Sem setor");
+      resultado.push({
+        id: `pendente-${(id || this._norm(nome)).replace(/[^a-zA-Z0-9_-]/g, "")}-${this._norm(dia)}`,
+        _virtualPendente: true,
+        Semana_id: semanaId,
+        Colaborador_id: id,
+        Colaborador_nome: nome,
+        Dia: dia,
+        Opcao: "principal",
+        Nome_Prato: "Sem marcação",
+        Confirmado: false,
+        Centro_Custo: cc,
+        Status: "Pendente",
+        Origem: "Sem pedido",
+        Observacao: "Colaborador ativo sem pedido para este dia. Ausências encerradas não bloqueiam a exibição."
+      });
+      existentes.add(key);
+    }
+
+    return resultado;
+  },
+
   _incluirAusenciasSemPedido(lista, ausencias, semanaId, dia) {
     const dataRef = this._dataPorDia(semanaId, dia);
     if (!dataRef) return lista || [];
@@ -499,12 +588,18 @@ const AdminOperacao = window.AdminOperacao = {
     try {
       await SP.init();
       const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
+      if (typeof SP.sincronizarAusenciasPedidosSemana === "function") {
+        await SP.sincronizarAusenciasPedidosSemana(semanaId).catch(e => console.warn("[Operação] Sincronização Ausências → Pedidos ignorada:", e));
+      } else if (typeof SP.sincronizarAusenciasEncerradas === "function") {
+        await SP.sincronizarAusenciasEncerradas().catch(e => console.warn("[Operação] Sincronização de ausências encerradas ignorada:", e));
+      }
       if (typeof SP.garantirExtrasComoPedidos === "function") {
         await SP.garantirExtrasComoPedidos(semanaId).catch(e => console.warn("[Operação] Reparação de extras ignorada:", e));
       }
-      let [pedidos, ausencias] = await Promise.all([
+      let [pedidos, ausencias, colaboradoresAtivos] = await Promise.all([
         SP.getPedidos(semanaId),
-        this._buscarAusencias()
+        this._buscarAusencias(),
+        this._buscarColaboradoresAtivos()
       ]);
       pedidos = await this._sincronizarExtrasParaPedidos(semanaId, dia, pedidos);
 
@@ -530,6 +625,10 @@ const AdminOperacao = window.AdminOperacao = {
       // Se a ausência foi cadastrada no módulo Ausências ou no Marcar Refeição
       // mas ainda não existe um pedido espelho, a Operação do Dia também precisa mostrar.
       lista = this._incluirAusenciasSemPedido(lista, ausencias, semanaId, dia);
+
+      // Colaborador ativo sem pedido precisa aparecer como Pendente.
+      // Caso a ausência tenha encerrado ontem, ele volta a aparecer hoje.
+      lista = this._incluirColaboradoresSemPedido(lista, colaboradoresAtivos, ausencias, semanaId, dia);
 
       this._lista = lista;
 
@@ -613,7 +712,7 @@ const AdminOperacao = window.AdminOperacao = {
           <button class="btn-icon" ${disabled} title="Confirmar" onclick="AdminOperacao.alterarStatus('${id}','Confirmado')">✅</button>
           <button class="btn-icon danger" ${disabled} title="Cancelar" onclick="AdminOperacao.alterarStatus('${id}','Cancelado')">❌</button>
           <button class="btn-icon" ${disabled} title="Não vai almoçar" onclick="AdminOperacao.alterarStatus('${id}','Não vai almoçar')">🚫</button>
-          ${(!isEx && !p._virtualAusencia && !p._virtualExtra) ? `<button class="btn-icon" ${disabled} title="Refeição adicional" onclick="AdminOperacao.abrirAdicional('${id}')">➕</button>` : ""}
+          ${(!isEx && !p._virtualAusencia && !p._virtualExtra && !p._virtualPendente) ? `<button class="btn-icon" ${disabled} title="Refeição adicional" onclick="AdminOperacao.abrirAdicional('${id}')">➕</button>` : ""}
           <button class="btn-icon danger" ${disabled} title="Excluir" onclick="AdminOperacao.excluir('${id}')">🗑️</button>
         </div></td>
       </tr>`;
