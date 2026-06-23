@@ -19,6 +19,17 @@ const SP = {
   _listIds:      {},
   _columnCache:   {},
 
+  // Cache curto para reduzir chamadas repetidas ao Graph.
+  // A fonte da verdade continua sendo o SharePoint; o cache é só de leitura e expira rápido.
+  _itemsCache: {},
+  _pendingItemRequests: {},
+  _repairCache: {},
+  _repairRunning: {},
+  _ausenciasEncerradasLastRun: 0,
+  _ITEMS_CACHE_TTL_MS: 15000,
+  _CONFIG_CACHE_TTL_MS: 45000,
+  _REPAIR_TTL_MS: 180000,
+
   // ============================================================
   // UTILITÁRIOS
   // ============================================================
@@ -243,6 +254,120 @@ const SP = {
     return out;
   },
 
+
+  // ============================================================
+  // PERFORMANCE / CACHE
+  // ============================================================
+  _cloneItems(items) {
+    return (items || []).map(i => ({ ...i }));
+  },
+
+  _cacheTTL(listName) {
+    const n = String(listName || "").toLowerCase();
+    if (n.includes("config")) return this._CONFIG_CACHE_TTL_MS;
+    return this._ITEMS_CACHE_TTL_MS;
+  },
+
+  clearListCache(listName) {
+    if (!listName) return;
+    delete this._itemsCache[listName];
+    if (String(listName).toLowerCase().includes("config")) delete this._itemsCache["Configurações"];
+  },
+
+  clearAllCache() {
+    this._itemsCache = {};
+    this._pendingItemRequests = {};
+  },
+
+  _emitSync(tipo = "dados", detalhe = "") {
+    const payload = { tipo, detalhe, ts: Date.now() };
+    try { localStorage.setItem("homy_refeitorio_sync", JSON.stringify(payload)); } catch (_) {}
+    try {
+      if (!this._syncChannel) this._syncChannel = new BroadcastChannel("homy-refeitorio-sync");
+      this._syncChannel.postMessage(payload);
+    } catch (_) {}
+  },
+
+  _reparoMudouDados(r) {
+    if (!r) return false;
+    return !!(
+      r.criados || r.atualizados || r.ignoradosAtualizados ||
+      r.ausenciasCriadas || r.ausenciasAtualizadas ||
+      r.retornoCriados || r.retornoAtualizados ||
+      r.duplicadasInativadas || r.encerradas
+    );
+  },
+
+  async repararIntegridadeSemana(semanaId, options = {}) {
+    if (!semanaId) return { executado: false, motivo: "sem semana" };
+    const force = !!options.force;
+    const now = Date.now();
+    const last = this._repairCache[semanaId] || 0;
+
+    if (!force && last && (now - last) < this._REPAIR_TTL_MS) {
+      return { executado: false, motivo: "reparo recente" };
+    }
+    if (this._repairRunning[semanaId]) {
+      return this._repairRunning[semanaId];
+    }
+
+    this._repairCache[semanaId] = now;
+    const run = (async () => {
+      const resultado = {
+        executado: true,
+        extras: null,
+        ausencias: null,
+        mudouDados: false
+      };
+      try {
+        let pedidosBase = options.pedidosBase || null;
+        if (!pedidosBase) {
+          const todos = await this.getItems("Pedidos", { force: !!force });
+          pedidosBase = (todos || []).filter(i => this.pick(i, "Semana_id") === semanaId);
+        }
+
+        if (typeof this.sincronizarAusenciasPedidosSemana === "function") {
+          resultado.ausencias = await this.sincronizarAusenciasPedidosSemana(semanaId, pedidosBase)
+            .catch(e => ({ erro: e.message || String(e) }));
+        } else if (typeof this.sincronizarAusenciasEncerradas === "function") {
+          resultado.ausencias = await this.sincronizarAusenciasEncerradas(null, { force })
+            .catch(e => ({ erro: e.message || String(e) }));
+        }
+
+        if (typeof this.garantirExtrasComoPedidos === "function") {
+          resultado.extras = await this.garantirExtrasComoPedidos(semanaId, pedidosBase)
+            .catch(e => ({ erro: e.message || String(e) }));
+        }
+
+        resultado.mudouDados = this._reparoMudouDados(resultado.ausencias) || this._reparoMudouDados(resultado.extras);
+        if (resultado.mudouDados) {
+          this.clearListCache("Pedidos");
+          this.clearListCache("Ausencias do Refeitorio");
+          this.clearListCache("Extras");
+          this._emitSync("integridade", semanaId);
+        }
+        return resultado;
+      } finally {
+        delete this._repairRunning[semanaId];
+      }
+    })();
+
+    this._repairRunning[semanaId] = run;
+    return run;
+  },
+
+  agendarReparoIntegridadeSemana(semanaId, pedidosBase = null) {
+    if (!semanaId) return;
+    const now = Date.now();
+    const last = this._repairCache[semanaId] || 0;
+    if (last && (now - last) < this._REPAIR_TTL_MS) return;
+    setTimeout(() => {
+      this.repararIntegridadeSemana(semanaId, { pedidosBase }).catch(e =>
+        console.warn("[SharePoint] Reparo de integridade em segundo plano ignorado:", e)
+      );
+    }, 50);
+  },
+
   // ============================================================
   // SITE E LISTAS
   // ============================================================
@@ -285,22 +410,49 @@ const SP = {
     return list.id;
   },
 
-  async getItems(listName) {
-    const siteId = await this.getSiteId();
-    const listId = await this.getListId(listName);
+  async getItems(listName, options = {}) {
+    const force = !!options.force;
+    const ttl = Number.isFinite(options.ttl) ? options.ttl : this._cacheTTL(listName);
+    const key = String(listName || "");
+    const now = Date.now();
+    const cached = this._itemsCache[key];
 
-    let   items    = [];
-    let   endpoint = `/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=500`;
-
-    while (endpoint) {
-      const data = await this.graph("GET", endpoint);
-      items.push(...(data?.value || []));
-      endpoint = data?.["@odata.nextLink"]
-        ? data["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "")
-        : null;
+    if (!force && cached && (now - cached.ts) < ttl) {
+      return this._cloneItems(cached.data);
     }
 
-    return items.map(i => ({ id: i.id, ...i.fields }));
+    if (!force && this._pendingItemRequests[key]) {
+      const data = await this._pendingItemRequests[key];
+      return this._cloneItems(data);
+    }
+
+    const request = (async () => {
+      const siteId = await this.getSiteId();
+      const listId = await this.getListId(listName);
+
+      let items = [];
+      let endpoint = `/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=500`;
+
+      while (endpoint) {
+        const data = await this.graph("GET", endpoint);
+        items.push(...(data?.value || []));
+        endpoint = data?.["@odata.nextLink"]
+          ? data["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "")
+          : null;
+      }
+
+      const mapped = items.map(i => ({ id: i.id, ...i.fields }));
+      this._itemsCache[key] = { ts: Date.now(), data: mapped };
+      return mapped;
+    })();
+
+    this._pendingItemRequests[key] = request;
+    try {
+      const data = await request;
+      return this._cloneItems(data);
+    } finally {
+      delete this._pendingItemRequests[key];
+    }
   },
 
   async getListColumns(listName) {
@@ -422,25 +574,34 @@ const SP = {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
     const mappedFields = await this._mapFieldsToListColumns(listName, fields);
-    return this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, {
+    const result = await this.graph("POST", `/sites/${siteId}/lists/${listId}/items`, {
       fields: mappedFields
     });
+    this.clearListCache(listName);
+    this._emitSync(String(listName || "").toLowerCase(), "create");
+    return result;
   },
 
   async updateItem(listName, itemId, fields) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
     const mappedFields = await this._mapFieldsToListColumns(listName, fields);
-    return this.graph("PATCH",
+    const result = await this.graph("PATCH",
       `/sites/${siteId}/lists/${listId}/items/${itemId}/fields`,
       mappedFields
     );
+    this.clearListCache(listName);
+    this._emitSync(String(listName || "").toLowerCase(), "update");
+    return result;
   },
 
   async deleteItem(listName, itemId) {
     const siteId = await this.getSiteId();
     const listId = await this.getListId(listName);
-    return this.graph("DELETE", `/sites/${siteId}/lists/${listId}/items/${itemId}`);
+    const result = await this.graph("DELETE", `/sites/${siteId}/lists/${listId}/items/${itemId}`);
+    this.clearListCache(listName);
+    this._emitSync(String(listName || "").toLowerCase(), "delete");
+    return result;
   },
 
   // ============================================================
@@ -528,41 +689,15 @@ const SP = {
   // ============================================================
   // PEDIDOS
   // ============================================================
-  async getPedidos(semanaId) {
-    let items = await this.getItems("Pedidos");
-    let pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
+  async getPedidos(semanaId, options = {}) {
+    const items = await this.getItems("Pedidos", { force: !!options.force, ttl: this._ITEMS_CACHE_TTL_MS });
+    const pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
 
-    // Garantia de integridade entre Ausências e Pedidos.
-    // Regra oficial: ausência cadastrada no Admin precisa refletir em Pedidos
-    // para que Marcar Refeição, Operação do Dia, Cozinha, Dashboard e Relatórios
-    // leiam a mesma verdade do SharePoint.
-    if (semanaId && !this._sincronizandoAusenciasPedidos) {
-      try {
-        const rAus = await this.sincronizarAusenciasPedidosSemana(semanaId, pedidos);
-        if (rAus && (rAus.ausenciasCriadas || rAus.ausenciasAtualizadas || rAus.retornoCriados || rAus.retornoAtualizados || rAus.duplicadasInativadas)) {
-          items = await this.getItems("Pedidos");
-          pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
-        }
-      } catch (e) {
-        console.warn("[SharePoint] Não foi possível sincronizar ausências com pedidos. A tela seguirá com os dados disponíveis.", e);
-      }
-    }
-
-    // Garantia de integridade entre Extras e Pedidos.
-    // Regra oficial: todo item da lista Extras deve possuir um Pedido espelho,
-    // pois Operação do Dia, Cozinha, Dashboard e Relatórios leem Pedidos como base.
-    // Se alguém lançou o extra no SharePoint ou houve falha anterior no espelho,
-    // o sistema repara automaticamente antes de devolver a lista.
-    if (semanaId && !this._sincronizandoExtrasComoPedidos) {
-      try {
-        const r = await this.garantirExtrasComoPedidos(semanaId, pedidos);
-        if (r && (r.criados || r.atualizados)) {
-          items = await this.getItems("Pedidos");
-          pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
-        }
-      } catch (e) {
-        console.warn("[SharePoint] Não foi possível garantir extras como pedidos. A tela ainda pode usar fallback visual.", e);
-      }
+    // Performance: a integridade pesada (ausências/extras → pedidos) roda em segundo plano
+    // e com intervalo mínimo. A tela carrega rápido usando a última verdade do SharePoint
+    // e recebe atualização automática quando o reparo terminar.
+    if (semanaId && options.reparar !== false) {
+      this.agendarReparoIntegridadeSemana(semanaId, pedidos);
     }
 
     return pedidos;
@@ -1077,22 +1212,26 @@ const SP = {
   // CONFIGURAÇÕES
   // ============================================================
   async getConfig(chave) {
-    const items = await this.getItems("Configurações");
-    const item  = items.find(i =>
+    const items = await this.getItems("Configurações", { ttl: this._CONFIG_CACHE_TTL_MS });
+    const item = items.find(i =>
       this.pick(i, "Chave") === chave || this.pick(i, "Title") === chave
     );
     return item ? this.pick(item, "Valor") : null;
   },
 
   async setConfig(chave, valor, descricao = "") {
-    const items   = await this.getItems("Configurações");
+    const items = await this.getItems("Configurações", { force: true });
     const existing = items.find(i =>
       this.pick(i, "Chave") === chave || this.pick(i, "Title") === chave
     );
     const fields = { Valor: valor };
     if (descricao) fields.Descricao = descricao;
-    if (existing) return this.updateItem("Configurações", existing.id, fields);
-    return this.createItem("Configurações", { Title: chave, Chave: chave, Valor: valor, Descricao: descricao || "" });
+    let result;
+    if (existing) result = await this.updateItem("Configurações", existing.id, fields);
+    else result = await this.createItem("Configurações", { Title: chave, Chave: chave, Valor: valor, Descricao: descricao || "" });
+    this.clearListCache("Configurações");
+    this._emitSync("configuracoes", chave);
+    return result;
   },
 
   addDias(date, dias) {
@@ -1331,8 +1470,13 @@ const SP = {
     return !!fim && fim < ref;
   },
 
-  async sincronizarAusenciasEncerradas(dataRef = null) {
+  async sincronizarAusenciasEncerradas(dataRef = null, options = {}) {
     const hoje = dataRef || this._hojeISO();
+    const now = Date.now();
+    if (!options.force && this._ausenciasEncerradasLastRun && (now - this._ausenciasEncerradasLastRun) < this._REPAIR_TTL_MS) {
+      return { verificadas: 0, encerradas: 0, ignorado: "verificação recente" };
+    }
+    this._ausenciasEncerradasLastRun = now;
     const lista = "Ausencias do Refeitorio";
     let items = [];
     try {
@@ -1371,8 +1515,8 @@ const SP = {
   },
 
   async getAusencias(apenasAtivas = true) {
-    await this.sincronizarAusenciasEncerradas().catch(e => console.warn("[SharePoint] Sincronização de ausências encerradas ignorada:", e));
-    const items = await this.getItems("Ausencias do Refeitorio");
+    this.sincronizarAusenciasEncerradas().catch(e => console.warn("[SharePoint] Sincronização de ausências encerradas ignorada:", e));
+    const items = await this.getItems("Ausencias do Refeitorio", { ttl: this._ITEMS_CACHE_TTL_MS });
     if (!apenasAtivas) return items;
     const hoje = this._hojeISO();
     return items.filter(i => this._ausenciaAtivaPorCampo(i) && !this.ausenciaPeriodoEncerrado(i, hoje));
