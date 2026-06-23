@@ -687,6 +687,7 @@ let checkinsHoje = [];
 let pedidoSelecionado = null;
 let cozinhaSyncTimer = null;
 let cozinhaSyncEmAndamento = false;
+let cozinhaSyncUltimoInicio = 0;
 let cozinhaSyncChannel = null;
 let checkinsConfirmadosLocal = new Set();
 
@@ -1132,8 +1133,11 @@ async function carregarAusenciasSeguras(){
   return [];
 }
 
-async function sincronizar(silencioso = false){
+async function sincronizar(silencioso = false, force = false){
+  const agora = Date.now();
   if (cozinhaSyncEmAndamento) return;
+  if (!force && silencioso && cozinhaSyncUltimoInicio && (agora - cozinhaSyncUltimoInicio) < 12000) return;
+  cozinhaSyncUltimoInicio = agora;
   cozinhaSyncEmAndamento = true;
   const lista = document.getElementById("lista");
   const sync = document.getElementById("cozDashAtualizado");
@@ -1150,11 +1154,13 @@ async function sincronizar(silencioso = false){
     await carregarCardapio(semanaId, dia);
 
     // A lista de ausências NÃO pode impedir a cozinha de abrir.
-    // Se a lista não existir no SharePoint, seguimos com os pedidos normalmente.
-    if (typeof window.SP.garantirExtrasComoPedidos === "function") {
-      await window.SP.garantirExtrasComoPedidos(semanaId).catch(e => console.warn("Reparação de extras ignorada na cozinha:", e));
+    // Reparos pesados rodam em segundo plano para não travar a tela.
+    if (typeof window.SP.repararIntegridadeSemana === "function") {
+      window.SP.repararIntegridadeSemana(semanaId).then(r => {
+        if (r?.mudouDados) setTimeout(() => sincronizar(true, true).catch(console.warn), 900);
+      }).catch(e => console.warn("Reparo de integridade ignorado na cozinha:", e));
     }
-    const pedidos = await window.SP.getPedidos(semanaId);
+    const pedidos = await window.SP.getPedidos(semanaId, { reparar: false, force });
     const extras = await carregarExtrasCozinhaSeguros(semanaId, dia);
     const ausencias = await carregarAusenciasSeguras();
 
@@ -1229,7 +1235,7 @@ async function forcarSincronizarCozinha(){
   const old = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.textContent = "⏳ Atualizando..."; }
   try {
-    await sincronizar(false);
+    await sincronizar(false, true);
     mostrarToast("Lista atualizada");
   } catch (e) {
     console.warn("Atualização manual da cozinha:", e);
@@ -1668,22 +1674,22 @@ function emailAtualSP(){
 
 function ativarSyncTempoRealCozinha(){
   if (cozinhaSyncTimer) clearInterval(cozinhaSyncTimer);
-  cozinhaSyncTimer = setInterval(() => sincronizar(true).catch(console.warn), 7000);
+  cozinhaSyncTimer = setInterval(() => sincronizar(true).catch(console.warn), 30000);
 
-  window.addEventListener("focus", () => sincronizar(true).catch(console.warn));
+  window.addEventListener("focus", () => sincronizar(true, true).catch(console.warn));
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) sincronizar(true).catch(console.warn);
+    if (!document.hidden) sincronizar(true, true).catch(console.warn);
   });
-  window.addEventListener("online", () => sincronizar(true).catch(console.warn));
+  window.addEventListener("online", () => sincronizar(true, true).catch(console.warn));
   window.addEventListener("storage", e => {
     if (e.key === "homy_cozinha_checkin_sync" || e.key === "homy_refeitorio_sync") {
-      sincronizar(true).catch(console.warn);
+      sincronizar(true, true).catch(console.warn);
     }
   });
   try {
     if (!cozinhaSyncChannel) cozinhaSyncChannel = new BroadcastChannel("homy-refeitorio-sync");
     cozinhaSyncChannel.onmessage = ev => {
-      if (["checkin", "pedido", "extra"].includes(ev?.data?.tipo)) sincronizar(true).catch(console.warn);
+      if (["checkin", "pedido", "extra", "integridade"].includes(ev?.data?.tipo)) sincronizar(true, true).catch(console.warn);
     };
   } catch (_) {}
 }
