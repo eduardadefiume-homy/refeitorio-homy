@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: integridade-extras-ausencias-20260623
+// v: ausencias-retorno-principal-20260623
 // ============================================================
 
 const SP = {
@@ -532,6 +532,22 @@ const SP = {
     let items = await this.getItems("Pedidos");
     let pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
 
+    // Garantia de integridade entre Ausências e Pedidos.
+    // Regra oficial: ausência cadastrada no Admin precisa refletir em Pedidos
+    // para que Marcar Refeição, Operação do Dia, Cozinha, Dashboard e Relatórios
+    // leiam a mesma verdade do SharePoint.
+    if (semanaId && !this._sincronizandoAusenciasPedidos) {
+      try {
+        const rAus = await this.sincronizarAusenciasPedidosSemana(semanaId, pedidos);
+        if (rAus && (rAus.ausenciasCriadas || rAus.ausenciasAtualizadas || rAus.retornoCriados || rAus.retornoAtualizados || rAus.duplicadasInativadas)) {
+          items = await this.getItems("Pedidos");
+          pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
+        }
+      } catch (e) {
+        console.warn("[SharePoint] Não foi possível sincronizar ausências com pedidos. A tela seguirá com os dados disponíveis.", e);
+      }
+    }
+
     // Garantia de integridade entre Extras e Pedidos.
     // Regra oficial: todo item da lista Extras deve possuir um Pedido espelho,
     // pois Operação do Dia, Cozinha, Dashboard e Relatórios leem Pedidos como base.
@@ -759,6 +775,9 @@ const SP = {
   },
 
   async savePedido(semanaId, colaboradorId, colaboradorNome, dia, opcao, nomePrato, extras = {}) {
+    if (!semanaId) {
+      semanaId = await this.getSemanaAlvoMarcacao().catch(() => this.getCurrentWeekId());
+    }
     let centroCusto = extras.centroCusto ?? extras.Centro_Custo ?? "";
     if (!centroCusto) {
       centroCusto = await this._resolverCentroCustoColaborador(colaboradorId, colaboradorNome);
@@ -1065,55 +1084,147 @@ const SP = {
     return item ? this.pick(item, "Valor") : null;
   },
 
-  async setConfig(chave, valor) {
+  async setConfig(chave, valor, descricao = "") {
     const items   = await this.getItems("Configurações");
     const existing = items.find(i =>
       this.pick(i, "Chave") === chave || this.pick(i, "Title") === chave
     );
-    if (existing) return this.updateItem("Configurações", existing.id, { Valor: valor });
-    return this.createItem("Configurações", { Title: chave, Chave: chave, Valor: valor });
+    const fields = { Valor: valor };
+    if (descricao) fields.Descricao = descricao;
+    if (existing) return this.updateItem("Configurações", existing.id, fields);
+    return this.createItem("Configurações", { Title: chave, Chave: chave, Valor: valor, Descricao: descricao || "" });
+  },
+
+  addDias(date, dias) {
+    const d = new Date(date || new Date());
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + Number(dias || 0));
+    return d;
+  },
+
+  getNextWeekId(date = new Date()) {
+    return this.getSemanaId(this.addDias(date, 7));
+  },
+
+  async getSemanaAlvoMarcacao(fallback = null) {
+    const alvo = await this.getConfig("marcacao_semana_alvo").catch(() => null);
+    if (alvo && /^\d{4}-W\d{1,2}$/i.test(String(alvo).trim())) return String(alvo).trim().replace(/W(\d)$/i, "W0$1");
+
+    const visivel = await this.getConfig("cardapio_semana_visivel").catch(() => null);
+    if (visivel && /^\d{4}-W\d{1,2}$/i.test(String(visivel).trim())) return String(visivel).trim().replace(/W(\d)$/i, "W0$1");
+
+    return fallback || this.getNextWeekId(new Date());
+  },
+
+  async setSemanaAlvoMarcacao(semanaId) {
+    const semana = String(semanaId || this.getNextWeekId(new Date())).trim();
+    await this.setConfig("marcacao_semana_alvo", semana, "Semana_id aberta para marcação pública dos colaboradores.");
+    return semana;
+  },
+
+  async getSemanaVisivelCardapio(fallback = null) {
+    const semana = await this.getConfig("cardapio_semana_visivel").catch(() => null);
+    if (semana && /^\d{4}-W\d{1,2}$/i.test(String(semana).trim())) return String(semana).trim().replace(/W(\d)$/i, "W0$1");
+    return this.getSemanaAlvoMarcacao(fallback);
+  },
+
+  async setSemanaVisivelCardapio(semanaId) {
+    const semana = String(semanaId || await this.getSemanaAlvoMarcacao()).trim();
+    await this.setConfig("cardapio_semana_visivel", semana, "Semana_id exibida no Cardápio da Semana público.");
+    return semana;
   },
 
   async isCardapioLiberado() {
-    for (const chave of ["cardapio_liberado", "marcacao_liberada", "pedidos_liberados"]) {
-      const v = await this.getConfig(chave);
-      if (this.isTrue(v)) return true;
+    return this.getMarcacaoLiberada();
+  },
+
+  async getMarcacaoLiberada() {
+    const v = await this.getConfig("marcacao_liberada").catch(() => null);
+    if (v !== null && v !== undefined && String(v).trim() !== "") return this.isTrue(v);
+
+    // Compatibilidade com as chaves antigas já existentes no SharePoint.
+    for (const chave of ["cardapio_liberado", "pedidos_liberados"]) {
+      const legado = await this.getConfig(chave).catch(() => null);
+      if (legado !== null && legado !== undefined && String(legado).trim() !== "") return this.isTrue(legado);
     }
     return false;
   },
 
-  async getMarcacaoLiberada() {
-    return this.isCardapioLiberado();
+  async setMarcacaoLiberada(liberado, semanaId = null) {
+    const semana = semanaId ? await this.setSemanaAlvoMarcacao(semanaId) : await this.getSemanaAlvoMarcacao();
+    const v = liberado ? "sim" : "nao";
+    await this.setConfig("marcacao_liberada", v, "Libera ou bloqueia a marcação da semana alvo.");
+    await this.setConfig("pedidos_liberados", v, "Compatibilidade: libera ou bloqueia pedidos públicos.");
+    await this.setConfig("cardapio_liberado", v, "Compatibilidade: flag antiga de liberação.");
+    if (liberado) await this.setSemanaVisivelCardapio(semana);
+    return true;
   },
 
   async getCardapioVisivel() {
     const v = await this.getConfig("cardapio_visivel").catch(() => null);
-    if (v !== null && v !== undefined && String(v) !== "") return this.isTrue(v);
+    if (v !== null && v !== undefined && String(v).trim() !== "") return this.isTrue(v);
 
-    // Compatibilidade com instalações antigas que usavam cardapio_liberado.
     const legado = await this.getConfig("cardapio_liberado").catch(() => null);
     return this.isTrue(legado);
   },
 
-  async setCardapioVisivel(visivel) {
-    await this.setConfig("cardapio_visivel", visivel ? "sim" : "nao");
+  async setCardapioVisivel(visivel, semanaId = null) {
+    const v = visivel ? "sim" : "nao";
+    await this.setConfig("cardapio_visivel", v, "Libera ou bloqueia a visualização pública do cardápio.");
+    await this.setConfig("cardapio_liberado", v, "Compatibilidade: flag antiga de cardápio liberado.");
+    if (semanaId) await this.setSemanaVisivelCardapio(semanaId);
+    else if (visivel) await this.setSemanaVisivelCardapio(await this.getSemanaAlvoMarcacao());
     return true;
+  },
+
+  async getPrazoMarcacao(semanaId = null) {
+    const alvo = semanaId || await this.getSemanaAlvoMarcacao().catch(() => null);
+    if (alvo) {
+      const especifico = await this.getConfig(`marcacao_prazo_limite_${alvo}`).catch(() => null);
+      if (especifico) return especifico;
+    }
+    const novo = await this.getConfig("marcacao_prazo_limite").catch(() => null);
+    if (novo) return novo;
+    return this.getConfig("prazo_limite");
+  },
+
+  async setPrazoMarcacao(valor, semanaId = null) {
+    const alvo = semanaId || await this.getSemanaAlvoMarcacao().catch(() => null);
+    await this.setConfig("marcacao_prazo_limite", valor, "Prazo limite da semana alvo de marcação.");
+    await this.setConfig("prazo_limite", valor, "Compatibilidade: prazo antigo usado pelas telas legadas.");
+    if (alvo) await this.setConfig(`marcacao_prazo_limite_${alvo}`, valor, `Prazo limite específico da semana ${alvo}.`);
+    return true;
+  },
+
+  async abrirMarcacaoSemana(semanaId, prazoLimite = null) {
+    const semana = await this.setSemanaAlvoMarcacao(semanaId || this.getNextWeekId(new Date()));
+    await this.setSemanaVisivelCardapio(semana);
+    await this.setMarcacaoLiberada(true, semana);
+    await this.setCardapioVisivel(true, semana);
+    if (prazoLimite) await this.setPrazoMarcacao(prazoLimite, semana);
+    return this.getEstadoMarcacao(semana);
+  },
+
+  async fecharMarcacaoSemana(semanaId = null) {
+    const semana = semanaId || await this.getSemanaAlvoMarcacao().catch(() => null);
+    await this.setMarcacaoLiberada(false, semana);
+    return this.getEstadoMarcacao(semana);
+  },
+
+  async getEstadoMarcacao(semanaId = null) {
+    const alvo = semanaId || await this.getSemanaAlvoMarcacao().catch(() => null);
+    const liberada = await this.getMarcacaoLiberada().catch(() => false);
+    const cardapioVisivel = await this.getCardapioVisivel().catch(() => false);
+    const prazoLimite = await this.getPrazoMarcacao(alvo).catch(() => null);
+    const prazo = prazoLimite ? new Date(prazoLimite) : null;
+    const prazoVencido = !!(prazo && !isNaN(prazo) && new Date() > prazo);
+    return { semanaId: alvo, liberada, cardapioVisivel, prazoLimite, prazoVencido };
   },
 
   async isMarcacaoLiberada() {
-    return this.isCardapioLiberado();
+    const estado = await this.getEstadoMarcacao().catch(() => null);
+    return !!(estado && estado.liberada && !estado.prazoVencido);
   },
-
-  async setMarcacaoLiberada(liberado) {
-    const v = liberado ? "sim" : "nao";
-    await this.setConfig("cardapio_liberado", v);
-    await this.setConfig("marcacao_liberada", v);
-    await this.setConfig("pedidos_liberados", v);
-    return true;
-  },
-
-  async getPrazoMarcacao()      { return this.getConfig("prazo_limite"); },
-  async setPrazoMarcacao(valor) { return this.setConfig("prazo_limite", valor); },
 
   // ============================================================
   // VALORES DE REFEIÇÃO
@@ -1180,9 +1291,91 @@ const SP = {
   // Motivos válidos: ferias | atestado | falta | licenca | afastamento |
   //                  nao_vai_almocar | homy_office | banco_horas | outro
   // ============================================================
+
+  _dataISOAusencia(v) {
+    if (!v) return "";
+    if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+    const s = String(v || "").trim();
+    const mIso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (mIso) return mIso[1];
+    const mBr = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (mBr) return `${mBr[3]}-${mBr[2]}-${mBr[1]}`;
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+  },
+
+  _hojeISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dia = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dia}`;
+  },
+
+  _ausenciaFimISO(a) {
+    return this._dataISOAusencia(this.pick(a, "Data_Fim", "Fim", "DataFim", "Data")) ||
+           this._dataISOAusencia(this.pick(a, "Data_Inicio", "Inicio", "DataInicio", "Data"));
+  },
+
+  _ausenciaAtivaPorCampo(a) {
+    const ativo = this.pick(a, "Ativo", "ativo");
+    const status = this.norm(this.pick(a, "Status", "status", "Status_Ausencia") || "");
+    if (["inativo", "cancelado", "encerrado", "periodo encerrado", "período encerrado", "false", "nao", "não", "0"].includes(status)) return false;
+    if (ativo === null || ativo === undefined || ativo === "") return true;
+    return this.isTrue(ativo);
+  },
+
+  ausenciaPeriodoEncerrado(a, dataRef = null) {
+    const ref = dataRef || this._hojeISO();
+    const fim = this._ausenciaFimISO(a);
+    return !!fim && fim < ref;
+  },
+
+  async sincronizarAusenciasEncerradas(dataRef = null) {
+    const hoje = dataRef || this._hojeISO();
+    const lista = "Ausencias do Refeitorio";
+    let items = [];
+    try {
+      items = await this.getItems(lista);
+    } catch (e) {
+      console.warn("[SharePoint] Não foi possível verificar ausências encerradas.", e);
+      return { verificadas: 0, encerradas: 0 };
+    }
+
+    let encerradas = 0;
+    for (const a of items || []) {
+      const id = this.pick(a, "id", "ID");
+      if (!id) continue;
+      if (!this._ausenciaAtivaPorCampo(a)) continue;
+      if (!this.ausenciaPeriodoEncerrado(a, hoje)) continue;
+
+      const obsAtual = this.pick(a, "Observacao", "Observação", "Obs") || "";
+      const obsEnc = obsAtual && this.norm(obsAtual).includes("periodo encerrado")
+        ? obsAtual
+        : [obsAtual, `Período encerrado automaticamente em ${hoje}.`].filter(Boolean).join(" | ");
+
+      try {
+        await this.updateItem(lista, id, {
+          Ativo: false,
+          Status: "Período encerrado",
+          Status_Ausencia: "Período encerrado",
+          Observacao: obsEnc
+        });
+        encerradas++;
+      } catch (e) {
+        console.warn(`[SharePoint] Falha ao marcar ausência ${id} como período encerrado.`, e);
+      }
+    }
+
+    return { verificadas: (items || []).length, encerradas };
+  },
+
   async getAusencias(apenasAtivas = true) {
+    await this.sincronizarAusenciasEncerradas().catch(e => console.warn("[SharePoint] Sincronização de ausências encerradas ignorada:", e));
     const items = await this.getItems("Ausencias do Refeitorio");
-    return apenasAtivas ? items.filter(i => this.isTrue(this.pick(i, "Ativo"))) : items;
+    if (!apenasAtivas) return items;
+    const hoje = this._hojeISO();
+    return items.filter(i => this._ausenciaAtivaPorCampo(i) && !this.ausenciaPeriodoEncerrado(i, hoje));
   },
 
   async getAusenciasColaborador(colaboradorId, dataRef = null) {
@@ -1230,6 +1423,365 @@ const SP = {
     }
   },
 
+
+  // ============================================================
+  // INTEGRIDADE — Ausências x Pedidos
+  // ============================================================
+  _diasSemanaOperacional(semanaId) {
+    const nomes = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    const datas = this.getWeekDates(semanaId) || [];
+    return nomes.map((dia, idx) => ({
+      dia,
+      data: datas[idx] ? this._dataISOAusencia(datas[idx]) : ""
+    })).filter(d => d.data);
+  },
+
+  _semanaInicioFimISO(semanaId) {
+    const dias = this._diasSemanaOperacional(semanaId);
+    return {
+      ini: dias[0]?.data || "",
+      fim: dias[dias.length - 1]?.data || "",
+      dias
+    };
+  },
+
+  _colabIdValor(obj) {
+    return String(this.pick(obj, "Colaborador_id", "ColaboradorId", "colaboradorId", "id", "ID", "Matricula", "Matrícula") || "").trim();
+  },
+
+  _colabNomeValor(obj) {
+    return this.pick(obj, "Colaborador_nome", "Colaborador", "Nome", "Title") || "";
+  },
+
+  _colabKey(obj) {
+    const id = this._colabIdValor(obj);
+    if (id) return `id:${id}`;
+    const nome = this.norm(this._colabNomeValor(obj));
+    return nome ? `nome:${nome}` : "";
+  },
+
+  _colaboradorAtivo(c) {
+    const ativo = this.pick(c, "Ativo", "ativo");
+    if (ativo === null || ativo === undefined || String(ativo).trim() === "") return true;
+    return this.isTrue(ativo);
+  },
+
+  _isPedidoAusenciaStatus(status) {
+    const s = this.norm(status);
+    return [
+      "nao vai almocar", "não vai almoçar", "nao_vai_almocar",
+      "ferias", "férias", "afastado", "atestado", "licenca", "licença",
+      "banco horas", "banco_horas", "homy office", "homy_office", "ausente", "falta"
+    ].includes(s);
+  },
+
+  _formatarMotivoAusenciaSistema(motivo) {
+    const n = this.norm(motivo);
+    if (n === "nao_vai_almocar" || n === "nao vai almocar" || n === "não vai almoçar" || n === "ausente") return "Não vai almoçar";
+    if (n === "ferias" || n === "férias") return "Férias";
+    if (n === "afastado" || n === "afastamento") return "Afastado";
+    if (n === "atestado") return "Atestado";
+    if (n === "licenca" || n === "licença") return "Licença";
+    if (n === "banco_horas" || n === "banco horas") return "Banco de horas";
+    if (n === "homy_office" || n === "homy office") return "Homy Office";
+    if (n === "falta") return "Falta";
+    return String(motivo || "Ausente");
+  },
+
+  _ausenciaInicioISO(a) {
+    return this._dataISOAusencia(this.pick(a, "Data_Inicio", "Inicio", "DataInicio", "Data"));
+  },
+
+  _ausenciaFimISO(a) {
+    return this._dataISOAusencia(this.pick(a, "Data_Fim", "Fim", "DataFim", "Data")) || this._ausenciaInicioISO(a);
+  },
+
+  _ausenciaCobreData(a, dataISO) {
+    const ini = this._ausenciaInicioISO(a);
+    const fim = this._ausenciaFimISO(a);
+    return !!ini && !!fim && ini <= dataISO && fim >= dataISO;
+  },
+
+  _ausenciaChaveDuplicada(a) {
+    const colab = this._colabKey({
+      Colaborador_id: this.pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+      Colaborador_nome: this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
+    });
+    const ini = this._ausenciaInicioISO(a);
+    const motivo = this.norm(this.pick(a, "Motivo", "motivo", "Status") || "");
+    return colab && ini && motivo ? `${colab}|${ini}|${motivo}` : "";
+  },
+
+  _ausenciaPreferidaParaGrupo(grupo) {
+    return [...grupo].sort((a, b) => {
+      const aa = this._ausenciaAtivaPorCampo(a) ? 1 : 0;
+      const bb = this._ausenciaAtivaPorCampo(b) ? 1 : 0;
+      if (aa !== bb) return bb - aa;
+      const fa = this._ausenciaFimISO(a);
+      const fb = this._ausenciaFimISO(b);
+      if (fa !== fb) return fb.localeCompare(fa);
+      return Number(this.pick(b, "id", "ID") || 0) - Number(this.pick(a, "id", "ID") || 0);
+    })[0];
+  },
+
+  async sincronizarAusenciasDuplicadas() {
+    let ausencias = [];
+    try { ausencias = await this.getItems("Ausencias do Refeitorio"); }
+    catch (e) {
+      console.warn("[SharePoint] Não foi possível verificar duplicidade de ausências.", e);
+      return { verificadas: 0, duplicadasInativadas: 0 };
+    }
+
+    const grupos = new Map();
+    for (const a of ausencias || []) {
+      const chave = this._ausenciaChaveDuplicada(a);
+      if (!chave) continue;
+      if (!grupos.has(chave)) grupos.set(chave, []);
+      grupos.get(chave).push(a);
+    }
+
+    let duplicadasInativadas = 0;
+    for (const grupo of grupos.values()) {
+      if (grupo.length < 2) continue;
+      const preferida = this._ausenciaPreferidaParaGrupo(grupo);
+      const idPreferida = String(this.pick(preferida, "id", "ID") || "");
+      for (const a of grupo) {
+        const id = String(this.pick(a, "id", "ID") || "");
+        if (!id || id === idPreferida) continue;
+        if (!this._ausenciaAtivaPorCampo(a)) continue;
+        const obsAtual = this.pick(a, "Observacao", "Observação", "Obs") || "";
+        const obs = [obsAtual, `Duplicidade inativada automaticamente; ausência mantida: ${idPreferida}.`].filter(Boolean).join(" | ");
+        try {
+          await this.updateItem("Ausencias do Refeitorio", id, {
+            Ativo: false,
+            Status: "Duplicado inativado",
+            Status_Ausencia: "Duplicado inativado",
+            Observacao: obs
+          });
+          duplicadasInativadas++;
+        } catch (e) {
+          console.warn(`[SharePoint] Falha ao inativar ausência duplicada ${id}.`, e);
+        }
+      }
+    }
+
+    return { verificadas: (ausencias || []).length, duplicadasInativadas };
+  },
+
+  _pedidoNormalDoColaboradorNoDia(p, semanaId, colabKey, dia) {
+    if (!p || this._isPedidoAdicionalColaborador?.(p) || this.isExtraPedido?.(p)) return false;
+    if (String(this.pick(p, "Semana_id", "Semana") || "") !== String(semanaId || "")) return false;
+    if (this.norm(this.pick(p, "Dia", "dia") || "") !== this.norm(dia)) return false;
+    return this._colabKey({
+      Colaborador_id: this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+      Colaborador_nome: this.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title")
+    }) === colabKey;
+  },
+
+  _pedidoAusenciaParaAtualizar(p) {
+    const status = this.pick(p, "Status", "status") || "";
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    return this._isPedidoAusenciaStatus(status) || origem.includes("ausencia") || origem.includes("ausência");
+  },
+
+  async _criarOuAtualizarPedidoAusencia(semanaId, diaInfo, ausencia, pedidos) {
+    const colabId = String(this.pick(ausencia, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const nome = this.pick(ausencia, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Colaborador ausente";
+    const colabKey = this._colabKey({ Colaborador_id: colabId, Colaborador_nome: nome });
+    if (!colabKey) return { criado: 0, atualizado: 0 };
+
+    const motivo = this._formatarMotivoAusenciaSistema(this.pick(ausencia, "Motivo", "motivo", "Status") || "Ausente");
+    const cc = this.pick(ausencia, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || await this._resolverCentroCustoColaborador(colabId, nome);
+    const existente = (pedidos || []).find(p => this._pedidoNormalDoColaboradorNoDia(p, semanaId, colabKey, diaInfo.dia));
+    const dataHora = `${diaInfo.data}T12:00:00`;
+    const obsBase = this.pick(ausencia, "Observacao", "Observação", "Obs") || "Ausência cadastrada no Admin.";
+    const obs = [obsBase, `AusenciaID:${this.pick(ausencia, "id", "ID") || ""}`].filter(Boolean).join(" | ");
+
+    const fields = {
+      Semana_id: semanaId,
+      Colaborador_id: colabId,
+      Colaborador_nome: nome,
+      Dia: diaInfo.dia,
+      Opcao: "principal",
+      Nome_Prato: motivo,
+      Confirmado: false,
+      Data_Hora: dataHora,
+      Centro_Custo: cc || "",
+      Status: motivo,
+      Observacao: obs,
+      Origem: "Ausência",
+      Alterado_Por: this.getUserName ? this.getUserName() : "Sistema"
+    };
+
+    if (existente?.id) {
+      const deveAtualizar = this._pedidoAusenciaParaAtualizar(existente) ||
+        this.norm(this.pick(existente, "Status")) !== this.norm(motivo) ||
+        this.norm(this.pick(existente, "Nome_Prato")) !== this.norm(motivo);
+      if (deveAtualizar) {
+        await this.updatePedido(existente.id, fields);
+        Object.assign(existente, fields);
+        return { criado: 0, atualizado: 1 };
+      }
+      return { criado: 0, atualizado: 0 };
+    }
+
+    const criado = await this.createItem("Pedidos", {
+      Title: `${semanaId}-${colabId || this.norm(nome)}-${diaInfo.dia}-ausencia`,
+      ...fields
+    });
+    pedidos.push({ id: criado?.id || criado?.ID || "", ...fields });
+    return { criado: 1, atualizado: 0 };
+  },
+
+  async _criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, ausencia, colaborador, pedidos) {
+    const colabId = String(this.pick(colaborador, "id", "ID", "Colaborador_id") || this.pick(ausencia, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const nome = this.pick(colaborador, "Nome", "Title", "Colaborador_nome") || this.pick(ausencia, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Colaborador";
+    const colabKey = this._colabKey({ Colaborador_id: colabId, Colaborador_nome: nome });
+    if (!colabKey) return { criado: 0, atualizado: 0 };
+
+    const existente = (pedidos || []).find(p => this._pedidoNormalDoColaboradorNoDia(p, semanaId, colabKey, diaInfo.dia));
+    if (existente && !this._pedidoAusenciaParaAtualizar(existente)) return { criado: 0, atualizado: 0 };
+
+    const cc = this._pickCentroCusto(colaborador) || this.pick(ausencia, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || await this._resolverCentroCustoColaborador(colabId, nome);
+    const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, diaInfo.dia, "principal").catch(() => "") || "Prato Principal";
+    const fim = this._ausenciaFimISO(ausencia);
+    const fields = {
+      Semana_id: semanaId,
+      Colaborador_id: colabId,
+      Colaborador_nome: nome,
+      Dia: diaInfo.dia,
+      Opcao: "principal",
+      Nome_Prato: nomePrato,
+      Confirmado: true,
+      Data_Hora: `${diaInfo.data}T12:00:00`,
+      Centro_Custo: cc || "",
+      Status: "Confirmado",
+      Observacao: `Retorno automático após ausência encerrada em ${fim}.`,
+      Origem: "Retorno automático de ausência",
+      Alterado_Por: this.getUserName ? this.getUserName() : "Sistema"
+    };
+
+    if (existente?.id) {
+      await this.updatePedido(existente.id, fields);
+      Object.assign(existente, fields);
+      return { criado: 0, atualizado: 1 };
+    }
+
+    const criado = await this.createItem("Pedidos", {
+      Title: `${semanaId}-${colabId || this.norm(nome)}-${diaInfo.dia}-retorno`,
+      ...fields
+    });
+    pedidos.push({ id: criado?.id || criado?.ID || "", ...fields });
+    return { criado: 1, atualizado: 0 };
+  },
+
+  async sincronizarAusenciasPedidosSemana(semanaId, pedidosBase = null) {
+    if (!semanaId) return { ausenciasCriadas: 0, ausenciasAtualizadas: 0, retornoCriados: 0, retornoAtualizados: 0, duplicadasInativadas: 0 };
+    if (this._sincronizandoAusenciasPedidos) return { ausenciasCriadas: 0, ausenciasAtualizadas: 0, retornoCriados: 0, retornoAtualizados: 0, duplicadasInativadas: 0 };
+
+    this._sincronizandoAusenciasPedidos = true;
+    let ausenciasCriadas = 0, ausenciasAtualizadas = 0, retornoCriados = 0, retornoAtualizados = 0, duplicadasInativadas = 0;
+
+    try {
+      const dup = await this.sincronizarAusenciasDuplicadas().catch(e => {
+        console.warn("[SharePoint] Reparação de duplicidade de ausências ignorada.", e);
+        return { duplicadasInativadas: 0 };
+      });
+      duplicadasInativadas = dup?.duplicadasInativadas || 0;
+
+      await this.sincronizarAusenciasEncerradas().catch(e => console.warn("[SharePoint] Encerramento de ausências vencidas ignorado.", e));
+
+      const { ini: semanaIni, fim: semanaFim, dias } = this._semanaInicioFimISO(semanaId);
+      if (!semanaIni || !semanaFim) return { ausenciasCriadas, ausenciasAtualizadas, retornoCriados, retornoAtualizados, duplicadasInativadas };
+
+      const [ausenciasTodas, colaboradores, pedidosIniciais] = await Promise.all([
+        this.getItems("Ausencias do Refeitorio").catch(() => []),
+        this.getTodosColaboradores().catch(() => []),
+        pedidosBase ? Promise.resolve(pedidosBase) : this.getItems("Pedidos").then(items => items.filter(i => this.pick(i, "Semana_id") === semanaId)).catch(() => [])
+      ]);
+      const pedidos = Array.isArray(pedidosIniciais) ? [...pedidosIniciais] : [];
+      const colabsAtivos = (colaboradores || []).filter(c => this._colaboradorAtivo(c));
+      const colabPorKey = new Map(colabsAtivos.map(c => [this._colabKey(c), c]).filter(([k]) => k));
+
+      const ausenciasOrdenadas = (ausenciasTodas || []).filter(a => {
+        const ini = this._ausenciaInicioISO(a);
+        const fim = this._ausenciaFimISO(a);
+        return !!ini && !!fim && ini <= semanaFim && fim >= semanaIni;
+      });
+
+      const ausenciasAtivas = ausenciasOrdenadas.filter(a => this._ausenciaAtivaPorCampo(a) && !this.ausenciaPeriodoEncerrado(a));
+
+      for (const a of ausenciasAtivas) {
+        for (const diaInfo of dias) {
+          if (!this._ausenciaCobreData(a, diaInfo.data)) continue;
+          const r = await this._criarOuAtualizarPedidoAusencia(semanaId, diaInfo, a, pedidos);
+          ausenciasCriadas += r.criado || 0;
+          ausenciasAtualizadas += r.atualizado || 0;
+        }
+      }
+
+      // Retorno automático: se uma ausência terminou dentro da semana,
+      // os dias seguintes da mesma semana passam a ser Principal automaticamente.
+      for (const a of ausenciasOrdenadas) {
+        const fimAus = this._ausenciaFimISO(a);
+        if (!fimAus || fimAus < semanaIni || fimAus >= semanaFim) continue;
+        const colabKey = this._colabKey({
+          Colaborador_id: this.pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+          Colaborador_nome: this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
+        });
+        const colaborador = colabPorKey.get(colabKey);
+        if (!colaborador) continue;
+
+        for (const diaInfo of dias) {
+          if (diaInfo.data <= fimAus) continue;
+          const outraAusenciaCobreDia = ausenciasAtivas.some(x => {
+            const xKey = this._colabKey({
+              Colaborador_id: this.pick(x, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+              Colaborador_nome: this.pick(x, "Colaborador_nome", "Colaborador", "Nome", "Title")
+            });
+            return xKey === colabKey && this._ausenciaCobreData(x, diaInfo.data);
+          });
+          if (outraAusenciaCobreDia) continue;
+
+          const r = await this._criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, a, colaborador, pedidos);
+          retornoCriados += r.criado || 0;
+          retornoAtualizados += r.atualizado || 0;
+        }
+      }
+
+    } finally {
+      this._sincronizandoAusenciasPedidos = false;
+    }
+
+    return { ausenciasCriadas, ausenciasAtualizadas, retornoCriados, retornoAtualizados, duplicadasInativadas };
+  },
+
+  async _buscarAusenciaDuplicadaParaUpsert(colaboradorId, colaboradorNome, motivo, dataInicio, dataFim) {
+    let ausencias = [];
+    try { ausencias = await this.getItems("Ausencias do Refeitorio"); }
+    catch (e) { console.warn("[SharePoint] Não foi possível verificar ausência duplicada antes de salvar.", e); return null; }
+
+    const alvoKey = this._colabKey({ Colaborador_id: colaboradorId, Colaborador_nome: colaboradorNome });
+    const motivoNorm = this.norm(motivo);
+    const iniNovo = this._dataISOAusencia(dataInicio);
+    const fimNovo = this._dataISOAusencia(dataFim) || iniNovo;
+    const candidatos = (ausencias || []).filter(a => {
+      if (!this._ausenciaAtivaPorCampo(a)) return false;
+      const key = this._colabKey({
+        Colaborador_id: this.pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+        Colaborador_nome: this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
+      });
+      if (key !== alvoKey) return false;
+      if (this.norm(this.pick(a, "Motivo", "motivo", "Status") || "") !== motivoNorm) return false;
+      const ini = this._ausenciaInicioISO(a);
+      const fim = this._ausenciaFimISO(a);
+      return !!ini && !!fim && ini <= fimNovo && fim >= iniNovo;
+    });
+
+    if (!candidatos.length) return null;
+    return this._ausenciaPreferidaParaGrupo(candidatos);
+  },
+
   async createAusencia(dados) {
     const nome   = dados.colaboradorNome || dados.Colaborador_nome || "";
     const motivo = dados.motivo || dados.Motivo || "nao_vai_almocar";
@@ -1245,34 +1797,68 @@ const SP = {
     const semanaInicio = dataInicio ? this.getSemanaId(new Date(`${String(dataInicio).slice(0, 10)}T12:00:00`)) : "";
     const semanaFim = dataFim ? this.getSemanaId(new Date(`${String(dataFim).slice(0, 10)}T12:00:00`)) : semanaInicio;
 
-    return this.createItem("Ausencias do Refeitorio", {
-      Title:            dados.title || `${nome} - ${motivo}`,
+    const fields = {
+      Title:            dados.title || dados.Title || `${nome} - ${motivo}`,
       Colaborador_id:   colaboradorId,
       Colaborador_nome: nome,
       Centro_Custo:     centroCusto || "",
       Data_Inicio:      dataInicio,
       Data_Fim:         dataFim,
-      // Campos opcionais: se existirem na lista, serão gravados; se não existirem,
-      // o mapeador omite sem quebrar o cadastro.
       Semana_id:        dados.semanaId || dados.Semana_id || semanaInicio,
       Semana_Inicio:    dados.semanaInicio || dados.Semana_Inicio || semanaInicio,
       Semana_Fim:       dados.semanaFim || dados.Semana_Fim || semanaFim,
       Motivo:           motivo,
       Observacao:       dados.observacao  || dados.Observacao || "",
       Ativo:            dados.ativo       ?? dados.Ativo      ?? true,
+      Status:           dados.Status      || dados.status     || "Ativo",
+      Status_Ausencia:  dados.Status_Ausencia || dados.statusAusencia || "Ativo",
       Criado_Por:       dados.criadoPor   || dados.Criado_Por || this.getUserName()
-    });
+    };
+
+    const existente = await this._buscarAusenciaDuplicadaParaUpsert(colaboradorId, nome, motivo, dataInicio, dataFim);
+    let result;
+    if (existente?.id) {
+      result = await this.updateItem("Ausencias do Refeitorio", existente.id, fields);
+      result = { id: existente.id, ...fields };
+    } else {
+      result = await this.createItem("Ausencias do Refeitorio", fields);
+    }
+
+    if (!this._sincronizandoAusenciasPedidos) {
+      const semanas = new Set([semanaInicio, semanaFim].filter(Boolean));
+      for (const semana of semanas) {
+        await this.sincronizarAusenciasPedidosSemana(semana).catch(e => console.warn("[SharePoint] Sincronização após salvar ausência ignorada:", e));
+      }
+    }
+
+    return result;
   },
 
   async updateAusencia(id, dados) {
     const fields = {};
     if (dados.ativo       !== undefined) fields.Ativo     = dados.ativo;
     if (dados.Ativo       !== undefined) fields.Ativo     = dados.Ativo;
+    if (dados.Status      !== undefined) fields.Status    = dados.Status;
+    if (dados.status      !== undefined) fields.Status    = dados.status;
+    if (dados.Status_Ausencia !== undefined) fields.Status_Ausencia = dados.Status_Ausencia;
+    if (dados.statusAusencia  !== undefined) fields.Status_Ausencia = dados.statusAusencia;
     if (dados.motivo      !== undefined) fields.Motivo    = dados.motivo;
+    if (dados.Motivo      !== undefined) fields.Motivo    = dados.Motivo;
     if (dados.observacao  !== undefined) fields.Observacao = dados.observacao;
+    if (dados.Observacao  !== undefined) fields.Observacao = dados.Observacao;
     if (dados.dataInicio  !== undefined) fields.Data_Inicio = dados.dataInicio;
+    if (dados.Data_Inicio !== undefined) fields.Data_Inicio = dados.Data_Inicio;
     if (dados.dataFim     !== undefined) fields.Data_Fim    = dados.dataFim;
-    return this.updateItem("Ausencias do Refeitorio", id, fields);
+    if (dados.Data_Fim    !== undefined) fields.Data_Fim    = dados.Data_Fim;
+
+    const result = await this.updateItem("Ausencias do Refeitorio", id, fields);
+
+    if (!this._sincronizandoAusenciasPedidos) {
+      const semanaAtual = this.getCurrentWeekId ? this.getCurrentWeekId() : this.getSemanaId(new Date());
+      await this.sincronizarAusenciasPedidosSemana(semanaAtual).catch(e => console.warn("[SharePoint] Sincronização após atualizar ausência ignorada:", e));
+    }
+
+    return result;
   },
 
   async deleteAusencia(id) {
@@ -1323,11 +1909,8 @@ const SP = {
   },
 
   _ausenciaAtivaOperacao(a) {
-    const ativo = this.pick(a, "Ativo", "ativo");
-    const status = this.norm(this.pick(a, "Status", "status") || "");
-    if (["inativo", "cancelado", "false", "nao", "não", "0"].includes(status)) return false;
-    if (ativo === null || ativo === undefined || ativo === "") return true;
-    return this.isTrue(ativo);
+    if (this.ausenciaPeriodoEncerrado(a)) return false;
+    return this._ausenciaAtivaPorCampo(a);
   },
 
   _ausenciaCobreDataOperacao(a, dataRef) {
@@ -1569,7 +2152,7 @@ const SP = {
   },
 
   async alterarPedidoOperacao(id, status, pedidoAtual = {}) {
-    const isVirtual = !id || String(id).startsWith("ausencia-") || pedidoAtual?._virtualAusencia;
+    const isVirtual = !id || String(id).startsWith("ausencia-") || String(id).startsWith("pendente-") || pedidoAtual?._virtualAusencia || pedidoAtual?._virtualPendente;
 
     let atual = {};
     if (!isVirtual) {
