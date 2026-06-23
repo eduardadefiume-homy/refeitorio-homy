@@ -1,5 +1,5 @@
-// admin-dashboard.js — Dashboard do Admin Homy
-// Correção: travamento cria principal confirmado e não conta como ausência
+// admin-dashboard.js — Dashboard do Admin Homy · integridade extras/ausências
+// Versão limpa: métricas por colaborador, ausências por lista, travamento por colaboradores pendentes e setores resilientes
 
 const AdminDashboard = window.AdminDashboard = {
   _prazoTimer: null,
@@ -272,7 +272,7 @@ const AdminDashboard = window.AdminDashboard = {
 
   _isPedidoAusencia(p) {
     const s = this._norm(this._pick(p, "Status") || "");
-    return ["cancelado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar", "bloqueado", "atestado", "licenca", "licença"].includes(s);
+    return ["cancelado", "afastado", "ferias", "férias", "nao vai almocar", "não vai almoçar", "bloqueado", "travado", "atestado", "licenca", "licença"].includes(s);
   },
 
   _isExtraPedido(p) {
@@ -603,30 +603,49 @@ const AdminDashboard = window.AdminDashboard = {
     const ausenciasAtivas = (ausenciasRaw || []).filter(a => this._ausenciaAtiva(a));
     const ausenciasSemana = ausenciasAtivas.filter(a => this._periodosSobrepoem(this._ausenciaInicio(a), this._ausenciaFim(a), ini, fim));
     const ausenciasHojeLista = ausenciasAtivas.filter(a => this._periodosSobrepoem(this._ausenciaInicio(a), this._ausenciaFim(a), dataHoje, dataHoje));
-    const ausentesSemanaKeys = new Set(ausenciasSemana.map(a => this._ausenciaKey(a)));
 
     const pedidosAusenciaHoje = pedidosHoje.filter(p => this._isPedidoAusencia(p));
     const pedidosAusenciaSemana = pedidosDaSemana.filter(p => this._isPedidoAusencia(p));
 
+    // Integridade do travamento: ausência é analisada POR DIA, não pela semana inteira.
+    // Se a pessoa estava de férias até segunda, ela não pode ficar escondida na terça.
+    const pedidoPorColaboradorDia = new Set();
+    pedidosDaSemana
+      .filter(p => !this._isExtraPedido(p) && this._pedidoTemConteudo(p))
+      .forEach(p => pedidoPorColaboradorDia.add(`${this._colabKeyFromPedido(p)}|${this._norm(this._pick(p, "Dia"))}`));
+
+    const ausenteNoDia = (colab, dia) => {
+      const key = this._colabKeyFromColaborador(colab);
+      const data = this._dataPorDia(semanaId, dia);
+      return ausenciasAtivas.some(a => this._ausenciaKey(a) === key && this._periodosSobrepoem(this._ausenciaInicio(a), this._ausenciaFim(a), data, data));
+    };
+
+    let diasPendentesTotal = 0;
     const colaboradoresPendentesLista = colaboradoresAtivos
-      .filter(c => {
-        const k = this._colabKeyFromColaborador(c);
-        return !confirmadosKeys.has(k) && !ausentesSemanaKeys.has(k);
+      .map(c => {
+        const key = this._colabKeyFromColaborador(c);
+        const diasPendentes = AdminUtils.DIAS.filter(dia =>
+          !pedidoPorColaboradorDia.has(`${key}|${this._norm(dia)}`) &&
+          !ausenteNoDia(c, dia)
+        );
+        diasPendentesTotal += diasPendentes.length;
+        return {
+          id: this._pick(c, "id", "ID") || "",
+          nome: this._colabNome(c),
+          setor: this._colabSetor(c),
+          key,
+          diasPendentes
+        };
       })
-      .sort((a, b) => this._colabNome(a).localeCompare(this._colabNome(b), "pt-BR"))
-      .map(c => ({
-        id: this._pick(c, "id", "ID") || "",
-        nome: this._colabNome(c),
-        setor: this._colabSetor(c),
-        key: this._colabKeyFromColaborador(c)
-      }));
+      .filter(c => c.diasPendentes.length > 0)
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
     const expectedSemana = colaboradoresAtivos.length * 5;
     const pedidosConfirmadosSemana = pedidosProd.length;
     const pedidosPendentesSemana = this._num(base.pendentesPedidosSemana ?? base.pedidosPendentesSemana ?? base.pendentesColaboradores, NaN);
     const pendentesSemanaFinal = Number.isFinite(pedidosPendentesSemana)
       ? pedidosPendentesSemana
-      : Math.max(0, expectedSemana - pedidosConfirmadosSemana);
+      : diasPendentesTotal;
 
     const extrasAtivos = extras.filter(e => this._isExtraAtivoDashboard(e));
 
@@ -644,7 +663,13 @@ const AdminDashboard = window.AdminDashboard = {
         carne: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "carne").length,
         massa: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "massa").length,
         lanche: prodDia.filter(p => this._norm(this._pick(p, "Opcao")) === "lanche").length,
-        pendentes: Math.max(0, colaboradoresAtivos.length - new Set(prodDia.filter(p => !this._isExtraPedido(p)).map(p => this._colabKeyFromPedido(p))).size)
+        pendentes: colaboradoresAtivos.filter(c => {
+          const k = this._colabKeyFromColaborador(c);
+          const temPedido = listaDia.some(p => !this._isExtraPedido(p) && this._colabKeyFromPedido(p) === k);
+          const dataDia = this._dataPorDia(semanaId, dia);
+          const ausente = ausenciasAtivas.some(a => this._ausenciaKey(a) === k && this._periodosSobrepoem(this._ausenciaInicio(a), this._ausenciaFim(a), dataDia, dataDia));
+          return !temPedido && !ausente;
+        }).length
       };
     });
 
@@ -748,9 +773,8 @@ const AdminDashboard = window.AdminDashboard = {
 
   async _renderToggleStatus() {
     const liberado = await SP.isCardapioLiberado().catch(() => false);
-    const cardapioV = typeof SP.getCardapioVisivel === "function"
-      ? await SP.getCardapioVisivel().catch(() => false)
-      : SP.isTrue(await SP.getConfig("cardapio_visivel").catch(() => null));
+    const cardapio = await SP.getConfig("cardapio_visivel").catch(() => null);
+    const cardapioV = SP.isTrue(cardapio);
 
     const tMarcacao = document.getElementById("toggleMarcacao");
     const tCardapio = document.getElementById("toggleCardapio");
@@ -908,7 +932,11 @@ const AdminDashboard = window.AdminDashboard = {
       const key = colab.key || (colaboradorId ? `id:${colaboradorId}` : `nome:${this._norm(colaboradorNome)}`);
       const nomeFinal = colaboradorNome || `Colaborador ${colaboradorId}`;
 
-      for (const dia of AdminUtils.DIAS) {
+      const diasParaCriar = Array.isArray(colab.diasPendentes) && colab.diasPendentes.length
+        ? colab.diasPendentes
+        : AdminUtils.DIAS;
+
+      for (const dia of diasParaCriar) {
         if (!dia) continue;
         const chave = `${key}|${this._norm(dia)}`;
         if (existentes.has(chave)) continue;
@@ -916,10 +944,10 @@ const AdminDashboard = window.AdminDashboard = {
         const nomePrato = this._pratoPrincipalPorDia(cardapio, dia);
         await SP.savePedido(semanaId, colaboradorId || this._norm(nomeFinal), nomeFinal, dia, "principal", nomePrato, {
           confirmado: true,
-          status: "Confirmado",
+          status: "Travado",
           centroCusto,
           origem: "Travamento automático",
-          observacao: "Marcado automaticamente como Principal — prazo encerrado",
+          observacao: "Marcado automaticamente — prazo encerrado",
           alteradoPor: SP.getUserName ? SP.getUserName() : "Admin"
         });
         existentes.add(chave);
