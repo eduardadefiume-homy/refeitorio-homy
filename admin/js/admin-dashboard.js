@@ -1,5 +1,5 @@
 // admin-dashboard.js — Dashboard do Admin Homy · integridade extras/ausências
-// Versão limpa: métricas por colaborador, ausências por lista, travamento por colaboradores pendentes e setores resilientes
+// Versão limpa: métricas por colaborador, ausências sincronizadas com pedidos, retorno automático e setores resilientes
 
 const AdminDashboard = window.AdminDashboard = {
   _prazoTimer: null,
@@ -39,6 +39,7 @@ const AdminDashboard = window.AdminDashboard = {
       await this._safeRender("proximos-dias", () => this._renderProximosDias(resumo));
       await this._safeRender("alertas", () => this._renderAlertas(resumo));
       await this._safeRender("prazo", () => this._carregarPrazo(semanaId, resumo));
+      await this._safeRender("semana-alvo", () => this._renderSemanaAlvoMarcacao(semanaId));
 
       AdminUtils.setTxt("semanaLabel", AdminState.getSemanaLabel());
     } catch (e) {
@@ -294,9 +295,9 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   _ausenciaAtiva(a) {
+    const status = this._norm(this._pick(a, "Status", "status", "Status_Ausencia"));
+    if (["inativo", "cancelado", "encerrado", "periodo encerrado", "período encerrado", "false", "nao", "não", "0"].includes(status)) return false;
     const ativo = this._pick(a, "Ativo", "ativo");
-    const status = this._norm(this._pick(a, "Status", "status"));
-    if (["inativo", "cancelado", "false", "nao", "não", "0"].includes(status)) return false;
     if (ativo === "") return true;
     return SP.isTrue ? SP.isTrue(ativo) : !!ativo;
   },
@@ -569,6 +570,11 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   async _montarResumoDashboard(semanaId, base) {
+    if (typeof SP.sincronizarAusenciasPedidosSemana === "function") {
+      await SP.sincronizarAusenciasPedidosSemana(semanaId).catch(e => console.warn("[Dashboard] Sincronização Ausências → Pedidos ignorada:", e));
+    } else if (typeof SP.sincronizarAusenciasEncerradas === "function") {
+      await SP.sincronizarAusenciasEncerradas().catch(e => console.warn("[Dashboard] Sincronização de ausências encerradas ignorada:", e));
+    }
     const { ini, fim, datas } = this._getSemanaRange(semanaId);
     const diaHoje = base.diaHoje || this._diaHoje(base);
     const dataHoje = this._dataPorDia(semanaId, diaHoje);
@@ -772,9 +778,13 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   async _renderToggleStatus() {
-    const liberado = await SP.isCardapioLiberado().catch(() => false);
-    const cardapio = await SP.getConfig("cardapio_visivel").catch(() => null);
-    const cardapioV = SP.isTrue(cardapio);
+    const semanaSelecionada = AdminState.getSemanaId();
+    const estado = typeof SP.getEstadoMarcacao === "function"
+      ? await SP.getEstadoMarcacao(semanaSelecionada).catch(() => null)
+      : null;
+
+    const liberado = estado ? !!estado.liberada : await SP.isCardapioLiberado().catch(() => false);
+    const cardapioV = estado ? !!estado.cardapioVisivel : await SP.getCardapioVisivel().catch(() => false);
 
     const tMarcacao = document.getElementById("toggleMarcacao");
     const tCardapio = document.getElementById("toggleCardapio");
@@ -785,9 +795,12 @@ const AdminDashboard = window.AdminDashboard = {
       tMarcacao.dataset.bound = "1";
       tMarcacao.addEventListener("change", async function () {
         try {
-          await SP.setMarcacaoLiberada(this.checked);
-          AdminUtils.toast(this.checked ? "Marcação liberada." : "Marcação bloqueada.", "success");
+          const semana = AdminState.getSemanaId();
+          await SP.setMarcacaoLiberada(this.checked, semana);
+          if (this.checked && typeof SP.setSemanaVisivelCardapio === "function") await SP.setSemanaVisivelCardapio(semana);
+          AdminUtils.toast(this.checked ? `Marcação liberada para ${semana}.` : `Marcação bloqueada para ${semana}.`, "success");
           AdminUtils.setTxt("dashMarcacaoStatus", this.checked ? "Aberta" : "Fechada");
+          await AdminDashboard._renderSemanaAlvoMarcacao(semana);
         } catch (e) {
           AdminUtils.toast("Erro ao alterar marcação: " + (e.message || e), "error");
           this.checked = !this.checked;
@@ -799,9 +812,11 @@ const AdminDashboard = window.AdminDashboard = {
       tCardapio.dataset.bound = "1";
       tCardapio.addEventListener("change", async function () {
         try {
-          await SP.setCardapioVisivel(this.checked);
-          AdminUtils.toast(this.checked ? "Cardápio visível." : "Cardápio ocultado.", "success");
+          const semana = AdminState.getSemanaId();
+          await SP.setCardapioVisivel(this.checked, semana);
+          AdminUtils.toast(this.checked ? `Cardápio visível para ${semana}.` : `Cardápio ocultado para ${semana}.`, "success");
           AdminUtils.setTxt("dashCardapioStatus", this.checked ? "Liberado" : "Bloqueado");
+          await AdminDashboard._renderSemanaAlvoMarcacao(semana);
         } catch (e) {
           AdminUtils.toast("Erro ao alterar cardápio: " + (e.message || e), "error");
           this.checked = !this.checked;
@@ -814,7 +829,7 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   async _carregarPrazo(semanaId, resumo) {
-    const prazo = await SP.getPrazoMarcacao().catch(() => null);
+    const prazo = await SP.getPrazoMarcacao(semanaId).catch(() => null);
 
     if (prazo) {
       const dt = new Date(prazo);
@@ -822,7 +837,7 @@ const AdminDashboard = window.AdminDashboard = {
       AdminUtils.setVal("prazoHora", this._inputTimeLocal(dt));
     }
 
-    this._atualizarPainelPrazo(prazo, this._num(resumo.colaboradoresPendentes));
+    this._atualizarPainelPrazo(prazo, this._num(resumo.colaboradoresPendentes), semanaId);
 
     const btnSalvar = document.getElementById("btnSalvarPrazo");
     if (btnSalvar && !btnSalvar.dataset.bound) {
@@ -833,9 +848,11 @@ const AdminDashboard = window.AdminDashboard = {
         if (!data) { AdminUtils.toast("Informe a data limite.", "error"); return; }
         const valor = `${data}T${hora}:00`;
         try {
-          await SP.setPrazoMarcacao(valor);
-          AdminUtils.toast("✅ Prazo salvo.", "success");
-          await AdminDashboard.load(AdminState.getSemanaId());
+          const semana = AdminState.getSemanaId();
+          await SP.setPrazoMarcacao(valor, semana);
+          if (typeof SP.setSemanaAlvoMarcacao === "function") await SP.setSemanaAlvoMarcacao(semana);
+          AdminUtils.toast(`✅ Prazo salvo para ${semana}.`, "success");
+          await AdminDashboard.load(semana);
         } catch (e) {
           AdminUtils.toast("Erro ao salvar prazo: " + (e.message || e), "error");
         }
@@ -843,7 +860,7 @@ const AdminDashboard = window.AdminDashboard = {
     }
   },
 
-  _atualizarPainelPrazo(prazoISO, pendentesColaboradores) {
+  _atualizarPainelPrazo(prazoISO, pendentesColaboradores, semanaId = null) {
     const el = document.getElementById("dashPainelPrazo");
     if (!el) return;
 
@@ -851,6 +868,7 @@ const AdminDashboard = window.AdminDashboard = {
     const dt = prazoISO ? new Date(prazoISO) : null;
     const vencido = dt && !isNaN(dt) && agora > dt;
     const qtdPend = this._num(pendentesColaboradores);
+    const semana = semanaId || AdminState.getSemanaId();
 
     const fmtDt = dt && !isNaN(dt)
       ? dt.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" }) +
@@ -862,26 +880,26 @@ const AdminDashboard = window.AdminDashboard = {
     let statusTxt = "";
 
     if (!dt || isNaN(dt)) {
-      statusTxt = "Nenhum prazo definido para esta semana.";
+      statusTxt = `Nenhum prazo definido para ${semana}.`;
       alertClass = "alert-warning";
       icone = "⚠️";
     } else if (vencido) {
       alertClass = "alert-red";
       icone = "🔒";
       statusTxt = qtdPend > 0
-        ? `Prazo encerrado em ${fmtDt}. ${qtdPend} colaborador(es) ainda não marcaram.`
-        : `Prazo encerrado em ${fmtDt}. Todos os colaboradores marcaram ou estão ausentes.`;
+        ? `Prazo de ${semana} encerrado em ${fmtDt}. ${qtdPend} colaborador(es) ainda não marcaram.`
+        : `Prazo de ${semana} encerrado em ${fmtDt}. Todos os colaboradores marcaram ou estão ausentes.`;
     } else {
       const msRestante = dt - agora;
       const horas = Math.floor(msRestante / 3600000);
       const minutos = Math.floor((msRestante % 3600000) / 60000);
       const tempoTxt = horas > 0 ? `${horas}h ${minutos}min restantes` : `${minutos} min restantes`;
-      statusTxt = `Prazo: ${fmtDt} (${tempoTxt}). ${qtdPend} colaborador(es) ainda não marcaram.`;
+      statusTxt = `Prazo de ${semana}: ${fmtDt} (${tempoTxt}). ${qtdPend} colaborador(es) ainda não marcaram.`;
     }
 
     const btnHtml = qtdPend > 0
       ? `<button id="btnTravarPendentes" class="btn-primary" style="flex-shrink:0;font-size:.82rem;padding:.5rem 1rem;margin-top:.5rem">
-           🔒 Travar ${qtdPend} colaborador(es) pendente(s) como Principal
+           🔒 Travar ${qtdPend} colaborador(es) pendente(s) como Principal em ${AdminUtils.esc(semana)}
          </button>`
       : "";
 
@@ -894,8 +912,35 @@ const AdminDashboard = window.AdminDashboard = {
     const btnTravar = document.getElementById("btnTravarPendentes");
     if (btnTravar && !btnTravar.dataset.bound) {
       btnTravar.dataset.bound = "1";
-      btnTravar.addEventListener("click", () => this._confirmarTravamento(AdminState.getSemanaId(), qtdPend));
+      btnTravar.addEventListener("click", () => this._confirmarTravamento(semana, qtdPend));
     }
+  },
+
+  async _renderSemanaAlvoMarcacao(semanaSelecionada = null) {
+    let el = document.getElementById("dashSemanaAlvoMarcacao");
+    const box = document.querySelector("#mod-dashboard .prazo-box");
+    if (!box) return;
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "dashSemanaAlvoMarcacao";
+      el.style.marginTop = ".8rem";
+      box.insertAdjacentElement("afterend", el);
+    }
+
+    const semana = semanaSelecionada || AdminState.getSemanaId();
+    const estado = typeof SP.getEstadoMarcacao === "function" ? await SP.getEstadoMarcacao(semana).catch(() => null) : null;
+    const alvo = estado?.semanaId || (typeof SP.getSemanaAlvoMarcacao === "function" ? await SP.getSemanaAlvoMarcacao(semana).catch(() => semana) : semana);
+    const visivel = typeof SP.getSemanaVisivelCardapio === "function" ? await SP.getSemanaVisivelCardapio(alvo).catch(() => alvo) : alvo;
+    const prazo = estado?.prazoLimite || (typeof SP.getPrazoMarcacao === "function" ? await SP.getPrazoMarcacao(alvo).catch(() => null) : null);
+    const prazoTxt = prazo ? new Date(prazo).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "não definido";
+
+    el.innerHTML = `
+      <div class="alert alert-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.6rem;align-items:center">
+        <div><strong>Semana visualizada no Admin:</strong><br>${AdminUtils.esc(semana)}</div>
+        <div><strong>Semana aberta para marcação:</strong><br>${AdminUtils.esc(alvo)}</div>
+        <div><strong>Cardápio público:</strong><br>${AdminUtils.esc(visivel)}</div>
+        <div><strong>Prazo:</strong><br>${AdminUtils.esc(prazoTxt)}</div>
+      </div>`;
   },
 
   _pratoPrincipalPorDia(cardapio, dia) {
@@ -991,7 +1036,10 @@ const AdminDashboard = window.AdminDashboard = {
         `✅ Travamento concluído: ${resultado.colaboradores} colaborador(es), ${resultado.pedidosCriados} pedido(s) criados.`,
         "success"
       );
-      await SP.setMarcacaoLiberada(false).catch(() => null);
+      await SP.setMarcacaoLiberada(false, semanaId).catch(() => null);
+      await SP.setConfig?.("ultimo_travamento_semana", semanaId).catch(() => null);
+      await SP.setConfig?.("ultimo_travamento_em", new Date().toISOString()).catch(() => null);
+      await SP.setConfig?.("ultimo_travamento_qtd", String(resultado.pedidosCriados || 0)).catch(() => null);
       await AdminDashboard.load(semanaId);
     } catch (e) {
       AdminUtils.toast("Erro ao travar: " + (e.message || e), "error");
