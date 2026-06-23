@@ -60,7 +60,7 @@ const AdminDashboard = window.AdminDashboard = {
       this.load(AdminState.getSemanaId()).catch?.(console.warn);
     };
 
-    this._syncTimer = setInterval(recarregar, 7000);
+    this._syncTimer = setInterval(recarregar, 30000);
     window.addEventListener("focus", recarregar);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) recarregar(); });
     window.addEventListener("storage", e => {
@@ -570,10 +570,12 @@ const AdminDashboard = window.AdminDashboard = {
   },
 
   async _montarResumoDashboard(semanaId, base) {
-    if (typeof SP.sincronizarAusenciasPedidosSemana === "function") {
-      await SP.sincronizarAusenciasPedidosSemana(semanaId).catch(e => console.warn("[Dashboard] Sincronização Ausências → Pedidos ignorada:", e));
-    } else if (typeof SP.sincronizarAusenciasEncerradas === "function") {
-      await SP.sincronizarAusenciasEncerradas().catch(e => console.warn("[Dashboard] Sincronização de ausências encerradas ignorada:", e));
+    if (typeof SP.repararIntegridadeSemana === "function") {
+      SP.repararIntegridadeSemana(semanaId).then(r => {
+        if (r?.mudouDados && window.AdminState?.moduloAtivo === "dashboard") {
+          setTimeout(() => this.load(semanaId).catch(console.warn), 900);
+        }
+      }).catch(e => console.warn("[Dashboard] Reparo de integridade em segundo plano ignorado:", e));
     }
     const { ini, fim, datas } = this._getSemanaRange(semanaId);
     const diaHoje = base.diaHoje || this._diaHoje(base);
