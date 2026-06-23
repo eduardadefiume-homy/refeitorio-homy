@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: sync-operacao-pedidos-ausencias-20260616
+// v: integridade-extras-ausencias-20260623
 // ============================================================
 
 const SP = {
@@ -391,21 +391,12 @@ const SP = {
         continue;
       }
 
-      // Centro_Custo existe com nomes internos diferentes em algumas listas.
-      // Se a lista não tiver essa coluna, o campo é omitido para não quebrar o salvamento.
-      if (this._isCampoCentroCusto(campo)) {
-        console.warn(`[SharePoint] Campo Centro_Custo não existe em ${listName}; envio omitido.`);
-        continue;
-      }
-
-      // Configurações tem variações de coluna entre ambientes.
-      // Nessa lista, campo não reconhecido deve ser omitido, não enviado ao Graph.
-      if (this._isListaConfiguracoes(listName)) {
-        console.warn(`[SharePoint] Campo ${campo} não existe em ${listName}; envio omitido.`);
-        continue;
-      }
-
-      out[campo] = valor;
+      // Campo não encontrado na lista real do SharePoint.
+      // Regra de integridade: nunca enviar campo inexistente ao Graph,
+      // porque isso quebra o salvamento inteiro da lista. A coluna pode ter
+      // nome visual diferente, nome interno diferente ou simplesmente não existir.
+      console.warn(`[SharePoint] Campo ${campo} não existe em ${listName}; envio omitido para preservar a gravação.`);
+      continue;
     }
 
     return out;
@@ -538,8 +529,161 @@ const SP = {
   // PEDIDOS
   // ============================================================
   async getPedidos(semanaId) {
-    const items = await this.getItems("Pedidos");
-    return items.filter(i => this.pick(i, "Semana_id") === semanaId);
+    let items = await this.getItems("Pedidos");
+    let pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
+
+    // Garantia de integridade entre Extras e Pedidos.
+    // Regra oficial: todo item da lista Extras deve possuir um Pedido espelho,
+    // pois Operação do Dia, Cozinha, Dashboard e Relatórios leem Pedidos como base.
+    // Se alguém lançou o extra no SharePoint ou houve falha anterior no espelho,
+    // o sistema repara automaticamente antes de devolver a lista.
+    if (semanaId && !this._sincronizandoExtrasComoPedidos) {
+      try {
+        const r = await this.garantirExtrasComoPedidos(semanaId, pedidos);
+        if (r && (r.criados || r.atualizados)) {
+          items = await this.getItems("Pedidos");
+          pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
+        }
+      } catch (e) {
+        console.warn("[SharePoint] Não foi possível garantir extras como pedidos. A tela ainda pode usar fallback visual.", e);
+      }
+    }
+
+    return pedidos;
+  },
+
+  _extraValor(extra, ...keys) {
+    return this.pick(extra, ...keys) ?? "";
+  },
+
+  _extraInativo(extra) {
+    const status = this.norm(this._extraValor(extra, "Status", "status") || "");
+    if (["cancelado", "bloqueado", "excluido", "excluído", "inativo", "false", "nao", "não", "0"].includes(status)) return true;
+    const ativo = this._extraValor(extra, "Ativo", "ativo");
+    if (ativo === null || ativo === undefined || String(ativo).trim() === "") return false;
+    return !this.isTrue(ativo);
+  },
+
+  _extraDiaValor(extra) {
+    return this._extraValor(extra, "Dia", "dia") || "";
+  },
+
+  _extraNomeValor(extra) {
+    return this._extraValor(extra, "Nome", "Title", "Colaborador_nome") || "Refeição Extra";
+  },
+
+  _extraTipoValor(extra) {
+    return this._extraValor(extra, "tipo", "Tipo", "Origem", "origem") || "extra";
+  },
+
+  _extraOpcaoValor(extra) {
+    return this._extraValor(extra, "Opcao", "Opção", "opcao") || "principal";
+  },
+
+  _extraCentroCustoValor(extra) {
+    const raw = this._extraValor(extra, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || "";
+    if (raw) return raw;
+    const obs = String(this._extraValor(extra, "Observacao", "Observação", "observacao") || "");
+    const m = obs.match(/(\d{6})(?:\s*-\s*([A-Za-zÀ-ÿ\s/.-]+))?/);
+    if (m) return m[0];
+    return this._centroCustoPadraoExtra(this._extraNomeValor(extra), this._extraTipoValor(extra));
+  },
+
+  _pedidoEspelhoDoExtra(pedido, extra, semanaId) {
+    const dia = this._extraDiaValor(extra);
+    const nome = this._extraNomeValor(extra);
+    const tipo = this._extraTipoValor(extra);
+    const opcao = this._extraOpcaoValor(extra);
+    const extraId = String(this.pick(extra, "id", "ID") || "").trim();
+    const colabId = String(this.pick(pedido, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const obs = String(this.pick(pedido, "Observacao", "Observação", "observacao") || "");
+
+    if (extraId && colabId === `extra-${extraId}`) return true;
+    if (extraId && this.norm(obs).includes(`extraid:${this.norm(extraId)}`)) return true;
+    if (typeof this._pedidoExtraBate === "function" && this._pedidoExtraBate(pedido, semanaId, dia, nome, tipo, opcao, extraId)) return true;
+
+    return String(this.pick(pedido, "Semana_id", "Semana") || "") === String(semanaId) &&
+      this.norm(this.pick(pedido, "Dia", "dia") || "") === this.norm(dia) &&
+      this.norm(this.pick(pedido, "Colaborador_nome", "Nome", "Title") || "") === this.norm(nome) &&
+      this.norm(this.pick(pedido, "Origem", "tipo", "Tipo") || "").includes(this.norm(tipo)) &&
+      this.norm(this.pick(pedido, "Opcao", "opcao") || "principal") === this.norm(opcao || "principal");
+  },
+
+  async garantirExtrasComoPedidos(semanaId, pedidosBase = null) {
+    if (!semanaId) return { criados: 0, atualizados: 0, ignorados: 0 };
+    if (this._sincronizandoExtrasComoPedidos) return { criados: 0, atualizados: 0, ignorados: 0 };
+
+    this._sincronizandoExtrasComoPedidos = true;
+    let criados = 0, atualizados = 0, ignorados = 0;
+
+    try {
+      const [extras, pedidosIniciais] = await Promise.all([
+        this.getItems("Extras").catch(() => []),
+        pedidosBase ? Promise.resolve(pedidosBase) : this.getItems("Pedidos").then(items => items.filter(i => this.pick(i, "Semana_id") === semanaId)).catch(() => [])
+      ]);
+
+      const pedidos = Array.isArray(pedidosIniciais) ? [...pedidosIniciais] : [];
+      const extrasSemana = (extras || []).filter(e =>
+        String(this.pick(e, "Semana_id", "Semana") || "") === String(semanaId) &&
+        !this._extraInativo(e) &&
+        String(this._extraDiaValor(e) || "").trim() &&
+        String(this._extraNomeValor(e) || "").trim()
+      );
+
+      for (const extra of extrasSemana) {
+        const dia = this._extraDiaValor(extra);
+        const nome = this._extraNomeValor(extra);
+        const tipo = this._extraTipoValor(extra);
+        const opcao = this._extraOpcaoValor(extra);
+        const extraId = String(this.pick(extra, "id", "ID") || "").trim();
+        const colabId = extraId ? `extra-${extraId}` : `extra-${this.norm(tipo)}-${this.norm(nome)}-${this.norm(dia)}`;
+        const centroCusto = this._extraCentroCustoValor(extra);
+        const obsBase = this._extraValor(extra, "Observacao", "Observação", "observacao") || "Criado a partir da lista Extras";
+        const observacao = [obsBase, extraId ? `ExtraID:${extraId}` : ""].filter(Boolean).join(" | ");
+        const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, dia, opcao).catch(() => "") || this._pratoPadraoPorOpcao(opcao);
+        const dataHora = `${this.getDataRefBySemanaDia(semanaId, dia)}T12:00:00`;
+        const existente = pedidos.find(p => this._pedidoEspelhoDoExtra(p, extra, semanaId));
+
+        const fields = {
+          Title:            `${semanaId}-${colabId}-${dia}`,
+          Semana_id:        semanaId,
+          Colaborador_id:   colabId,
+          Colaborador_nome: nome,
+          Dia:              dia,
+          Opcao:            opcao || "principal",
+          Nome_Prato:       nomePrato,
+          Confirmado:       true,
+          Data_Hora:        dataHora,
+          Centro_Custo:     centroCusto || "",
+          Status:           "Confirmado",
+          Observacao:       observacao,
+          Origem:           tipo || "extra",
+          Alterado_Por:     this.getUserName ? this.getUserName() : "Sistema"
+        };
+
+        if (existente?.id) {
+          const precisaAtualizar = ["Colaborador_id", "Colaborador_nome", "Dia", "Opcao", "Nome_Prato", "Centro_Custo", "Status", "Origem"].some(k =>
+            String(this.pick(existente, k) || "") !== String(fields[k] || "")
+          ) || !this.isTrue(this.pick(existente, "Confirmado"));
+
+          if (precisaAtualizar) {
+            await this.updateItem("Pedidos", existente.id, fields);
+            Object.assign(existente, fields);
+            atualizados++;
+          } else {
+            ignorados++;
+          }
+        } else {
+          const criado = await this.createItem("Pedidos", fields);
+          pedidos.push({ id: criado?.id || criado?.ID || "", ...fields });
+          criados++;
+        }
+      }
+    } finally {
+      this._sincronizandoExtrasComoPedidos = false;
+    }
+
+    return { criados, atualizados, ignorados };
   },
 
   async getPedidoColaborador(semanaId, colaboradorId) {
@@ -1096,13 +1240,23 @@ const SP = {
       centroCusto = await this._resolverCentroCustoColaborador(colaboradorId, nome);
     }
 
+    const dataInicio = dados.dataInicio || dados.Data_Inicio;
+    const dataFim = dados.dataFim || dados.Data_Fim || dataInicio;
+    const semanaInicio = dataInicio ? this.getSemanaId(new Date(`${String(dataInicio).slice(0, 10)}T12:00:00`)) : "";
+    const semanaFim = dataFim ? this.getSemanaId(new Date(`${String(dataFim).slice(0, 10)}T12:00:00`)) : semanaInicio;
+
     return this.createItem("Ausencias do Refeitorio", {
       Title:            dados.title || `${nome} - ${motivo}`,
       Colaborador_id:   colaboradorId,
       Colaborador_nome: nome,
       Centro_Custo:     centroCusto || "",
-      Data_Inicio:      dados.dataInicio  || dados.Data_Inicio,
-      Data_Fim:         dados.dataFim     || dados.Data_Fim,
+      Data_Inicio:      dataInicio,
+      Data_Fim:         dataFim,
+      // Campos opcionais: se existirem na lista, serão gravados; se não existirem,
+      // o mapeador omite sem quebrar o cadastro.
+      Semana_id:        dados.semanaId || dados.Semana_id || semanaInicio,
+      Semana_Inicio:    dados.semanaInicio || dados.Semana_Inicio || semanaInicio,
+      Semana_Fim:       dados.semanaFim || dados.Semana_Fim || semanaFim,
       Motivo:           motivo,
       Observacao:       dados.observacao  || dados.Observacao || "",
       Ativo:            dados.ativo       ?? dados.Ativo      ?? true,
