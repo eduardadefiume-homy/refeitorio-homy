@@ -255,7 +255,7 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=dedupe-ausencias-cozinha-20260624");
+      return loadScript("sharepoint.js?v=fix-semana-operacional-ausencias-20260624");
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -354,12 +354,11 @@ document.getElementById("searchInput").addEventListener("input",function(){ cons
       });
       return;
     } 
-    let semanaId = SP.getSemanaId ? SP.getSemanaId(hoje) : "";
-    if (typeof SP.getSemanaVisivelCardapio === "function") {
-      semanaId = await SP.getSemanaVisivelCardapio(semanaId);
-    }
+    // Cardápio do Dia é operacional: sempre mostra o dia/semana corrente.
+    // A semana alvo/visível continua valendo para Marcar Refeição e Cardápio da Semana.
+    const semanaId = SP.getSemanaId ? SP.getSemanaId(hoje) : "";
     const dia = diaHojeKey();
-    const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId)]);
+    const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId, { reparar: false })]);
 const OPCOES_VALIDAS_DIA = ["principal","light","carne","massa","lanche","feriado"];
 CARDAPIO_HOJE = (cardapioSemana||[])
   .filter(i => {
