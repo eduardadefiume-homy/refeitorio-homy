@@ -1,6 +1,6 @@
 // ============================================================
 // admin-ausencias.js — Férias, afastamentos, ausências e bloqueios
-// Correção: período encerrado, retorno automático e prevenção de duplicidade
+// Correção: período encerrado, retorno automático e prevenção de duplicidade/sobreposição
 // ============================================================
 
 const AdminAusencias = window.AdminAusencias = {
@@ -130,7 +130,14 @@ const AdminAusencias = window.AdminAusencias = {
 
     const vistos = new Set();
     return (pedidos || [])
-      .filter(p => this._isPedidoAusencia(p))
+      .filter(p => {
+        if (!this._isPedidoAusencia(p)) return false;
+        const origem = AdminUtils.norm(this._pick(p, "Origem", "origem", "tipo", "Tipo"));
+        // Pedidos de ausência gerados pelo próprio Admin/Ausências já aparecem como registro real.
+        // Se mostrarmos também aqui, o módulo duplica linhas e confunde a Luana.
+        if (origem.includes("ausencia") || origem.includes("ausência") || origem.includes("retorno automatico") || origem.includes("retorno automático")) return false;
+        return !origem || origem.includes("refeitorio") || origem.includes("refeitório") || origem.includes("marcar");
+      })
       .map(p => {
         const data = this._pedidoDataRefeicao(p, semanaId);
         const motivo = this._pick(p, "Status", "status") || "Não vai almoçar";
@@ -320,27 +327,42 @@ const AdminAusencias = window.AdminAusencias = {
     return `${cid || nome}|${ini}|${motivo}`;
   },
 
+  _intervalosSobrepostos(a, b) {
+    const ai = this._dateISO(this._pick(a, "Data_Inicio", "Inicio", "DataInicio"));
+    const af = this._dateISO(this._pick(a, "Data_Fim", "Fim", "DataFim")) || ai;
+    const bi = this._dateISO(this._pick(b, "Data_Inicio", "Inicio", "DataInicio"));
+    const bf = this._dateISO(this._pick(b, "Data_Fim", "Fim", "DataFim")) || bi;
+    return !!ai && !!af && !!bi && !!bf && ai <= bf && af >= bi;
+  },
+
+  _preferirAusenciaVisual(grupo) {
+    return [...grupo].sort((a, b) => {
+      const aa = this._ativo(a) ? 1 : 0;
+      const bb = this._ativo(b) ? 1 : 0;
+      if (aa !== bb) return bb - aa;
+      const fa = this._dateISO(this._pick(a, "Data_Fim", "Fim", "DataFim"));
+      const fb = this._dateISO(this._pick(b, "Data_Fim", "Fim", "DataFim"));
+      if (fa !== fb) return fb.localeCompare(fa);
+      return Number(this._pick(b, "id", "ID") || 0) - Number(this._pick(a, "id", "ID") || 0);
+    })[0];
+  },
+
   _filtrarDuplicatasVisual(lista) {
-    const grupos = new Map();
-    (lista || []).forEach(item => {
+    const itens = [...(lista || [])];
+    const ocultarIds = new Set();
+
+    // 1) Oculta duplicidade exata.
+    const gruposExatos = new Map();
+    itens.forEach(item => {
       const k = this._chaveDuplicidadeVisual(item);
       if (!k || k === "||") return;
-      if (!grupos.has(k)) grupos.set(k, []);
-      grupos.get(k).push(item);
+      if (!gruposExatos.has(k)) gruposExatos.set(k, []);
+      gruposExatos.get(k).push(item);
     });
 
-    const ocultarIds = new Set();
-    for (const grupo of grupos.values()) {
+    for (const grupo of gruposExatos.values()) {
       if (grupo.length < 2) continue;
-      const preferido = [...grupo].sort((a, b) => {
-        const aa = this._ativo(a) ? 1 : 0;
-        const bb = this._ativo(b) ? 1 : 0;
-        if (aa !== bb) return bb - aa;
-        const fa = this._dateISO(this._pick(a, "Data_Fim", "Fim", "DataFim"));
-        const fb = this._dateISO(this._pick(b, "Data_Fim", "Fim", "DataFim"));
-        if (fa !== fb) return fb.localeCompare(fa);
-        return Number(this._pick(b, "id", "ID") || 0) - Number(this._pick(a, "id", "ID") || 0);
-      })[0];
+      const preferido = this._preferirAusenciaVisual(grupo);
       const idPreferido = String(this._pick(preferido, "id", "ID") || "");
       grupo.forEach(x => {
         const id = String(this._pick(x, "id", "ID") || "");
@@ -348,7 +370,36 @@ const AdminAusencias = window.AdminAusencias = {
       });
     }
 
-    return (lista || []).filter(x => !ocultarIds.has(String(this._pick(x, "id", "ID") || "")));
+    // 2) Oculta sobreposição de período do mesmo colaborador/motivo.
+    const gruposColabMotivo = new Map();
+    itens.forEach(item => {
+      const cid = String(this._pick(item, "Colaborador_id", "ColaboradorId") || "").trim();
+      const nome = AdminUtils.norm(this._pick(item, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+      const motivo = AdminUtils.norm(this._pick(item, "Motivo", "motivo", "Status"));
+      const k = `${cid || nome}|${motivo}`;
+      if (!cid && !nome) return;
+      if (!motivo) return;
+      if (!gruposColabMotivo.has(k)) gruposColabMotivo.set(k, []);
+      gruposColabMotivo.get(k).push(item);
+    });
+
+    for (const grupo of gruposColabMotivo.values()) {
+      const ativosOuReais = grupo.filter(x => !x._origemPedido);
+      if (ativosOuReais.length < 2) continue;
+      for (const item of ativosOuReais) {
+        const sobrepostos = ativosOuReais.filter(x => x !== item && this._intervalosSobrepostos(item, x));
+        if (!sobrepostos.length) continue;
+        const cluster = [item, ...sobrepostos];
+        const preferido = this._preferirAusenciaVisual(cluster);
+        const idPreferido = String(this._pick(preferido, "id", "ID") || "");
+        cluster.forEach(x => {
+          const id = String(this._pick(x, "id", "ID") || "");
+          if (id && id !== idPreferido && !this._ativo(x)) ocultarIds.add(id);
+        });
+      }
+    }
+
+    return itens.filter(x => !ocultarIds.has(String(this._pick(x, "id", "ID") || "")));
   },
 
   _render() {
