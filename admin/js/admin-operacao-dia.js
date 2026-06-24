@@ -1,5 +1,5 @@
 // admin-operacao-dia.js — Operação do Dia do Admin Homy · integridade extras/ausências
-// Correção: operação deduplica pedidos, sincroniza ausências como pedidos e aplica retorno automático como Principal.
+// Correção: operação deduplica pedidos, sincroniza ausências, remove ausência obsoleta e aplica retorno automático como Principal.
 
 const AdminOperacao = window.AdminOperacao = {
   _lista: [],
@@ -146,8 +146,11 @@ const AdminOperacao = window.AdminOperacao = {
   },
 
   _ausenciaAtiva(a) {
-    const status = this._norm(this._pick(a, "Status", "status", "Status_Ausencia"));
-    if (["inativo", "cancelado", "encerrado", "periodo encerrado", "período encerrado", "false", "nao", "não", "0"].includes(status)) return false;
+    const status = this._norm(this._pick(a, "Status", "status", "Status_Ausencia", "statusAusencia"));
+    if ([
+      "inativo", "cancelado", "encerrado", "periodo encerrado", "período encerrado",
+      "duplicado inativado", "duplicidade inativada", "false", "nao", "não", "0"
+    ].includes(status)) return false;
     const ativo = this._pick(a, "Ativo", "ativo");
     if (ativo === "") return true;
     return SP.isTrue ? SP.isTrue(ativo) : !!ativo;
@@ -183,6 +186,62 @@ const AdminOperacao = window.AdminOperacao = {
     }) || null;
   },
 
+
+
+  _pedidoAusenciaObsoleta(p, ausencias, semanaId, dia) {
+    if (!this._isAusenteOperacao(p) && !this._norm(this._pick(p, "Origem", "origem", "tipo", "Tipo")).includes("ausencia") && !this._norm(this._pick(p, "Origem", "origem", "tipo", "Tipo")).includes("ausência")) return false;
+    return !this._ausenciaDoPedidoNoDia(p, ausencias, semanaId, dia);
+  },
+
+  _normalizarPedidosObsoletosOperacao(lista, ausencias, semanaId, dia) {
+    const grupos = new Map();
+    const especiais = [];
+
+    for (const p of (lista || [])) {
+      if (this._isExtraPedido(p) || this._isRefeicaoAdicionalColaborador(p)) {
+        especiais.push(p);
+        continue;
+      }
+      const key = this._pedidoKeyOperacao(p);
+      if (!grupos.has(key)) grupos.set(key, []);
+      grupos.get(key).push(p);
+    }
+
+    const saida = [...especiais];
+
+    for (const grupo of grupos.values()) {
+      const base = grupo[0];
+      const aus = this._ausenciaDoPedidoNoDia(base, ausencias, semanaId, dia);
+
+      if (aus) {
+        const escolhido = grupo.find(p => this._isAusenteOperacao(p)) || grupo.sort((a,b)=>this._compararPedidoOperacao(b,a))[0];
+        saida.push({ ...escolhido, _ausenciaOperacao: aus });
+        continue;
+      }
+
+      const normais = grupo.filter(p => !this._pedidoAusenciaObsoleta(p, ausencias, semanaId, dia) && !["cancelado","bloqueado"].includes(this._norm(this._pick(p,"Status","status"))));
+      if (normais.length) {
+        normais.sort((a,b)=>this._compararPedidoOperacao(b,a));
+        saida.push(normais[0]);
+        continue;
+      }
+
+      // Só restou pedido antigo de ausência, mas a ausência não cobre mais o dia.
+      // Na Operação, isso deve voltar como Principal automático para não sumir nem duplicar.
+      const stale = grupo.sort((a,b)=>this._compararPedidoOperacao(b,a))[0];
+      saida.push({
+        ...stale,
+        Status: "Confirmado",
+        Confirmado: true,
+        Opcao: this._pick(stale,"Opcao","opcao") || "principal",
+        Nome_Prato: this._norm(this._pick(stale,"Nome_Prato","nome_prato")).includes("ferias") ? "Prato Principal" : (this._pick(stale,"Nome_Prato","nome_prato") || "Prato Principal"),
+        Origem: "Retorno automático de ausência",
+        _ausenciaOperacao: null
+      });
+    }
+
+    return this._deduplicarPedidosOperacao(saida);
+  },
   async _buscarAusencias() {
     const tentativas = [
       () => SP.getAusencias?.(true),
@@ -241,10 +300,10 @@ const AdminOperacao = window.AdminOperacao = {
     let score = 0;
     if (this._pick(p, "id", "ID")) score += 2;
     if (!origem.includes("travamento")) score += 2;
-    if (this._isAusenteOperacao(p) || ["nao vai almocar", "não vai almoçar", "ausente", "ferias", "férias", "afastado", "atestado"].includes(status)) score += 90;
-    else if (["confirmado", "aprovado", "extra"].includes(status) || (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")))) score += 80;
-    else if (status === "travado") score += 70;
-    else if (["cancelado", "bloqueado"].includes(status)) score += 50;
+    if (["cancelado", "bloqueado"].includes(status)) score -= 50;
+    else if (["confirmado", "aprovado", "extra"].includes(status) || (SP.isTrue && SP.isTrue(this._pick(p, "Confirmado")))) score += 90;
+    else if (status === "travado") score += 80;
+    else if (this._isAusenteOperacao(p) || ["nao vai almocar", "não vai almoçar", "ausente", "ferias", "férias", "afastado", "atestado"].includes(status)) score += 60;
     return score;
   },
 
@@ -638,10 +697,7 @@ const AdminOperacao = window.AdminOperacao = {
         return true;
       });
 
-      lista = this._deduplicarPedidosOperacao(lista).map(p => {
-        const aus = this._ausenciaDoPedidoNoDia(p, ausencias, semanaId, dia);
-        return aus ? { ...p, _ausenciaOperacao: aus } : p;
-      });
+      lista = this._normalizarPedidosObsoletosOperacao(lista, ausencias, semanaId, dia);
 
       // Se a ausência foi cadastrada no módulo Ausências ou no Marcar Refeição
       // mas ainda não existe um pedido espelho, a Operação do Dia também precisa mostrar.
