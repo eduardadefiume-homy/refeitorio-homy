@@ -665,9 +665,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=dedupe-ausencias-cozinha-20260624")
-        .catch(function(){ return loadScript("./sharepoint.js?v=dedupe-ausencias-cozinha-20260624"); })
-        .catch(function(){ return loadScript("../sharepoint.js?v=dedupe-ausencias-cozinha-20260624"); });
+      return loadScript("sharepoint.js?v=fix-semana-operacional-ausencias-20260624")
+        .catch(function(){ return loadScript("./sharepoint.js?v=fix-semana-operacional-ausencias-20260624"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=fix-semana-operacional-ausencias-20260624"); });
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -1053,8 +1053,10 @@ function dataRefDiaCozinha(semanaId, dia){
 function ausenciaAtivaCozinha(a){
   const ativo = itemValor(a,"Ativo","ativo");
   const status = normalizar(itemValor(a,"Status","status","Status_Ausencia","statusAusencia"));
+  // "Período encerrado" não significa apagar o histórico: se a data do dia
+  // estiver dentro do intervalo da ausência, ela ainda vale para aquele dia.
   if([
-    "inativo","cancelado","encerrado","periodo encerrado","período encerrado",
+    "inativo","cancelado","encerrado",
     "duplicado inativado","duplicidade inativada","false","nao","não","0"
   ].includes(status)) return false;
   if(ativo === "") return true;
