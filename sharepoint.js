@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: dedupe-ausencias-pedidos-20260624
+// v: fix-semana-operacional-ausencias-20260624
 // ============================================================
 
 const SP = {
@@ -1503,8 +1503,10 @@ const SP = {
         : [obsAtual, `Período encerrado automaticamente em ${hoje}.`].filter(Boolean).join(" | ");
 
       try {
+        // Não inativar Ativo automaticamente aqui: ausência encerrada continua
+        // sendo histórico válido para os dias dentro do período. A validade operacional
+        // é sempre calculada por Data_Inicio <= dia <= Data_Fim.
         await this.updateItem(lista, id, {
-          Ativo: false,
           Status: "Período encerrado",
           Status_Ausencia: "Período encerrado",
           Observacao: obsEnc
@@ -1648,6 +1650,35 @@ const SP = {
     const ini = this._ausenciaInicioISO(a);
     const fim = this._ausenciaFimISO(a);
     return !!ini && !!fim && ini <= dataISO && fim >= dataISO;
+  },
+
+  _ausenciaStatusNorm(a) {
+    return this.norm(this.pick(a, "Status", "status", "Status_Ausencia", "statusAusencia") || "");
+  },
+
+  _ausenciaFoiCanceladaOuDuplicada(a) {
+    const status = this._ausenciaStatusNorm(a);
+    return [
+      "cancelado", "cancelada", "duplicado inativado", "duplicidade inativada",
+      "duplicada inativada", "excluido", "excluído"
+    ].includes(status);
+  },
+
+  _ausenciaPodeGerarHistorico(a) {
+    if (!a || this._ausenciaFoiCanceladaOuDuplicada(a)) return false;
+    const status = this._ausenciaStatusNorm(a);
+    const ativo = this.pick(a, "Ativo", "ativo");
+    // Período encerrado é apenas uma condição temporal/visual; ele continua
+    // valendo para os dias em que a data da operação caiu dentro do período.
+    if (status === "periodo encerrado" || status === "período encerrado") return true;
+    if (["inativo", "false", "nao", "não", "0"].includes(status)) return false;
+    if (ativo === null || ativo === undefined || ativo === "") return true;
+    return this.isTrue(ativo);
+  },
+
+  _ausenciaConsideradaParaData(a, dataISO) {
+    if (!this._ausenciaPodeGerarHistorico(a)) return false;
+    return this._ausenciaCobreData(a, dataISO);
   },
 
   _ausenciaChaveDuplicada(a) {
@@ -1883,13 +1914,12 @@ const SP = {
 
   _ausenciaVigenteParaKeyData(ausencias, colabKey, dataISO) {
     const candidatas = (ausencias || []).filter(a => {
-      if (!this._ausenciaAtivaPorCampo(a)) return false;
       const key = this._colabKey({
         Colaborador_id: this.pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
         Colaborador_nome: this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
       });
       if (key !== colabKey) return false;
-      return this._ausenciaCobreData(a, dataISO);
+      return this._ausenciaConsideradaParaData(a, dataISO);
     });
     if (!candidatas.length) return null;
     return this._ausenciaPreferidaParaSobreposicao(candidatas);
@@ -2067,11 +2097,11 @@ const SP = {
         return !!ini && !!fim && ini <= semanaFim && fim >= semanaIni;
       });
 
-      const ausenciasAtivas = ausenciasOrdenadas.filter(a => this._ausenciaAtivaPorCampo(a) && !this.ausenciaPeriodoEncerrado(a));
+      const ausenciasOperacionais = ausenciasOrdenadas.filter(a => this._ausenciaPodeGerarHistorico(a));
 
-      for (const a of ausenciasAtivas) {
+      for (const a of ausenciasOperacionais) {
         for (const diaInfo of dias) {
-          if (!this._ausenciaCobreData(a, diaInfo.data)) continue;
+          if (!this._ausenciaConsideradaParaData(a, diaInfo.data)) continue;
           const r = await this._criarOuAtualizarPedidoAusencia(semanaId, diaInfo, a, pedidos);
           ausenciasCriadas += r.criado || 0;
           ausenciasAtualizadas += r.atualizado || 0;
@@ -2081,6 +2111,7 @@ const SP = {
       // Retorno automático: se uma ausência terminou dentro da semana,
       // os dias seguintes da mesma semana passam a ser Principal automaticamente.
       for (const a of ausenciasOrdenadas) {
+        if (!this._ausenciaPodeGerarHistorico(a)) continue;
         const fimAus = this._ausenciaFimISO(a);
         if (!fimAus || fimAus < semanaIni || fimAus >= semanaFim) continue;
         const colabKey = this._colabKey({
@@ -2092,12 +2123,12 @@ const SP = {
 
         for (const diaInfo of dias) {
           if (diaInfo.data <= fimAus) continue;
-          const outraAusenciaCobreDia = ausenciasAtivas.some(x => {
+          const outraAusenciaCobreDia = ausenciasOperacionais.some(x => {
             const xKey = this._colabKey({
               Colaborador_id: this.pick(x, "Colaborador_id", "ColaboradorId", "colaboradorId"),
               Colaborador_nome: this.pick(x, "Colaborador_nome", "Colaborador", "Nome", "Title")
             });
-            return xKey === colabKey && this._ausenciaCobreData(x, diaInfo.data);
+            return xKey === colabKey && this._ausenciaConsideradaParaData(x, diaInfo.data);
           });
           if (outraAusenciaCobreDia) continue;
 
