@@ -665,9 +665,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623")
-        .catch(function(){ return loadScript("./sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623"); })
-        .catch(function(){ return loadScript("../sharepoint.js?v=semana-alvo-integridade-cozinha-cards-20260623"); });
+      return loadScript("sharepoint.js?v=dedupe-ausencias-cozinha-20260624")
+        .catch(function(){ return loadScript("./sharepoint.js?v=dedupe-ausencias-cozinha-20260624"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=dedupe-ausencias-cozinha-20260624"); });
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -1052,8 +1052,11 @@ function dataRefDiaCozinha(semanaId, dia){
 
 function ausenciaAtivaCozinha(a){
   const ativo = itemValor(a,"Ativo","ativo");
-  const status = normalizar(itemValor(a,"Status","status"));
-  if(["inativo","cancelado","false","nao","não","0"].includes(status)) return false;
+  const status = normalizar(itemValor(a,"Status","status","Status_Ausencia","statusAusencia"));
+  if([
+    "inativo","cancelado","encerrado","periodo encerrado","período encerrado",
+    "duplicado inativado","duplicidade inativada","false","nao","não","0"
+  ].includes(status)) return false;
   if(ativo === "") return true;
   return window.SP?.isTrue ? window.SP.isTrue(ativo) : !!ativo;
 }
@@ -1109,6 +1112,120 @@ function incluirAusenciasSemPedidoCozinha(lista, ausencias, semanaId, dia){
     existentes.add(key);
   });
   return out;
+}
+
+
+function colabKeyCozinha(obj){
+  const id = String(itemValor(obj,"Colaborador_id","ColaboradorId","colaboradorId") || getColaboradorId(obj) || "").trim();
+  if(id && !normalizar(id).startsWith("extra-")) return `id:${id}`;
+  const nome = normalizar(itemValor(obj,"Colaborador_nome","Colaborador","Nome","Title") || getNome(obj));
+  return nome ? `nome:${nome}` : "";
+}
+
+function pedidoAdicionalCozinha(p){
+  const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
+  const obs = normalizar(itemValor(p,"Observacao","Observação","observacao"));
+  const cid = normalizar(getColaboradorId(p));
+  return origem.includes("segunda refeicao") || origem.includes("segunda refeição") ||
+         origem.includes("transferencia para hoje") || origem.includes("transferência para hoje") ||
+         origem.includes("refeicao adicional") || origem.includes("refeição adicional") ||
+         obs.includes("adicionalid:") || obs.includes("colaboradorbaseid:") ||
+         cid.includes("-adicional-");
+}
+
+function pedidoAusenciaCozinha(p){
+  const status = normalizar(itemValor(p,"Status","status"));
+  const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
+  return isAusente(p) || origem.includes("ausencia") || origem.includes("ausência");
+}
+
+function ausenciaVigenteParaKeyCozinha(ausencias, colabKey, dataRef){
+  const candidatas = (ausencias || []).filter(a => {
+    if(!ausenciaAtivaCozinha(a)) return false;
+    const key = colabKeyCozinha({
+      Colaborador_id: itemValor(a,"Colaborador_id","colaborador_id","ColaboradorId"),
+      Colaborador_nome: itemValor(a,"Colaborador_nome","Colaborador","Nome","Title")
+    });
+    if(key !== colabKey) return false;
+    const ini = dataISOCozinha(itemValor(a,"Data_Inicio","Inicio","DataInicio"));
+    const fim = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || ini;
+    return !!ini && !!fim && dataRef >= ini && dataRef <= fim;
+  });
+  if(!candidatas.length) return null;
+  candidatas.sort((a,b) => {
+    const af = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || "";
+    const bf = dataISOCozinha(itemValor(b,"Data_Fim","Fim","DataFim")) || "";
+    if(af !== bf) return bf.localeCompare(af);
+    return Number(itemValor(b,"id","ID") || 0) - Number(itemValor(a,"id","ID") || 0);
+  });
+  return candidatas[0];
+}
+
+function scorePedidoCozinha(p){
+  const status = normalizar(itemValor(p,"Status","status"));
+  const confirmado = window.SP?.isTrue ? window.SP.isTrue(itemValor(p,"Confirmado","confirmado")) : !!itemValor(p,"Confirmado","confirmado");
+  let score = 0;
+  if(["cancelado","bloqueado"].includes(status)) score -= 100;
+  if(confirmado || ["confirmado","travado","extra","aprovado"].includes(status)) score += 50;
+  if(pedidoAusenciaCozinha(p)) score -= 20;
+  const ts = new Date(itemValor(p,"Modified","modified","Data_Hora","Created","created") || 0).getTime() || Number(itemValor(p,"id","ID") || 0) || 0;
+  return score * 10000000000000 + ts;
+}
+
+function deduplicarFluxoCozinha(lista, ausencias, semanaId, dia){
+  const dataRef = dataRefDiaCozinha(semanaId, dia);
+  const resultado = [];
+  const vistosEspeciais = new Set();
+  const grupos = new Map();
+
+  for(const p of (lista || [])){
+    if(isPedidoExtraCozinha(p) || pedidoAdicionalCozinha(p)){
+      const k = chavePedidoCozinha(p);
+      if(!vistosEspeciais.has(k)){
+        vistosEspeciais.add(k);
+        resultado.push(p);
+      }
+      continue;
+    }
+
+    const key = colabKeyCozinha(p);
+    if(!key){ resultado.push(p); continue; }
+    if(!grupos.has(key)) grupos.set(key, []);
+    grupos.get(key).push(p);
+  }
+
+  for(const [key, grupo] of grupos.entries()){
+    const ausencia = ausenciaVigenteParaKeyCozinha(ausencias, key, dataRef);
+    if(ausencia){
+      const base = grupo.find(p => pedidoAusenciaCozinha(p)) || grupo.sort((a,b)=>scorePedidoCozinha(b)-scorePedidoCozinha(a))[0];
+      const motivo = formatarMotivoAusenciaCozinha(itemValor(ausencia,"Motivo","motivo","Status","status") || "Ausente");
+      resultado.push({ ...base, Status: motivo, Nome_Prato: motivo, _ausente: true, _ausenciaCozinha: true });
+      continue;
+    }
+
+    const normais = grupo.filter(p => !pedidoAusenciaCozinha(p) && !["cancelado","bloqueado"].includes(normalizar(itemValor(p,"Status","status"))));
+    if(normais.length){
+      normais.sort((a,b)=>scorePedidoCozinha(b)-scorePedidoCozinha(a));
+      resultado.push(normais[0]);
+      continue;
+    }
+
+    // Só restou pedido antigo de ausência, mas a ausência não está vigente para hoje.
+    // Para a cozinha não pode aparecer como ausente; o retorno deve contar como principal.
+    const base = grupo.sort((a,b)=>scorePedidoCozinha(b)-scorePedidoCozinha(a))[0];
+    resultado.push({
+      ...base,
+      Status: "Confirmado",
+      Confirmado: true,
+      Opcao: itemValor(base,"Opcao","opcao") || "principal",
+      Nome_Prato: normalizar(itemValor(base,"Nome_Prato","nome_prato")).includes("ferias") ? "Prato Principal" : (itemValor(base,"Nome_Prato","nome_prato") || "Prato Principal"),
+      Origem: "Retorno automático de ausência",
+      _ausente: false,
+      _ausenciaCozinha: false
+    });
+  }
+
+  return resultado;
 }
 
 async function carregarAusenciasSeguras(){
@@ -1182,6 +1299,7 @@ async function sincronizar(silencioso = false, force = false){
       const cid = String(getColaboradorId(p));
       const nome = normalizar(getNome(p));
       const ausenciaEncontrada = (ausencias || []).find(a => {
+        if (!ausenciaAtivaCozinha(a)) return false;
         const ativo = itemValor(a,"Ativo","ativo");
         if (ativo !== "" && window.SP?.isTrue && !window.SP.isTrue(ativo)) return false;
         const aCid = String(itemValor(a,"Colaborador_id","colaborador_id") || "");
@@ -1203,6 +1321,7 @@ async function sincronizar(silencioso = false, force = false){
     // Se a ausência existe na lista Ausencias do Refeitorio mas ainda não tem pedido espelho,
     // a cozinha também precisa enxergar o colaborador naquele dia.
     pedidosHoje = incluirAusenciasSemPedidoCozinha(pedidosHoje, ausencias, semanaId, dia);
+    pedidosHoje = deduplicarFluxoCozinha(pedidosHoje, ausencias, semanaId, dia);
 
     try {
       checkinsHoje = await window.SP.getCheckIn(semanaId, dia);
