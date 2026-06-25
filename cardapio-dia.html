@@ -188,7 +188,6 @@ body::after{
 /* garante que o conteúdo fique acima do fundo */
 .header,.main-content,.cards-area,.week-nav,.day-tabs-wrap,.view,.content,.app,#app,#splash,.modal-overlay,.modal-bg{position:relative;z-index:1}
 .option-aviso{font-size:0.75rem;color:rgba(255,200,100,0.8);background:rgba(255,180,0,0.07);border:1px solid rgba(255,180,0,0.15);border-radius:8px;padding:0.5rem 0.7rem;margin-top:0.5rem;line-height:1.45}
-.tag-feriado{background:rgba(192,40,28,.35);color:#ffb8b0;border:1px solid rgba(192,40,28,.45)}
 </style>
 </head>
 <body>
@@ -255,7 +254,7 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=fix-semana-operacional-ausencias-20260624");
+      return loadScript("sharepoint.js?v=homy-msal-20260608-2");
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -266,7 +265,7 @@ window.HOMY_SP_READY = (function(){
 <script>
 const DIAS = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
 const MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
-const TAG_CLASS = {feriado:"tag-feriado",principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
+const TAG_CLASS = {principal:"tag-principal",light:"tag-light",carne:"tag-carne",massa:"tag-massa",lanche:"tag-lanche"};
 let CARDAPIO_HOJE = [];
 let FUNCIONARIOS = [];
 
@@ -301,16 +300,6 @@ function openFuncModal(func){
 
 function renderCardapio(){
   const grid=document.getElementById("cardapioGrid"); grid.innerHTML="";
-  const feriado = CARDAPIO_HOJE.find(op => String(op.tag||"").toLowerCase()==="feriado" || String(op.nome||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes("feriado"));
-  if(feriado){
-    grid.innerHTML =
-      '<div style="grid-column:1/-1;border:1px solid rgba(255,80,80,.28);background:rgba(192,40,28,.12);border-radius:18px;padding:2.2rem 1rem;text-align:center">'+
-        '<div style="font-size:3.2rem;line-height:1">🚫</div>'+
-        '<div style="font-family:Barlow Condensed,sans-serif;font-size:3rem;font-weight:800;letter-spacing:.14em;color:#fff;text-transform:uppercase;margin-top:.7rem">FERIADO</div>'+
-        '<div style="font-size:.92rem;color:rgba(255,210,210,.84);margin-top:.4rem">Não haverá marcação de refeição para hoje.</div>'+
-      '</div>';
-    return;
-  }
   if(!CARDAPIO_HOJE.length){ grid.innerHTML='<div class="modal-note">Nenhum cardápio real cadastrado para hoje no Admin.</div>'; return; }
   CARDAPIO_HOJE.forEach(op=>{
     const card=document.createElement("div");
@@ -354,12 +343,10 @@ document.getElementById("searchInput").addEventListener("input",function(){ cons
       });
       return;
     } 
-    // Cardápio do Dia é operacional: sempre mostra o dia/semana corrente.
-    // A semana alvo/visível continua valendo para Marcar Refeição e Cardápio da Semana.
     const semanaId = SP.getSemanaId ? SP.getSemanaId(hoje) : "";
     const dia = diaHojeKey();
-    const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId, { reparar: false })]);
-const OPCOES_VALIDAS_DIA = ["principal","light","carne","massa","lanche","feriado"];
+    const [cardapioSemana,pedidosSemana] = await Promise.all([SP.getCardapio(semanaId), SP.getPedidos(semanaId)]);
+const OPCOES_VALIDAS_DIA = ["principal","light","carne","massa","lanche"];
 CARDAPIO_HOJE = (cardapioSemana||[])
   .filter(i => {
     const opcao = String(val(i,"Opcao","opcao")||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -374,7 +361,131 @@ CARDAPIO_HOJE = (cardapioSemana||[])
     const aviso    = isTextoAviso ? detRaw.split(/\n|;/)[0].trim() : null;
     return { tag, tagClass:TAG_CLASS[tag]||"tag-principal", nome:nomeRaw, detalhes, aviso };
   });
-    FUNCIONARIOS = (pedidosSemana||[]).filter(p=>normalizarDia(val(p,"Dia","dia"))===dia).map(p=>({nome:val(p,"Colaborador_nome","colaborador_nome","Title")||"Colaborador", dept:val(p,"Departamento","departamento","Centro_Custo","centroCusto")||"", opcao:String(val(p,"Opcao","opcao")||"").toLowerCase()})).sort((a,b)=>a.nome.localeCompare(b.nome));
+    // Regra oficial do Cardápio do Dia:
+    // - mostra colaboradores, prestadores, visitantes e terceiros;
+    // - não mostra guarda, investigador nem refeição extra automática;
+    // - não mostra cancelados, férias, afastados, atestados, ausentes ou bloqueados;
+    // - Status de bloqueio vence Confirmado=true;
+    // - compatibilidade preservada: Status=Travado + Origem=Travamento continua valendo como confirmado.
+    const pedidosDia = (pedidosSemana || []).filter(p => normalizarDia(val(p,"Dia","dia")) === dia);
+
+    const normRegra = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const isTrueRegra = v => v === true || v === 1 || ["sim","true","yes","1"].includes(normRegra(v));
+    const getNomeRegra = p => val(p,"Colaborador_nome","colaborador_nome","Colaborador","Nome","Title") || "";
+    const getOrigemRegra = p => val(p,"Origem","origem","tipo","Tipo") || "";
+    const getTipoRegra = p => val(p,"tipo","Tipo") || "";
+    const getStatusRegra = p => val(p,"Status","status") || "";
+    const getOpcaoRegra = p => val(p,"Opcao","opcao") || "principal";
+    const getColabIdRegra = p => String(val(p,"Colaborador_id","colaborador_id","ColaboradorId","colaboradorId") || "").trim();
+
+    const statusBloqueiaCardapioDia = p => {
+      const status = normRegra(getStatusRegra(p));
+      const origem = normRegra(getOrigemRegra(p));
+
+      // Compatibilidade do sistema atual: pedidos antigos/automáticos de travamento
+      // podem vir como Status=Travado, mas operacionalmente são Confirmados.
+      if (status === "travado" && origem.includes("travamento")) return false;
+
+      return [
+        "cancelado","bloqueado","travado","nao vai almocar","nao_vai_almocar",
+        "ausente","ferias","afastado","afastamento","atestado","licenca",
+        "banco horas","banco_horas","homy office","homy_office","falta"
+      ].includes(status);
+    };
+
+    const confirmadoProducaoCardapioDia = p => {
+      const status = normRegra(getStatusRegra(p));
+      const origem = normRegra(getOrigemRegra(p));
+
+      if (status === "travado" && origem.includes("travamento")) return true;
+      if (statusBloqueiaCardapioDia(p)) return false;
+      return ["confirmado","aprovado","extra"].includes(status) || isTrueRegra(val(p,"Confirmado","confirmado"));
+    };
+
+    const isGuardaCardapioDia = p => {
+      const nome = normRegra(getNomeRegra(p));
+      const origem = normRegra(getOrigemRegra(p));
+      return nome === "guarda" || /^guarda\s*\d*$/.test(nome) || origem.includes("guarda");
+    };
+
+    const isInvestigadorCardapioDia = p => {
+      const nome = normRegra(getNomeRegra(p));
+      const origem = normRegra(getOrigemRegra(p));
+      return /^investigador(?:\s*\d+)?$/.test(nome) || origem.includes("investigador");
+    };
+
+    const isRefeicaoExtraAutomaticaCardapioDia = p => {
+      const nome = normRegra(getNomeRegra(p));
+      const origem = normRegra(getOrigemRegra(p));
+      const obs = normRegra(val(p,"Observacao","Observação","observacao","Obs"));
+      return nome === "refeicao extra" || nome === "refeicao extra automatica" ||
+             nome.includes("refeicao extra") || origem.includes("extra automat") || obs.includes("extra automat");
+    };
+
+    const tipoPermitidoCardapioDia = p => {
+      if (isGuardaCardapioDia(p) || isInvestigadorCardapioDia(p) || isRefeicaoExtraAutomaticaCardapioDia(p)) return false;
+
+      const origem = normRegra(getOrigemRegra(p));
+      const tipo = normRegra(getTipoRegra(p));
+      const base = tipo || origem || "colaborador";
+
+      // Pedidos normais dos colaboradores costumam vir com Origem=Refeitório.
+      if (["refeitorio","automatico","travamento"].includes(base)) return true;
+
+      // Exibição pública permitida.
+      return ["colaborador","funcionario","prestador","visitante","terceiro"].includes(base);
+    };
+
+    const pedidoKeyCardapioDia = p => {
+      const id = getColabIdRegra(p);
+      const nome = normRegra(getNomeRegra(p));
+      const origem = normRegra(getOrigemRegra(p));
+      const tipo = normRegra(getTipoRegra(p));
+      const opcao = normRegra(getOpcaoRegra(p));
+      const obs = normRegra(val(p,"Observacao","Observação","observacao","Obs"));
+      const extraId = (obs.match(/extraid:\s*([^|\s]+)/i) || [])[1] || "";
+
+      if (isGuardaCardapioDia(p) || isInvestigadorCardapioDia(p) || origem.includes("extra") || id.startsWith("extra-")) {
+        return `extra|${extraId || id || nome}|${tipo || origem}|${opcao}`;
+      }
+
+      return `colab|${id || nome}`;
+    };
+
+    const scorePedidoCardapioDia = p => {
+      const status = normRegra(getStatusRegra(p));
+      const origem = normRegra(getOrigemRegra(p));
+      const dataRaw = val(p,"Modified","modified","Data_Hora","DataHora","Created","created","Data") || "";
+      const ts = dataRaw ? (new Date(dataRaw).getTime() || 0) : 0;
+      const idNum = Number(val(p,"id","ID") || 0) || 0;
+      let score = ts || idNum;
+
+      if (["cancelado","bloqueado"].includes(status)) score -= 100000000000000;
+      if (status === "travado" && origem.includes("travamento")) score += 90000000000000;
+      else if (confirmadoProducaoCardapioDia(p)) score += 80000000000000;
+      else if (statusBloqueiaCardapioDia(p)) score -= 50000000000000;
+
+      return score;
+    };
+
+    const mapaPedidosDia = new Map();
+    for (const pedido of pedidosDia) {
+      const key = pedidoKeyCardapioDia(pedido);
+      const atual = mapaPedidosDia.get(key);
+      if (!atual || scorePedidoCardapioDia(pedido) >= scorePedidoCardapioDia(atual)) {
+        mapaPedidosDia.set(key, pedido);
+      }
+    }
+
+    FUNCIONARIOS = Array.from(mapaPedidosDia.values())
+      .filter(confirmadoProducaoCardapioDia)
+      .filter(tipoPermitidoCardapioDia)
+      .map(p => ({
+        nome:  val(p,"Colaborador_nome","colaborador_nome","Title") || "Colaborador",
+        dept:  val(p,"Departamento","departamento","Centro_Custo","centroCusto") || "",
+        opcao: String(val(p,"Opcao","opcao") || "").toLowerCase()
+      }))
+      .sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR",{sensitivity:"base",numeric:true}));
     renderCardapio(); renderFuncs(FUNCIONARIOS);
   }catch(e){
     console.error("Erro ao carregar dados reais:", e);
@@ -535,7 +646,7 @@ carregarDadosReais();
       }else if(overlay){ overlay.remove(); }
     }catch(e){ console.warn('Bloqueio cardápio:', e); }
   }
-  window.addEventListener('load',()=>{verificarCardapioVisivel(); setInterval(verificarCardapioVisivel,60000);});
+  window.addEventListener('load',()=>{verificarCardapioVisivel(); setInterval(verificarCardapioVisivel,10000);});
 })();
 </script>
 
