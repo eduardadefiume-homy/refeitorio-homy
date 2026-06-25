@@ -1,6 +1,6 @@
 // ============================================================
 // admin-integridade.js — Integridade dos Dados · Admin Homy
-// v: integridade-dashboard-readonly-20260625-fase2
+// v: integridade-dashboard-readonly-20260625-fase3
 //
 // Objetivo:
 // - Ler dados reais do SharePoint via SP/sharepoint.js.
@@ -208,11 +208,17 @@
       }
 
       overlay.classList.add("open");
+      document.documentElement.classList.add("admin-integridade-modal-aberto");
+      document.body.classList.add("admin-integridade-modal-aberto");
+      body.scrollTop = 0;
+      setTimeout(() => body.focus?.(), 30);
     },
 
     fecharDetalhes() {
       const overlay = document.getElementById("adminIntegridadeModalOverlay");
       if (overlay) overlay.classList.remove("open");
+      document.documentElement.classList.remove("admin-integridade-modal-aberto");
+      document.body.classList.remove("admin-integridade-modal-aberto");
     },
 
     copiarDiagnostico() {
@@ -1059,11 +1065,24 @@
             </div>
             <button class="admin-integridade-modal-close" onclick="AdminIntegridade.fecharDetalhes()">×</button>
           </div>
-          <div class="admin-integridade-modal-body" id="adminIntegridadeModalBody"></div>
+          <div class="admin-integridade-modal-body" id="adminIntegridadeModalBody" tabindex="0"></div>
         </div>`;
       overlay.addEventListener("click", ev => {
         if (ev.target === overlay) this.fecharDetalhes();
       });
+      overlay.addEventListener("wheel", ev => {
+        const body = document.getElementById("adminIntegridadeModalBody");
+        if (!body || !overlay.classList.contains("open")) return;
+        const podeRolar = body.scrollHeight > body.clientHeight;
+        if (!podeRolar) return;
+        body.scrollTop += ev.deltaY;
+        ev.preventDefault();
+      }, { passive: false });
+      overlay.addEventListener("touchmove", ev => {
+        const body = document.getElementById("adminIntegridadeModalBody");
+        if (!body || !overlay.classList.contains("open")) return;
+        if (ev.target === overlay) ev.preventDefault();
+      }, { passive: false });
       document.body.appendChild(overlay);
     },
 
@@ -1094,14 +1113,15 @@
         .integridade-preview-main{font-size:.78rem;font-weight:800;color:#fff}
         .integridade-preview-sub{font-size:.7rem;color:rgba(200,220,255,.68);margin-top:.12rem;line-height:1.35}
         .admin-integridade-error{font-size:.72rem;color:#ffaaa0;line-height:1.45}
-        .admin-integridade-modal-overlay{position:fixed;inset:0;z-index:9998;background:rgba(3,8,20,.82);backdrop-filter:blur(8px);display:none;align-items:flex-start;justify-content:center;padding:1.2rem;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
-        .admin-integridade-modal-overlay.open{display:flex}
-        .admin-integridade-modal{width:min(980px,96vw);max-height:calc(100vh - 2.4rem);min-height:0;overflow:hidden;border-radius:22px;border:1px solid rgba(255,255,255,.12);background:#081426;box-shadow:0 24px 80px rgba(0,0,0,.62);display:flex;flex-direction:column;margin:auto 0}
-        .admin-integridade-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:1.1rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.08)}
+        .admin-integridade-modal-aberto{overflow:hidden!important}
+        .admin-integridade-modal-overlay{position:fixed;inset:0;z-index:9998;background:rgba(3,8,20,.82);backdrop-filter:blur(8px);display:none;padding:0;overflow:hidden;overscroll-behavior:contain}
+        .admin-integridade-modal-overlay.open{display:block}
+        .admin-integridade-modal{position:fixed;top:3vh;left:50%;transform:translateX(-50%);width:min(980px,calc(100vw - 32px));height:94vh;max-height:94vh;min-height:0;overflow:hidden;border-radius:22px;border:1px solid rgba(255,255,255,.12);background:#081426;box-shadow:0 24px 80px rgba(0,0,0,.62);display:flex;flex-direction:column;margin:0}
+        .admin-integridade-modal-head{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:1.1rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.08)}
         .admin-integridade-modal-title{font-family:"Barlow Condensed",sans-serif;font-weight:800;font-size:1.4rem;letter-spacing:.04em;text-transform:uppercase;color:#fff}
         .admin-integridade-modal-sub{font-size:.72rem;color:rgba(143,170,210,.62);margin-top:.2rem}
         .admin-integridade-modal-close{width:36px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.055);color:#dce8ff;font-size:1.4rem;cursor:pointer}
-        .admin-integridade-modal-body{overflow-y:auto;overflow-x:hidden;max-height:calc(100vh - 150px);min-height:0;padding:1rem 1.2rem 1.25rem;display:flex;flex-direction:column;gap:1rem;-webkit-overflow-scrolling:touch}
+        .admin-integridade-modal-body{flex:1 1 auto;min-height:0;overflow-y:scroll!important;overflow-x:hidden;max-height:none!important;padding:1rem 1.2rem 2rem;display:flex;flex-direction:column;gap:1rem;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;outline:none}
         .integridade-modal-actions{display:flex;align-items:center;justify-content:flex-end;gap:.6rem;flex-wrap:wrap}
         .integridade-dia-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.55rem}
         .integridade-dia-card{border-radius:13px;border:1px solid rgba(80,150,255,.16);background:rgba(80,150,255,.055);padding:.75rem}
@@ -1128,7 +1148,7 @@
         .integridade-empty{border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);padding:1rem;text-align:center;color:rgba(220,235,255,.75)}
         .integridade-empty.ok{border-color:rgba(64,208,144,.24);background:rgba(64,208,144,.06);color:#78e6b0}
         .integridade-limite{font-size:.72rem;color:rgba(143,170,210,.62);padding:0 .9rem .9rem}
-        @media(max-width:720px){.admin-integridade-modal-overlay{padding:.6rem}.admin-integridade-modal{width:100%;max-height:calc(100vh - 1.2rem);border-radius:16px}.admin-integridade-modal-body{max-height:calc(100vh - 132px);padding:.85rem}.integridade-dia-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.integridade-issue-top{flex-direction:column}.integridade-modal-actions{justify-content:flex-start}}
+        @media(max-width:720px){.admin-integridade-modal{top:.6rem;left:.6rem;right:.6rem;transform:none;width:auto;height:calc(100vh - 1.2rem);max-height:calc(100vh - 1.2rem);border-radius:16px}.admin-integridade-modal-body{padding:.85rem 0.85rem 1.5rem}.integridade-dia-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.integridade-issue-top{flex-direction:column}.integridade-modal-actions{justify-content:flex-start}}
       `;
       document.head.appendChild(style);
     }
