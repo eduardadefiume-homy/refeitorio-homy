@@ -177,7 +177,7 @@
       const classe = resultado.status === "ok" ? "ok" : resultado.status === "critico" ? "critico" : "atencao";
       const titulo = resultado.status === "ok"
         ? "Integridade dos dados sem irregularidades críticas."
-        : `${total} irregularidade(s) encontradas. Veja os detalhes no próprio Dashboard.`;
+        : `${total} irregularidade(s) encontradas. Abra o popup para ver a causa.`;
 
       const diffs = Object.entries(resultado.comparativoPorDia || {})
         .filter(([, c]) => c.temReferencia && c.diferencas?.total !== 0)
@@ -247,25 +247,64 @@
 
     abrirDetalhes() {
       const r = this._ultimoResultado;
-      let painel = document.getElementById("adminIntegridadePainelDetalhes");
-      const container = document.getElementById(this._config.containerId);
-      if (!painel && container) {
-        painel = document.createElement("div");
-        painel.id = "adminIntegridadePainelDetalhes";
-        container.appendChild(painel);
-      }
-      if (!painel) return;
+      this.fecharDetalhes();
 
-      const aberto = painel.dataset.open === "1";
-      if (aberto) {
+      const overlay = document.createElement("div");
+      overlay.id = "adminIntegridadeModalOverlay";
+      overlay.setAttribute("role", "presentation");
+      overlay.innerHTML = `
+        <div class="admin-integridade-modal-shell" role="dialog" aria-modal="true" aria-labelledby="adminIntegridadeModalTitulo">
+          <div class="admin-integridade-modal-header">
+            <div>
+              <div id="adminIntegridadeModalTitulo" class="admin-integridade-modal-title">Diagnóstico completo · ${this._esc(r?.semanaId || this._semanaAtual())}</div>
+              <div class="admin-integridade-modal-sub">Somente leitura · popup com rolagem interna · nenhuma correção automática nesta fase</div>
+            </div>
+            <button type="button" class="admin-integridade-modal-close" aria-label="Fechar" onclick="AdminIntegridade.fecharDetalhes()">×</button>
+          </div>
+          <div class="admin-integridade-modal-toolbar">
+            <button class="btn-secondary" onclick="AdminIntegridade.copiarDiagnostico()">Copiar JSON</button>
+            <button class="btn-secondary" onclick="AdminIntegridade.baixarDiagnostico()">Baixar JSON completo</button>
+          </div>
+          <div class="admin-integridade-modal-body" tabindex="0">
+            ${r ? this._htmlDetalhes(r) : `<div class="integridade-empty">Nenhum diagnóstico carregado.</div>`}
+          </div>
+        </div>`;
+
+      overlay.addEventListener("click", ev => {
+        if (ev.target === overlay) this.fecharDetalhes();
+      });
+      overlay.addEventListener("wheel", ev => {
+        const body = overlay.querySelector(".admin-integridade-modal-body");
+        if (!body) return;
+        if (!body.contains(ev.target)) {
+          body.scrollTop += ev.deltaY;
+          ev.preventDefault();
+        }
+      }, { passive: false });
+
+      this._escHandler = ev => {
+        if (ev.key === "Escape") this.fecharDetalhes();
+      };
+      document.addEventListener("keydown", this._escHandler);
+      document.documentElement.classList.add("admin-integridade-modal-open");
+      document.body.classList.add("admin-integridade-modal-open");
+      document.body.appendChild(overlay);
+      setTimeout(() => overlay.querySelector(".admin-integridade-modal-body")?.focus(), 30);
+    },
+
+    fecharDetalhes() {
+      document.getElementById("adminIntegridadeModalOverlay")?.remove();
+      document.documentElement.classList.remove("admin-integridade-modal-open");
+      document.body.classList.remove("admin-integridade-modal-open");
+      if (this._escHandler) {
+        document.removeEventListener("keydown", this._escHandler);
+        this._escHandler = null;
+      }
+      const painel = document.getElementById("adminIntegridadePainelDetalhes");
+      if (painel) {
         painel.dataset.open = "0";
         painel.innerHTML = "";
-        return;
       }
-
-      painel.dataset.open = "1";
-      painel.innerHTML = r ? this._htmlDetalhes(r) : `<div class="integridade-empty">Nenhum diagnóstico carregado.</div>`;
-      setTimeout(() => painel.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
     },
 
     copiarDiagnostico() {
@@ -600,18 +639,7 @@
     // ============================================================
     _htmlDetalhes(r) {
       return `
-        <div class="integridade-painel-inline">
-          <div class="integridade-painel-head">
-            <div>
-              <div class="integridade-painel-title">Diagnóstico completo · ${this._esc(r.semanaId)}</div>
-              <div class="integridade-painel-sub">Este painel usa a própria rolagem da página. Não há modal.</div>
-            </div>
-            <div class="integridade-painel-actions">
-              <button class="btn-secondary" onclick="AdminIntegridade.copiarDiagnostico()">Copiar JSON</button>
-              <button class="btn-secondary" onclick="AdminIntegridade.baixarDiagnostico()">Baixar JSON completo</button>
-              <button class="btn-secondary" onclick="AdminIntegridade.abrirDetalhes()">Fechar detalhes</button>
-            </div>
-          </div>
+        <div class="integridade-modal-content">
           ${this._htmlComparativo(r)}
           ${this._htmlIrregularidades(r)}
           ${this._htmlIncluidosPorDia(r)}
@@ -1023,6 +1051,17 @@
       style.id = "adminIntegridadeCSS";
       style.textContent = `
         .admin-integridade-card{margin-top:.8rem;border-radius:14px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);padding:.9rem;display:flex;flex-direction:column;gap:.7rem}
+        html.admin-integridade-modal-open,body.admin-integridade-modal-open{overflow:hidden!important;height:100%!important}
+        #adminIntegridadeModalOverlay{position:fixed;inset:0;z-index:999999;background:rgba(2,8,20,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:18px;overflow:hidden}
+        .admin-integridade-modal-shell{width:min(1180px,calc(100vw - 28px));height:min(92vh,920px);max-height:calc(100vh - 28px);border-radius:22px;border:1px solid rgba(80,150,255,.25);background:#06142a;box-shadow:0 30px 90px rgba(0,0,0,.72),inset 0 1px 0 rgba(255,255,255,.06);display:flex;flex-direction:column;overflow:hidden}
+        .admin-integridade-modal-header{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:1.05rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(7,20,42,.96)}
+        .admin-integridade-modal-title{font-family:"Barlow Condensed",sans-serif;font-size:1.35rem;font-weight:900;text-transform:uppercase;color:#fff;letter-spacing:.04em;line-height:1.1}
+        .admin-integridade-modal-sub{font-size:.72rem;color:rgba(143,170,210,.68);margin-top:.28rem;line-height:1.35}
+        .admin-integridade-modal-close{width:38px;height:38px;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#d8e7ff;font-size:1.35rem;font-weight:900;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+        .admin-integridade-modal-close:hover{background:rgba(192,40,28,.30);border-color:rgba(255,120,120,.26);color:#fff}
+        .admin-integridade-modal-toolbar{flex:0 0 auto;display:flex;gap:.6rem;justify-content:flex-end;align-items:center;padding:.8rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(8,24,48,.92)}
+        .admin-integridade-modal-body{flex:1 1 auto;min-height:0;overflow-y:scroll;overflow-x:hidden;overscroll-behavior:contain;padding:1rem 1.25rem 1.3rem;outline:none;scrollbar-gutter:stable}
+        .integridade-modal-content{display:flex;flex-direction:column;gap:1rem;min-height:min-content}
         .admin-integridade-card.ok{border-color:rgba(64,208,144,.24);background:rgba(64,208,144,.055)}
         .admin-integridade-card.atencao{border-color:rgba(255,190,60,.32);background:rgba(255,180,0,.055)}
         .admin-integridade-card.critico{border-color:rgba(255,90,90,.36);background:rgba(192,40,28,.105)}
