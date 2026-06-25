@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-semana-operacional-ausencias-20260624
+// v: fix-integridade-operacional-v7-20260625
 // ============================================================
 
 const SP = {
@@ -97,6 +97,67 @@ const SP = {
     const nome   = norm(this.pick(p, "Colaborador_nome", "Title", "Nome") || "");
     return origem.includes("extra") || origem.includes("investigador") ||
            origem.includes("guarda") || nome.includes("refeicao extra");
+  },
+
+
+  // ============================================================
+  // REGRAS DE INTEGRIDADE OPERACIONAL v7
+  // ============================================================
+  _dataISOOperacional(v) {
+    if (!v) return "";
+    if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+    const s = String(v || "").trim();
+    const mIso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (mIso) return mIso[1];
+    const mBr = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (mBr) return `${mBr[3]}-${mBr[2]}-${mBr[1]}`;
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toISOString().slice(0, 10);
+  },
+
+  _diaOperacionalPassado(diaInfoOuData) {
+    const data = this._dataISOOperacional(diaInfoOuData?.data || diaInfoOuData);
+    if (!data) return false;
+    const hoje = typeof this._hojeISO === "function" ? this._hojeISO() : new Date().toISOString().slice(0, 10);
+    return data < hoje;
+  },
+
+  _podeGerarRetornoAutomatico(diaInfo, options = {}) {
+    if (options && options.permitirRetornoRetroativo === true) return true;
+    return !this._diaOperacionalPassado(diaInfo);
+  },
+
+  _statusBloqueiaProducao(status) {
+    const s = this.norm(status);
+    return [
+      "cancelado", "bloqueado",
+      "nao vai almocar", "não vai almoçar", "nao_vai_almocar",
+      "ausente", "ferias", "férias", "afastado", "atestado",
+      "licenca", "licença", "banco horas", "banco_horas",
+      "homy office", "homy_office", "falta"
+    ].includes(s);
+  },
+
+  _pedidoProdutivoValido(p) {
+    if (!p) return false;
+    const status = this.pick(p, "Status", "status") || "";
+    const statusNorm = this.norm(status);
+    const origemNorm = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    if (statusNorm === "travado" && origemNorm.includes("travamento")) return true;
+    if (this._statusBloqueiaProducao(status)) return false;
+    const confirmado = this.isTrue(this.pick(p, "Confirmado", "confirmado"));
+    return confirmado || ["confirmado", "aprovado", "extra", "travado"].includes(statusNorm);
+  },
+
+  _extraIdempotenteKey(semanaId, dia, nome, tipo, opcao) {
+    return [semanaId, dia, nome, tipo, opcao || "principal"]
+      .map(v => this.norm(v || ""))
+      .join("|");
+  },
+
+  _pedidoExtraAtivoEquivalente(p, semanaId, dia, nome, tipo, opcao, extraId = "") {
+    if (!this._pedidoExtraBate(p, semanaId, dia, nome, tipo, opcao, extraId)) return false;
+    return this._pedidoProdutivoValido(p);
   },
 
   // ============================================================
@@ -782,11 +843,19 @@ const SP = {
         String(this._extraNomeValor(e) || "").trim()
       );
 
+      const extrasProcessados = new Set();
+
       for (const extra of extrasSemana) {
         const dia = this._extraDiaValor(extra);
         const nome = this._extraNomeValor(extra);
         const tipo = this._extraTipoValor(extra);
         const opcao = this._extraOpcaoValor(extra);
+        const extraKey = this._extraIdempotenteKey(semanaId, dia, nome, tipo, opcao);
+        if (extrasProcessados.has(extraKey)) {
+          ignorados++;
+          continue;
+        }
+        extrasProcessados.add(extraKey);
         const extraId = String(this.pick(extra, "id", "ID") || "").trim();
         const colabId = extraId ? `extra-${extraId}` : `extra-${this.norm(tipo)}-${this.norm(nome)}-${this.norm(dia)}`;
         const centroCusto = this._extraCentroCustoValor(extra);
@@ -1061,6 +1130,18 @@ const SP = {
   },
 
   async addExtra(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor, centroCusto = "") {
+    // v7 — Extra idempotente: não criar outro registro igual para a mesma semana/dia/nome/tipo/opção.
+    try {
+      const extras = await this.getItems("Extras", { force: true });
+      const existente = (extras || []).find(e =>
+        !this._extraInativo(e) &&
+        this._extraBate(e, semanaId, dia, nome, tipo, opcao || "principal")
+      );
+      if (existente?.id) return existente;
+    } catch (e) {
+      console.warn("[SharePoint] Não foi possível verificar extra existente antes de criar.", e);
+    }
+
     return this.createItem("Extras", {
       Title:          `${semanaId}-${dia}-${nome}`,
       Semana_id:      semanaId,
@@ -1119,50 +1200,97 @@ const SP = {
   },
 
   async _addExtraPedidoCC(semanaId, dia, nome, tipo, opcao = "principal", observacao = "", centroCusto = "", adicionadoPor = "") {
-    const cc = centroCusto || this._centroCustoPadraoExtra(nome, tipo);
-    const user = adicionadoPor || this.getUserName();
+    // v7 — Extra idempotente:
+    // - trava chamadas paralelas com a mesma chave operacional;
+    // - consulta SharePoint sem cache antes de criar;
+    // - reaproveita pedido produtivo equivalente quando já existir.
+    if (!this._extraPedidoLocks) this._extraPedidoLocks = {};
+    const lockKey = this._extraIdempotenteKey(semanaId, dia, nome, tipo, opcao);
+    if (this._extraPedidoLocks[lockKey]) return this._extraPedidoLocks[lockKey];
 
-    let extras = [];
-    try { extras = await this.getExtras(semanaId); } catch (_) { extras = []; }
+    const run = (async () => {
+      const cc = centroCusto || this._centroCustoPadraoExtra(nome, tipo);
+      const user = adicionadoPor || this.getUserName();
 
-    let extra = (extras || []).find(e => this._extraBate(e, semanaId, dia, nome, tipo, opcao));
-    if (!extra) {
-      extra = await this.addExtra(semanaId, dia, nome, tipo, opcao, observacao, user, cc);
-      // createItem retorna o item bruto do Graph; normaliza id e campos para reaproveitar abaixo.
-      extra = { id: extra?.id, Semana_id: semanaId, Dia: dia, Nome: nome, tipo, Opcao: opcao, Observacao: observacao, Centro_Custo: cc };
-    }
+      let extras = [];
+      try {
+        extras = (await this.getItems("Extras", { force: true }) || [])
+          .filter(e => String(this.pick(e, "Semana_id", "Semana") || "") === String(semanaId));
+      } catch (_) {
+        extras = [];
+      }
 
-    const extraId = String(this.pick(extra, "id", "ID") || "");
-    let pedidos = [];
-    try { pedidos = await this.getPedidos(semanaId); } catch (_) { pedidos = []; }
-
-    const jaTemPedido = (pedidos || []).some(p =>
-      this._pedidoExtraBate(p, semanaId, dia, nome, tipo, opcao, extraId)
-    );
-
-    let pedido = null;
-    if (!jaTemPedido) {
-      const obsPedido = `${observacao || ""}${extraId ? ` | ExtraID:${extraId}` : ""}`.trim();
-      pedido = await this.savePedido(
-        semanaId,
-        extraId ? `extra-${extraId}` : `extra-${this._normTexto(nome)}-${dia}`,
-        nome,
-        dia,
-        opcao || "principal",
-        this._pratoPadraoPorOpcao(opcao),
-        {
-          confirmado:  true,
-          status:      "Confirmado",
-          origem:      tipo || "extra",
-          centroCusto: cc,
-          observacao:  obsPedido,
-          dataHora:    new Date().toISOString(),
-          alteradoPor: user
-        }
+      let extra = (extras || []).find(e =>
+        !this._extraInativo(e) &&
+        this._extraBate(e, semanaId, dia, nome, tipo, opcao)
       );
-    }
 
-    return { extra, pedido, criadoPedido: !!pedido };
+      if (!extra) {
+        extra = await this.addExtra(semanaId, dia, nome, tipo, opcao, observacao, user, cc);
+        extra = {
+          id: extra?.id || extra?.ID,
+          Semana_id: semanaId,
+          Dia: dia,
+          Nome: nome,
+          tipo,
+          Opcao: opcao,
+          Observacao: observacao,
+          Centro_Custo: cc
+        };
+      }
+
+      const extraId = String(this.pick(extra, "id", "ID") || "");
+      let pedidos = [];
+      try {
+        pedidos = (await this.getItems("Pedidos", { force: true }) || [])
+          .filter(i => String(this.pick(i, "Semana_id", "Semana") || "") === String(semanaId));
+      } catch (_) {
+        pedidos = [];
+      }
+
+      const pedidoAtivo = (pedidos || []).find(p =>
+        this._pedidoExtraAtivoEquivalente(p, semanaId, dia, nome, tipo, opcao, extraId)
+      );
+
+      if (pedidoAtivo?.id) {
+        return { extra, pedido: pedidoAtivo, criadoPedido: false, reaproveitado: true };
+      }
+
+      const jaTemPedido = (pedidos || []).some(p =>
+        this._pedidoExtraBate(p, semanaId, dia, nome, tipo, opcao, extraId)
+      );
+
+      let pedido = null;
+      if (!jaTemPedido) {
+        const obsPedido = `${observacao || ""}${extraId ? ` | ExtraID:${extraId}` : ""}`.trim();
+        pedido = await this.savePedido(
+          semanaId,
+          extraId ? `extra-${extraId}` : `extra-${this._normTexto(nome)}-${dia}`,
+          nome,
+          dia,
+          opcao || "principal",
+          this._pratoPadraoPorOpcao(opcao),
+          {
+            confirmado:  true,
+            status:      "Confirmado",
+            origem:      tipo || "extra",
+            centroCusto: cc,
+            observacao:  obsPedido,
+            dataHora:    new Date().toISOString(),
+            alteradoPor: user
+          }
+        );
+      }
+
+      return { extra, pedido, criadoPedido: !!pedido };
+    })();
+
+    this._extraPedidoLocks[lockKey] = run;
+    try {
+      return await run;
+    } finally {
+      delete this._extraPedidoLocks[lockKey];
+    }
   },
 
   async addExtraPedido(semanaId, dia, nome, tipo, opcao, observacao, adicionadoPor, centroCusto = "") {
@@ -1855,7 +1983,18 @@ const SP = {
     return { criado: 1, atualizado: 0 };
   },
 
-  async _criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, ausencia, colaborador, pedidos) {
+  async _criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, ausencia, colaborador, pedidos, options = {}) {
+    // v7 — Retorno automático não retroage.
+    // Se o dia operacional já passou, o sistema não pode criar nem converter pedido para Principal.
+    if (!this._podeGerarRetornoAutomatico(diaInfo, options)) {
+      return {
+        criado: 0,
+        atualizado: 0,
+        ignorado: 1,
+        motivo: "Retorno automático bloqueado: dia operacional passado."
+      };
+    }
+
     const colabId = String(this.pick(colaborador, "id", "ID", "Colaborador_id") || this.pick(ausencia, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
     const nome = this.pick(colaborador, "Nome", "Title", "Colaborador_nome") || this.pick(ausencia, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Colaborador";
     const colabKey = this._colabKey({ Colaborador_id: colabId, Colaborador_nome: nome });
@@ -1898,6 +2037,8 @@ const SP = {
   },
 
 
+
+
   _pedidoColaboradorNormalKey(p) {
     if (!p || this._isPedidoAdicionalColaborador?.(p) || this.isExtraPedido?.(p)) return "";
     const id = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
@@ -1926,18 +2067,26 @@ const SP = {
   },
 
   _pedidoPreferidoGrupoColaborador(grupo) {
+    // v7 — Pedido produtivo válido sempre vence ausência/cancelado/obsoleto.
     return [...(grupo || [])].sort((a, b) => {
+      const ap = this._pedidoProdutivoValido(a) ? 1 : 0;
+      const bp = this._pedidoProdutivoValido(b) ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+
       const aa = this._pedidoStatusAusenciaOuOrigem(a) ? 1 : 0;
       const bb = this._pedidoStatusAusenciaOuOrigem(b) ? 1 : 0;
-      if (aa !== bb) return aa - bb; // pedido normal ganha de ausência obsoleta
+      if (aa !== bb) return aa - bb;
+
       const ca = this.norm(this.pick(a, "Status", "status")) === "cancelado" ? 1 : 0;
       const cb = this.norm(this.pick(b, "Status", "status")) === "cancelado" ? 1 : 0;
       if (ca !== cb) return ca - cb;
+
       const ta = new Date(this.pick(a, "Modified", "modified", "Data_Hora", "Created", "created") || 0).getTime() || Number(this.pick(a, "id", "ID") || 0) || 0;
       const tb = new Date(this.pick(b, "Modified", "modified", "Data_Hora", "Created", "created") || 0).getTime() || Number(this.pick(b, "id", "ID") || 0) || 0;
       return tb - ta;
     })[0];
   },
+
 
   async _cancelarPedidoDuplicadoAusencia(id, motivo = "Pedido duplicado/obsoleto inativado automaticamente.") {
     if (!id) return 0;
@@ -1959,6 +2108,7 @@ const SP = {
   async _normalizarPedidosPorAusenciasSemana(semanaId, pedidos, ausencias, dias, colabPorKey) {
     let pedidosAtualizados = 0;
     let pedidosCancelados = 0;
+    let retornosIgnoradosPorDiaPassado = 0;
     const porColabDia = new Map();
 
     for (const p of pedidos || []) {
@@ -1978,6 +2128,7 @@ const SP = {
       const [colabKey, diaNorm] = grupoKey.split("|");
       const diaInfo = diaPorNorm.get(diaNorm);
       if (!diaInfo) continue;
+      const diaPassado = this._diaOperacionalPassado(diaInfo);
       const ausenciaVigente = this._ausenciaVigenteParaKeyData(ausencias, colabKey, diaInfo.data);
 
       if (ausenciaVigente) {
@@ -2015,12 +2166,21 @@ const SP = {
           pedidosCancelados += await this._cancelarPedidoDuplicadoAusencia(pid, `Pedido duplicado/substituído por ausência vigente (${motivo}); pedido mantido: ${idPref}.`);
         }
       } else {
+        const produtivos = grupo.filter(p => this._pedidoProdutivoValido(p));
         const normais = grupo.filter(p => !this._pedidoStatusAusenciaOuOrigem(p) && !["cancelado", "bloqueado"].includes(this.norm(this.pick(p, "Status", "status"))));
-        const preferido = normais.length ? this._pedidoPreferidoGrupoColaborador(normais) : this._pedidoPreferidoGrupoColaborador(grupo);
+        const preferido = produtivos.length
+          ? this._pedidoPreferidoGrupoColaborador(produtivos)
+          : (normais.length ? this._pedidoPreferidoGrupoColaborador(normais) : this._pedidoPreferidoGrupoColaborador(grupo));
+
         const idPref = String(this.pick(preferido, "id", "ID") || "");
         if (!idPref) continue;
 
         if (this._pedidoStatusAusenciaOuOrigem(preferido)) {
+          if (diaPassado) {
+            retornosIgnoradosPorDiaPassado++;
+            continue;
+          }
+
           const colaborador = colabPorKey?.get(colabKey) || {
             Colaborador_id: this.pick(preferido, "Colaborador_id", "ColaboradorId", "colaboradorId"),
             Colaborador_nome: this.pick(preferido, "Colaborador_nome", "Colaborador", "Nome", "Title"),
@@ -2050,9 +2210,12 @@ const SP = {
           pedidosAtualizados++;
         }
 
+        if (diaPassado) continue;
+
         for (const p of grupo) {
           const pid = String(this.pick(p, "id", "ID") || "");
           if (!pid || pid === idPref) continue;
+          if (this._pedidoProdutivoValido(p)) continue;
           if (this._pedidoStatusAusenciaOuOrigem(p) || this.norm(this.pick(p, "Status", "status")) === "cancelado") {
             pedidosCancelados += await this._cancelarPedidoDuplicadoAusencia(pid, `Pedido de ausência/duplicado obsoleto; pedido mantido: ${idPref}.`);
           }
@@ -2060,8 +2223,9 @@ const SP = {
       }
     }
 
-    return { pedidosAtualizados, pedidosCancelados };
+    return { pedidosAtualizados, pedidosCancelados, retornosIgnoradosPorDiaPassado };
   },
+
 
   async sincronizarAusenciasPedidosSemana(semanaId, pedidosBase = null) {
     if (!semanaId) return { ausenciasCriadas: 0, ausenciasAtualizadas: 0, retornoCriados: 0, retornoAtualizados: 0, duplicadasInativadas: 0, pedidosAtualizados: 0, pedidosCancelados: 0 };
