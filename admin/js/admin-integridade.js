@@ -6,7 +6,8 @@
 // - Ler dados reais do SharePoint via SP/sharepoint.js.
 // - Mostrar divergências no Dashboard > Alertas.
 // - Não gravar nada no SharePoint.
-// - Não usar modal com scroll travado: detalhes abrem inline no Dashboard.
+// - Detalhes em popup grande com rolagem interna.
+// - Não fechar/travar quando o Dashboard autoatualiza em segundo plano.
 // - Exportar JSON completo com incluídos/excluídos para encontrar a causa real.
 // ============================================================
 (function (global) {
@@ -60,7 +61,6 @@
 
       try {
         this._ensureStyle();
-        this._removerModalAntigo();
 
         const cacheKey = `${semana}|${cfg.checarSomenteAteHoje ? "ate-hoje" : "semana-inteira"}`;
         const cached = this._cache.get(cacheKey);
@@ -247,7 +247,7 @@
 
     abrirDetalhes() {
       const r = this._ultimoResultado;
-      this.fecharDetalhes();
+      this._removerModalAntigo();
 
       const overlay = document.createElement("div");
       overlay.id = "adminIntegridadeModalOverlay";
@@ -1039,6 +1039,12 @@
 
     _removerModalAntigo() {
       document.getElementById("adminIntegridadeModalOverlay")?.remove();
+      document.documentElement.classList.remove("admin-integridade-modal-open");
+      document.body.classList.remove("admin-integridade-modal-open");
+      if (this._escHandler) {
+        document.removeEventListener("keydown", this._escHandler);
+        this._escHandler = null;
+      }
     },
 
     // ============================================================
