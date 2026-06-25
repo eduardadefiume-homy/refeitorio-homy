@@ -1,6 +1,6 @@
 // ============================================================
 // admin-integridade.js — Integridade dos Dados · Admin Homy
-// v: integridade-dashboard-readonly-20260625-fase1
+// v: integridade-dashboard-readonly-20260625-fase2
 //
 // Objetivo:
 // - Ler dados reais do SharePoint via SP/sharepoint.js.
@@ -79,8 +79,10 @@
       }
 
       const resumoProducaoPorDia = {};
+      const resumoRetiradaPorDia = {};
       for (const diaInfo of dias) {
         resumoProducaoPorDia[diaInfo.dia] = this._calcularResumoDia(dados.pedidos, diaInfo.dia);
+        resumoRetiradaPorDia[diaInfo.dia] = this._calcularResumoRetiradasDia(dados.pedidos, dados.checkins, diaInfo.dia);
       }
 
       irregularidades.sort((a, b) => {
@@ -103,9 +105,11 @@
           ausencias: dados.ausencias.length,
           colaboradores: dados.colaboradores.length,
           extras: dados.extras.length,
-          cardapio: dados.cardapio.length
+          cardapio: dados.cardapio.length,
+          checkins: dados.checkins.length
         },
         resumoProducaoPorDia,
+        resumoRetiradaPorDia,
         irregularidades,
         porSeveridade,
         status: irregularidades.some(i => i.severidade === "critico") ? "critico" :
@@ -275,13 +279,23 @@
       const colaboradoresPromise = this._safeList(() => SP.getTodosColaboradores?.(), "Colaboradores");
       const extrasPromise = this._safeList(() => SP.getExtras?.(semanaId), "Extras");
       const cardapioPromise = this._safeList(() => SP.getCardapio?.(semanaId), "Cardapio");
+      const checkinsPromise = this._safeList(async () => {
+        if (typeof SP.getItems === "function") return SP.getItems("CheckIn");
+        if (typeof SP.getCheckIn === "function") {
+          const dias = ["segunda", "terca", "quarta", "quinta", "sexta"];
+          const listas = await Promise.all(dias.map(dia => SP.getCheckIn(semanaId, dia).catch(() => [])));
+          return listas.flat();
+        }
+        return [];
+      }, "CheckIn");
 
-      const [pedidos, ausencias, colaboradores, extras, cardapio] = await Promise.all([
+      const [pedidos, ausencias, colaboradores, extras, cardapio, checkins] = await Promise.all([
         pedidosPromise,
         ausenciasPromise,
         colaboradoresPromise,
         extrasPromise,
-        cardapioPromise
+        cardapioPromise,
+        checkinsPromise
       ]);
 
       return {
@@ -289,7 +303,8 @@
         ausencias: ausencias || [],
         colaboradores: (colaboradores || []).filter(c => this._colaboradorAtivo(c)),
         extras: extras || [],
-        cardapio: cardapio || []
+        cardapio: cardapio || [],
+        checkins: (checkins || []).filter(c => String(this._pick(c, "Semana_id", "Semana") || "") === String(semanaId))
       };
     },
 
@@ -525,12 +540,69 @@
       const lista = (pedidos || []).filter(p => this._norm(this._dia(p)) === this._norm(dia));
       const dedup = this._deduplicar(lista);
       const validos = dedup.filter(p => this._pedidoContaProducao(p));
-      const resumo = { total: validos.length, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0 };
-      validos.forEach(p => {
-        const op = this._norm(this._opcao(p) || "principal");
-        if (Object.prototype.hasOwnProperty.call(resumo, op)) resumo[op]++;
-      });
+      const resumo = this._resumoVazio();
+      validos.forEach(p => this._somarOpcaoResumo(resumo, this._opcao(p) || "principal"));
       return resumo;
+    },
+
+    _calcularResumoRetiradasDia(pedidos, checkins, dia) {
+      const resumo = this._resumoVazio();
+      const diaNorm = this._norm(dia);
+      const mapaPedidos = this._mapaPedidosPreferidosPorColaboradorDia(pedidos, dia);
+      const vistos = new Set();
+
+      (checkins || []).forEach(ch => {
+        if (this._norm(this._dia(ch)) !== diaNorm) return;
+        if (!this._checkinRetirou(ch)) return;
+
+        const key = this._colabKey(ch);
+        const idCheck = this._id(ch) || key || `${diaNorm}-${vistos.size + 1}`;
+        const dedupeKey = key ? `${diaNorm}|${key}` : `${diaNorm}|checkin:${idCheck}`;
+        if (vistos.has(dedupeKey)) return;
+        vistos.add(dedupeKey);
+
+        const pedido = key ? mapaPedidos.get(key) : null;
+        const opcao = this._opcao(ch) || (pedido ? this._opcao(pedido) : "");
+        this._somarOpcaoResumo(resumo, opcao || "sem_opcao");
+      });
+
+      return resumo;
+    },
+
+    _resumoVazio() {
+      return { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, outros: 0, semOpcao: 0 };
+    },
+
+    _somarOpcaoResumo(resumo, opcao) {
+      const op = this._norm(opcao || "");
+      resumo.total++;
+      if (op === "principal") resumo.principal++;
+      else if (op === "light") resumo.light++;
+      else if (op === "carne") resumo.carne++;
+      else if (op === "massa") resumo.massa++;
+      else if (op === "lanche") resumo.lanche++;
+      else if (!op || op === "sem_opcao" || op === "sem opcao") resumo.semOpcao++;
+      else resumo.outros++;
+    },
+
+    _mapaPedidosPreferidosPorColaboradorDia(pedidos, dia) {
+      const mapa = new Map();
+      const diaNorm = this._norm(dia);
+      const lista = (pedidos || []).filter(p => this._norm(this._dia(p)) === diaNorm);
+      const dedup = this._deduplicar(lista);
+      dedup.forEach(p => {
+        const key = this._colabKey(p);
+        if (!key) return;
+        const atual = mapa.get(key);
+        if (!atual || this._compararPreferido(p, atual) < 0) mapa.set(key, p);
+      });
+      return mapa;
+    },
+
+    _checkinRetirou(ch) {
+      const retirou = this._pick(ch, "Retirou", "retirou", "Retirada", "retirada");
+      if (retirou === null || retirou === undefined || retirou === "") return true;
+      return this._isTrue(retirou);
     },
 
     // ============================================================
@@ -545,12 +617,7 @@
         porTipo.get(tipo).push(item);
       }
 
-      const resumoDias = Object.entries(resultado.resumoProducaoPorDia || {}).map(([dia, r]) => `
-        <div class="integridade-dia-card">
-          <div class="integridade-dia-nome">${this._esc(this._diaLabel(dia))}</div>
-          <div class="integridade-dia-total">${this._num(r.total)}</div>
-          <div class="integridade-dia-sub">P:${this._num(r.principal)} · L:${this._num(r.light)} · C:${this._num(r.carne)} · M:${this._num(r.massa)}</div>
-        </div>`).join("");
+      const resumoDias = this._htmlResumoDias(resultado);
 
       if (!irregularidades.length) {
         return `
@@ -585,6 +652,35 @@
         </div>
         <div class="integridade-dia-grid">${resumoDias}</div>
         ${grupos}`;
+    },
+
+    _htmlResumoDias(resultado) {
+      const producao = resultado.resumoProducaoPorDia || {};
+      const retiradas = resultado.resumoRetiradaPorDia || {};
+      const ordem = ["segunda", "terca", "quarta", "quinta", "sexta"];
+      const listaDias = ordem.filter(d => producao[d] || retiradas[d]);
+
+      return listaDias.map(dia => {
+        const p = producao[dia] || this._resumoVazio();
+        const r = retiradas[dia] || this._resumoVazio();
+        const temRetirada = this._num(r.total) > 0;
+        const principal = temRetirada ? r : p;
+        const labelPrincipal = temRetirada ? "Entregues / Check-in" : "Produção calculada";
+        const extras = [];
+        if (this._num(principal.lanche)) extras.push(`La:${this._num(principal.lanche)}`);
+        if (this._num(principal.outros)) extras.push(`Outros:${this._num(principal.outros)}`);
+        if (this._num(principal.semOpcao)) extras.push(`Sem opção:${this._num(principal.semOpcao)}`);
+        const extraTxt = extras.length ? ` · ${extras.join(" · ")}` : "";
+
+        return `
+          <div class="integridade-dia-card">
+            <div class="integridade-dia-nome">${this._esc(this._diaLabel(dia))}</div>
+            <div class="integridade-dia-total">${this._num(principal.total)}</div>
+            <div class="integridade-dia-sub">${this._esc(labelPrincipal)}</div>
+            <div class="integridade-dia-sub">P:${this._num(principal.principal)} · L:${this._num(principal.light)} · C:${this._num(principal.carne)} · M:${this._num(principal.massa)}${this._esc(extraTxt)}</div>
+            <div class="integridade-dia-mini">Produção: ${this._num(p.total)} · Check-in: ${this._num(r.total)}</div>
+          </div>`;
+      }).join("");
     },
 
     _htmlIssue(i) {
@@ -998,20 +1094,21 @@
         .integridade-preview-main{font-size:.78rem;font-weight:800;color:#fff}
         .integridade-preview-sub{font-size:.7rem;color:rgba(200,220,255,.68);margin-top:.12rem;line-height:1.35}
         .admin-integridade-error{font-size:.72rem;color:#ffaaa0;line-height:1.45}
-        .admin-integridade-modal-overlay{position:fixed;inset:0;z-index:9998;background:rgba(3,8,20,.82);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:1.4rem}
+        .admin-integridade-modal-overlay{position:fixed;inset:0;z-index:9998;background:rgba(3,8,20,.82);backdrop-filter:blur(8px);display:none;align-items:flex-start;justify-content:center;padding:1.2rem;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
         .admin-integridade-modal-overlay.open{display:flex}
-        .admin-integridade-modal{width:min(980px,96vw);max-height:88vh;overflow:hidden;border-radius:22px;border:1px solid rgba(255,255,255,.12);background:#081426;box-shadow:0 24px 80px rgba(0,0,0,.62);display:flex;flex-direction:column}
+        .admin-integridade-modal{width:min(980px,96vw);max-height:calc(100vh - 2.4rem);min-height:0;overflow:hidden;border-radius:22px;border:1px solid rgba(255,255,255,.12);background:#081426;box-shadow:0 24px 80px rgba(0,0,0,.62);display:flex;flex-direction:column;margin:auto 0}
         .admin-integridade-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:1.1rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.08)}
         .admin-integridade-modal-title{font-family:"Barlow Condensed",sans-serif;font-weight:800;font-size:1.4rem;letter-spacing:.04em;text-transform:uppercase;color:#fff}
         .admin-integridade-modal-sub{font-size:.72rem;color:rgba(143,170,210,.62);margin-top:.2rem}
         .admin-integridade-modal-close{width:36px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.055);color:#dce8ff;font-size:1.4rem;cursor:pointer}
-        .admin-integridade-modal-body{overflow:auto;padding:1rem 1.2rem 1.25rem;display:flex;flex-direction:column;gap:1rem}
+        .admin-integridade-modal-body{overflow-y:auto;overflow-x:hidden;max-height:calc(100vh - 150px);min-height:0;padding:1rem 1.2rem 1.25rem;display:flex;flex-direction:column;gap:1rem;-webkit-overflow-scrolling:touch}
         .integridade-modal-actions{display:flex;align-items:center;justify-content:flex-end;gap:.6rem;flex-wrap:wrap}
         .integridade-dia-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.55rem}
         .integridade-dia-card{border-radius:13px;border:1px solid rgba(80,150,255,.16);background:rgba(80,150,255,.055);padding:.75rem}
         .integridade-dia-nome{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:rgba(143,170,210,.72);font-weight:800}
         .integridade-dia-total{font-family:"Barlow Condensed",sans-serif;font-size:1.7rem;font-weight:800;color:#fff;margin-top:.2rem}
-        .integridade-dia-sub{font-size:.68rem;color:rgba(200,220,255,.58)}
+        .integridade-dia-sub{font-size:.68rem;color:rgba(200,220,255,.58);line-height:1.35}
+        .integridade-dia-mini{font-size:.62rem;color:rgba(143,170,210,.48);margin-top:.28rem}
         .integridade-grupo{border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.025)}
         .integridade-grupo-head{display:flex;align-items:center;justify-content:space-between;gap:.8rem;padding:.8rem .9rem;border-bottom:1px solid rgba(255,255,255,.07);font-weight:800;color:#fff}
         .integridade-issue{margin:.75rem;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);padding:.85rem;display:flex;flex-direction:column;gap:.55rem}
@@ -1031,6 +1128,7 @@
         .integridade-empty{border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);padding:1rem;text-align:center;color:rgba(220,235,255,.75)}
         .integridade-empty.ok{border-color:rgba(64,208,144,.24);background:rgba(64,208,144,.06);color:#78e6b0}
         .integridade-limite{font-size:.72rem;color:rgba(143,170,210,.62);padding:0 .9rem .9rem}
+        @media(max-width:720px){.admin-integridade-modal-overlay{padding:.6rem}.admin-integridade-modal{width:100%;max-height:calc(100vh - 1.2rem);border-radius:16px}.admin-integridade-modal-body{max-height:calc(100vh - 132px);padding:.85rem}.integridade-dia-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.integridade-issue-top{flex-direction:column}.integridade-modal-actions{justify-content:flex-start}}
       `;
       document.head.appendChild(style);
     }
