@@ -147,7 +147,7 @@
         await SP.init();
         const semanaId = this._semanaAtual();
         const dia = this._diaAtual();
-        const previa = await SP.gerarPreviaFechamentoDia(semanaId, dia, { incluirPendentesComoPrincipal: true });
+        const previa = await SP.gerarPreviaFechamentoDia(semanaId, dia);
         previa.validacaoAuditoria = await SP.validarPreviaFechamentoContraReferencia?.(semanaId, dia, previa).catch(() => null);
         this._ultimoPreview = previa;
         this._abrirModal(previewHtml(previewModel(previa), false));
@@ -162,7 +162,7 @@
         await SP.init();
         const semanaId = this._semanaAtual();
         const dia = this._diaAtual();
-        const previa = await SP.gerarPreviaFechamentoDia(semanaId, dia, { incluirPendentesComoPrincipal: true });
+        const previa = await SP.gerarPreviaFechamentoDia(semanaId, dia);
         previa.validacaoAuditoria = await SP.validarPreviaFechamentoContraReferencia?.(semanaId, dia, previa).catch(() => null);
         this._ultimoPreview = previa;
 
@@ -176,7 +176,7 @@
         if (!confirm(msg)) return;
 
         const observacao = prompt("Observação do fechamento (opcional):", "Fechamento conferido pela Operação do Dia.") || "Fechamento conferido pela Operação do Dia.";
-        await SP.salvarFechamentoDia(semanaId, dia, { previa, observacao, forcarTravamentoAutomatico: true });
+        await SP.salvarFechamentoDia(semanaId, dia, { previa, observacao });
         this._toast("Fechamento oficial salvo.", "success");
         await this.atualizarStatus();
         if (global.AdminOperacao?._carregar) await global.AdminOperacao._carregar(semanaId);
@@ -267,7 +267,6 @@
         .fechamento-table th{color:rgba(143,170,210,.68);font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;background:rgba(255,255,255,.03)}
         .fechamento-badge{display:inline-flex;border-radius:999px;padding:.15rem .45rem;border:1px solid rgba(80,140,255,.35);background:rgba(80,140,255,.14);font-weight:700;color:#b9d6ff}
         .fechamento-alerta-bloqueio{border:1px solid rgba(255,90,110,.45);background:rgba(255,90,110,.10);color:#ffd7dd;border-radius:14px;padding:.9rem 1rem;margin-bottom:1rem;font-size:.86rem;line-height:1.45}
-        .fechamento-alerta-travamento{border:1px solid rgba(255,200,80,.35);background:rgba(255,200,80,.08);color:#ffe3a0;border-radius:14px;padding:.8rem 1rem;margin-bottom:.9rem;font-size:.84rem;line-height:1.45}
         .fechamento-alerta-bloqueio button{margin-top:.6rem}
         .fechamento-alerta-ok{border:1px solid rgba(64,208,144,.35);background:rgba(64,208,144,.10);color:#b8f7d9;border-radius:14px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.86rem}
         @media(max-width:760px){.fechamento-actions{width:100%;margin:0}.fechamento-actions button{flex:1}.fechamento-modal-overlay{padding:8px}.fechamento-modal-card{width:100vw;height:96vh}}
@@ -316,12 +315,10 @@
         <div class="fechamento-kpi"><strong>${esc(m.totais.extras || 0)}</strong><span>Extras incluídos</span></div>
         <div class="fechamento-kpi"><strong>${esc(m.totais.duplicidadesIgnoradas || 0)}</strong><span>Duplicidades ignoradas</span></div>
         <div class="fechamento-kpi"><strong>${esc(m.totais.cancelados || 0)}</strong><span>Cancelados</span></div>
-        <div class="fechamento-kpi"><strong>${esc(m.pendentesSimulados || 0)}</strong><span>Principais simulados</span></div>
       </div>
       <div style="font-size:.82rem;color:rgba(190,210,240,.8);margin-bottom:.8rem">
         <b>Semana:</b> ${esc(m.semanaId)} · <b>Dia:</b> ${esc(AdminFechamento._diaLabel(m.dia))} · <b>Data:</b> ${esc(m.data)} · <b>Hash:</b> ${esc(m.hash || "—")}
       </div>
-      ${m.pendentesSimulados ? `<div class="fechamento-alerta-travamento">🔒 ${esc(m.pendentesSimulados)} colaborador(es) sem escolha serão fechados como <b>Principal automático</b> ao confirmar o fechamento.</div>` : ""}
       <div class="fechamento-section">
         <h4>✅ Incluídos no fechamento (${esc(m.incluidos.length)})</h4>
         <table class="fechamento-table"><thead><tr><th>Nome</th><th>Opção</th><th>Categoria</th><th>Origem</th><th>Pedido</th></tr></thead><tbody>${rows || `<tr><td colspan="5">Nenhum incluído.</td></tr>`}</tbody></table>
