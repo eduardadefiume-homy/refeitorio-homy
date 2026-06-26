@@ -1,6 +1,6 @@
 // ============================================================
 // admin-fechamento.js — Fechamento Oficial do Dia · Admin Homy
-// v: fechamento-operacional-v8-20260626
+// v: fechamento-operacional-v9-correcao-assistida-20260626
 //
 // Carregar depois de admin-operacao-dia.js.
 // Não substitui a Operação do Dia; apenas injeta os controles de fechamento.
@@ -84,12 +84,14 @@
         <button class="btn-secondary" id="btnPreviaFechamentoDia" type="button">📋 Prévia fechamento</button>
         <button class="btn-success" id="btnFecharOperacaoDia" type="button">🔒 Fechar dia</button>
         <button class="btn-secondary" id="btnReabrirOperacaoDia" type="button" style="display:none">🔓 Reabrir</button>
+        <button class="btn-secondary" id="btnAbrirCorrecaoAssistidaFechamento" type="button">🛠 Correção assistida</button>
       `;
 
       reload.insertAdjacentElement("beforebegin", wrap);
       document.getElementById("btnPreviaFechamentoDia")?.addEventListener("click", () => this.abrirPrevia());
       document.getElementById("btnFecharOperacaoDia")?.addEventListener("click", () => this.fecharDia());
       document.getElementById("btnReabrirOperacaoDia")?.addEventListener("click", () => this.reabrirDia());
+      document.getElementById("btnAbrirCorrecaoAssistidaFechamento")?.addEventListener("click", () => global.AdminCorrecaoIntegridade?.abrir?.({ dia: this._diaAtual() }));
 
       const stats = document.querySelector("#mod-operacao .stats-grid");
       if (stats && !document.getElementById("fechamentoStatusBox")) {
@@ -146,6 +148,7 @@
         const semanaId = this._semanaAtual();
         const dia = this._diaAtual();
         const previa = await SP.gerarPreviaFechamentoDia(semanaId, dia);
+        previa.validacaoAuditoria = await SP.validarPreviaFechamentoContraReferencia?.(semanaId, dia, previa).catch(() => null);
         this._ultimoPreview = previa;
         this._abrirModal(previewHtml(previewModel(previa), false));
       } catch (e) {
@@ -160,7 +163,14 @@
         const semanaId = this._semanaAtual();
         const dia = this._diaAtual();
         const previa = await SP.gerarPreviaFechamentoDia(semanaId, dia);
+        previa.validacaoAuditoria = await SP.validarPreviaFechamentoContraReferencia?.(semanaId, dia, previa).catch(() => null);
         this._ultimoPreview = previa;
+
+        if (previa.validacaoAuditoria?.bloquear) {
+          this._abrirModal(previewHtml(previewModel(previa), false));
+          this._toast("Fechamento bloqueado: a prévia diverge da referência/fechamento. Use Correção Assistida antes de fechar.", "error");
+          return;
+        }
 
         const msg = `Fechar ${this._diaLabel(dia)} como oficial?\n\nTotal: ${previa.totais.total}\nPrincipal: ${previa.totais.principal}\nLight: ${previa.totais.light}\nCarne: ${previa.totais.carne}\nMassa: ${previa.totais.massa}\n\nApós fechar, alterações antigas devem exigir reabertura/auditoria.`;
         if (!confirm(msg)) return;
@@ -256,6 +266,9 @@
         .fechamento-table th,.fechamento-table td{padding:.55rem .7rem;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:top}
         .fechamento-table th{color:rgba(143,170,210,.68);font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;background:rgba(255,255,255,.03)}
         .fechamento-badge{display:inline-flex;border-radius:999px;padding:.15rem .45rem;border:1px solid rgba(80,140,255,.35);background:rgba(80,140,255,.14);font-weight:700;color:#b9d6ff}
+        .fechamento-alerta-bloqueio{border:1px solid rgba(255,90,110,.45);background:rgba(255,90,110,.10);color:#ffd7dd;border-radius:14px;padding:.9rem 1rem;margin-bottom:1rem;font-size:.86rem;line-height:1.45}
+        .fechamento-alerta-bloqueio button{margin-top:.6rem}
+        .fechamento-alerta-ok{border:1px solid rgba(64,208,144,.35);background:rgba(64,208,144,.10);color:#b8f7d9;border-radius:14px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.86rem}
         @media(max-width:760px){.fechamento-actions{width:100%;margin:0}.fechamento-actions button{flex:1}.fechamento-modal-overlay{padding:8px}.fechamento-modal-card{width:100vw;height:96vh}}
       `;
       document.head.appendChild(style);
@@ -272,7 +285,8 @@
       totais: t,
       incluidos: previa.incluidos || [],
       excluidos: previa.excluidos || [],
-      existente: previa.existente || null
+      existente: previa.existente || null,
+      validacao: previa.validacaoAuditoria || null
     };
   }
 
@@ -284,7 +298,14 @@
     const excl = (m.excluidos || []).slice(0, 80).map(i => `
       <tr><td>${esc(i.colaboradorNome)}</td><td>${esc(i.status || "—")}</td><td>${esc(i.motivo || "—")}</td><td>${esc(i.pedidoId || "—")}</td></tr>
     `).join("");
+    const validacaoHtml = m.validacao?.bloquear ? `
+      <div class="fechamento-alerta-bloqueio">
+        <b>⚠️ Fechamento bloqueado por divergência.</b><br>
+        ${esc(m.validacao.mensagem || "A prévia não bate com a referência.")}<br>
+        <button class="btn-danger" type="button" onclick="AdminCorrecaoIntegridade?.abrir?.({dia:'${esc(m.dia)}'})">🛠 Abrir Correção Assistida</button>
+      </div>` : (m.validacao?.bate ? `<div class="fechamento-alerta-ok">✅ Prévia validada contra ${esc(m.validacao.fonte || "referência")}.</div>` : "");
     return `
+      ${validacaoHtml}
       <div class="fechamento-grid">
         <div class="fechamento-kpi"><strong>${esc(m.totais.total || 0)}</strong><span>Total</span></div>
         <div class="fechamento-kpi"><strong>${esc(m.totais.principal || 0)}</strong><span>Principal</span></div>
