@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-integridade-operacional-v7-20260625
+// v: fix-fechamento-operacional-v8-20260626
 // ============================================================
 
 const SP = {
@@ -2866,7 +2866,419 @@ const SP = {
 
   async saveCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
     return this.registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor);
+  },
+  // ============================================================
+  // FECHAMENTO OFICIAL DO DIA — Verdade operacional auditável
+  // Listas novas:
+  // - Fechamento Diario Refeitorio
+  // - Fechamento Itens Refeitorio
+  // - Auditoria Refeitorio
+  // ============================================================
+  _fechamentoListas() {
+    return {
+      diario: "Fechamento Diario Refeitorio",
+      itens: "Fechamento Itens Refeitorio",
+      auditoria: "Auditoria Refeitorio"
+    };
+  },
+
+  _fechamentoKey(semanaId, dia) {
+    return `${String(semanaId || "").trim()}-${this.norm(dia || "")}`;
+  },
+
+  _jsonSeguro(obj) {
+    try { return JSON.stringify(obj ?? null); }
+    catch (_) { return JSON.stringify({ erro: "json_invalido" }); }
+  },
+
+  _hashTexto(texto) {
+    const s = String(texto || "");
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return `${s.length}-${(h >>> 0).toString(16)}`;
+  },
+
+  _opcaoResumoFechamento(opcao) {
+    const op = this.norm(opcao || "");
+    if (op === "principal") return "principal";
+    if (op === "light") return "light";
+    if (op === "carne") return "carne";
+    if (op === "massa") return "massa";
+    if (op === "lanche") return "lanche";
+    if (!op) return "semOpcao";
+    return "outros";
+  },
+
+  _categoriaPedidoFechamento(p) {
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    const nome = this.norm(this.pick(p, "Colaborador_nome", "Nome", "Title") || "");
+    const id = this.norm(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "");
+
+    if (origem.includes("investigador") || nome.includes("investigador")) return "investigador";
+    if (origem.includes("guarda") || nome.includes("guarda")) return "guarda";
+    if (origem.includes("prestador")) return "prestador";
+    if (origem.includes("visitante")) return "visitante";
+    if (origem.includes("terceiro")) return "terceiro";
+    if (origem.includes("extra") || nome.includes("refeicao extra") || id.startsWith("extra-")) return "extra";
+    if (origem.includes("ausencia") || origem.includes("ausência")) return "ausencia";
+    return "colaborador";
+  },
+
+  _statusBloqueiaFechamento(p) {
+    const status = this.norm(this.pick(p, "Status", "status") || "");
+    return [
+      "cancelado", "bloqueado", "nao vai almocar", "nao_vai_almocar",
+      "não vai almoçar", "ausente", "ferias", "férias", "afastado",
+      "atestado", "licenca", "licença", "banco horas", "banco_horas",
+      "homy office", "homy_office", "falta", "duplicado inativado"
+    ].includes(status);
+  },
+
+  _pedidoProdutivoFechamento(p) {
+    const status = this.norm(this.pick(p, "Status", "status") || "");
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    const confirmado = this.isTrue(this.pick(p, "Confirmado", "confirmado"));
+
+    if (status === "travado" && origem.includes("travamento")) return true;
+    if (this._statusBloqueiaFechamento(p)) return false;
+    return ["confirmado", "aprovado", "extra"].includes(status) || confirmado;
+  },
+
+  _pedidoTimestampFechamento(p) {
+    const raw = this.pick(p, "Modified", "modified", "Data_Hora", "DataHora", "Created", "created") || "";
+    const dt = raw ? new Date(raw) : null;
+    if (dt && !isNaN(dt)) return dt.getTime();
+    const id = Number(this.pick(p, "id", "ID") || 0);
+    return Number.isFinite(id) ? id : 0;
+  },
+
+  _pedidoKeyFechamento(p) {
+    const categoria = this._categoriaPedidoFechamento(p);
+    const dia = this.norm(this.pick(p, "Dia", "dia") || "");
+    const opcao = this.norm(this.pick(p, "Opcao", "opcao") || "principal");
+    const id = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const nome = this.norm(this.pick(p, "Colaborador_nome", "Nome", "Title") || "");
+
+    if (["extra", "guarda", "investigador", "prestador", "visitante", "terceiro"].includes(categoria)) {
+      // Extras/especiais: id de extra vence; se não houver, usa nome/categoria/opção.
+      return `especial|${dia}|${categoria}|${opcao}|${id || nome}`;
+    }
+
+    if (id) return `colaborador|${dia}|id:${id}`;
+    return `colaborador|${dia}|nome:${nome}`;
+  },
+
+  _ordenarPreferenciaFechamento(a, b) {
+    const ap = this._pedidoProdutivoFechamento(a) ? 1 : 0;
+    const bp = this._pedidoProdutivoFechamento(b) ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+
+    const ab = this._statusBloqueiaFechamento(a) ? 1 : 0;
+    const bb = this._statusBloqueiaFechamento(b) ? 1 : 0;
+    if (ab !== bb) return ab - bb;
+
+    return this._pedidoTimestampFechamento(b) - this._pedidoTimestampFechamento(a);
+  },
+
+  _snapshotPedidoFechamento(p, contaProducao, motivo, categoria = null) {
+    return {
+      pedidoId: String(this.pick(p, "id", "ID") || ""),
+      colaboradorId: String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || ""),
+      colaboradorNome: this.pick(p, "Colaborador_nome", "Nome", "Title") || "",
+      dia: this.pick(p, "Dia", "dia") || "",
+      opcao: this.pick(p, "Opcao", "opcao") || "",
+      status: this.pick(p, "Status", "status") || "",
+      confirmado: this.isTrue(this.pick(p, "Confirmado", "confirmado")),
+      origem: this.pick(p, "Origem", "origem", "tipo", "Tipo") || "",
+      categoria: categoria || this._categoriaPedidoFechamento(p),
+      contaProducao: !!contaProducao,
+      motivo: motivo || "",
+      centroCusto: this.pick(p, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || "",
+      dataHora: this.pick(p, "Data_Hora", "DataHora", "Data") || "",
+      modified: this.pick(p, "Modified", "modified") || "",
+      raw: p
+    };
+  },
+
+  _calcularFechamentoPorPedidos(semanaId, dia, pedidos = []) {
+    const diaNorm = this.norm(dia);
+    const candidatos = (pedidos || []).filter(p =>
+      String(this.pick(p, "Semana_id", "Semana") || "") === String(semanaId || "") &&
+      this.norm(this.pick(p, "Dia", "dia") || "") === diaNorm
+    );
+
+    const porKey = new Map();
+    for (const p of candidatos) {
+      const key = this._pedidoKeyFechamento(p);
+      if (!key) continue;
+      if (!porKey.has(key)) porKey.set(key, []);
+      porKey.get(key).push(p);
+    }
+
+    const resumo = {
+      total: 0,
+      principal: 0,
+      light: 0,
+      carne: 0,
+      massa: 0,
+      lanche: 0,
+      extras: 0,
+      cancelados: 0,
+      ausentes: 0,
+      duplicidadesIgnoradas: 0,
+      outros: 0,
+      semOpcao: 0
+    };
+
+    const incluidos = [];
+    const excluidos = [];
+
+    for (const grupo of porKey.values()) {
+      const ordenado = [...grupo].sort((a, b) => this._ordenarPreferenciaFechamento(a, b));
+      const preferido = ordenado[0];
+      const categoria = this._categoriaPedidoFechamento(preferido);
+
+      if (this._pedidoProdutivoFechamento(preferido)) {
+        const opKey = this._opcaoResumoFechamento(this.pick(preferido, "Opcao", "opcao") || "principal");
+        resumo[opKey] = (resumo[opKey] || 0) + 1;
+        resumo.total++;
+        if (["extra", "guarda", "investigador", "prestador", "visitante", "terceiro"].includes(categoria)) resumo.extras++;
+        incluidos.push(this._snapshotPedidoFechamento(preferido, true, "Conta no fechamento oficial.", categoria));
+      } else {
+        const status = this.norm(this.pick(preferido, "Status", "status") || "");
+        if (status === "cancelado" || status === "bloqueado" || status === "duplicado inativado") resumo.cancelados++;
+        if (this._statusBloqueiaFechamento(preferido) && status !== "cancelado" && status !== "bloqueado" && status !== "duplicado inativado") resumo.ausentes++;
+        excluidos.push(this._snapshotPedidoFechamento(preferido, false, `Não conta: ${this.pick(preferido, "Status", "status") || "status não produtivo"}.`, categoria));
+      }
+
+      for (const duplicado of ordenado.slice(1)) {
+        resumo.duplicidadesIgnoradas++;
+        excluidos.push(this._snapshotPedidoFechamento(duplicado, false, `Duplicado ignorado no fechamento. Mantido: ${this.pick(preferido, "id", "ID") || "registro preferido"}.`, this._categoriaPedidoFechamento(duplicado)));
+      }
+    }
+
+    return { resumo, incluidos, excluidos, totalBruto: candidatos.length };
+  },
+
+  async gerarPreviaFechamentoDia(semanaId, dia, options = {}) {
+    await this.ensureLogin?.();
+    const diaNorm = this.norm(dia || "");
+    if (!semanaId || !diaNorm) throw new Error("Informe semana e dia para gerar o fechamento.");
+
+    const [pedidos, checkins, existente] = await Promise.all([
+      options.pedidosBase ? Promise.resolve(options.pedidosBase) : this.getPedidos(semanaId, { reparar: false, force: true }),
+      this.getCheckIn ? this.getCheckIn(semanaId, diaNorm).catch(() => []) : Promise.resolve([]),
+      this.getFechamentoDia(semanaId, diaNorm).catch(() => null)
+    ]);
+
+    const calc = this._calcularFechamentoPorPedidos(semanaId, diaNorm, pedidos || []);
+    const dataOperacao = this.getDataRefBySemanaDia(semanaId, diaNorm);
+    const retiradas = (checkins || []).filter(c => this.isTrue(this.pick(c, "Retirou", "retirou"))).length;
+    const key = this._fechamentoKey(semanaId, diaNorm);
+
+    const snapshot = {
+      key,
+      semanaId,
+      dia: diaNorm,
+      dataOperacao,
+      geradoEm: new Date().toISOString(),
+      geradoPor: this.getUserName ? this.getUserName() : "Sistema",
+      totais: { ...calc.resumo, checkins: retiradas },
+      incluidos: calc.incluidos,
+      excluidos: calc.excluidos,
+      existente: existente || null
+    };
+    snapshot.hashResumo = this._hashTexto(this._jsonSeguro({ totais: snapshot.totais, incluidos: snapshot.incluidos.map(i => i.pedidoId), excluidos: snapshot.excluidos.map(i => [i.pedidoId, i.motivo]) }));
+    return snapshot;
+  },
+
+  async getFechamentosSemana(semanaId) {
+    const lista = this._fechamentoListas().diario;
+    const items = await this.getItems(lista, { force: true }).catch(() => []);
+    return (items || []).filter(i => String(this.pick(i, "Semana_id") || "") === String(semanaId || ""));
+  },
+
+  async getFechamentoDia(semanaId, dia) {
+    const key = this._fechamentoKey(semanaId, dia);
+    const semana = await this.getFechamentosSemana(semanaId);
+    return (semana || []).find(i =>
+      String(this.pick(i, "Title") || "") === key ||
+      (String(this.pick(i, "Semana_id") || "") === String(semanaId || "") && this.norm(this.pick(i, "Dia") || "") === this.norm(dia || ""))
+    ) || null;
+  },
+
+  async getItensFechamento(fechamentoKey) {
+    const lista = this._fechamentoListas().itens;
+    const items = await this.getItems(lista, { force: true }).catch(() => []);
+    return (items || []).filter(i => String(this.pick(i, "Fechamento_Key") || "") === String(fechamentoKey || ""));
+  },
+
+  async _limparItensFechamento(fechamentoKey) {
+    const lista = this._fechamentoListas().itens;
+    const itens = await this.getItensFechamento(fechamentoKey);
+    for (const item of itens) {
+      const id = this.pick(item, "id", "ID");
+      if (id) await this.deleteItem(lista, id).catch(e => console.warn("[Fechamento] Falha ao remover item antigo:", e));
+    }
+    return itens.length;
+  },
+
+  async _salvarItemFechamento(fechamentoKey, semanaId, dia, dataOperacao, item) {
+    const lista = this._fechamentoListas().itens;
+    return this.createItem(lista, {
+      Title: `${fechamentoKey}-${item.pedidoId || this.norm(item.colaboradorNome || "item")}`,
+      Fechamento_Key: fechamentoKey,
+      Semana_id: semanaId,
+      Dia: dia,
+      Data_Operacao: dataOperacao,
+      Pedido_Id: item.pedidoId || "",
+      Colaborador_id: item.colaboradorId || "",
+      Colaborador_nome: item.colaboradorNome || "",
+      Opcao: this.norm(item.opcao || "") || "sem_opcao",
+      Status_Pedido: item.status || "",
+      Confirmado: !!item.confirmado,
+      Origem: item.origem || "",
+      Categoria: item.categoria || "outro",
+      Conta_Producao: !!item.contaProducao,
+      Motivo_Decisao: item.motivo || "",
+      Centro_Custo: item.centroCusto || "",
+      Data_Hora_Pedido: item.dataHora || null,
+      Modified_Pedido: item.modified || null,
+      Snapshot_Item_JSON: this._jsonSeguro(item)
+    });
+  },
+
+  async salvarFechamentoDia(semanaId, dia, options = {}) {
+    await this.ensureLogin?.();
+    const previa = options.previa || await this.gerarPreviaFechamentoDia(semanaId, dia, options);
+    const listas = this._fechamentoListas();
+    const existente = previa.existente || await this.getFechamentoDia(semanaId, dia).catch(() => null);
+    const statusExistente = this.norm(this.pick(existente, "Status_Fechamento", "Status") || "");
+
+    if (existente?.id && statusExistente === "fechado" && !options.recalcular && !options.sobrescrever) {
+      throw new Error("Este dia já está fechado. Reabra ou use recalcular para substituir o fechamento.");
+    }
+
+    const agora = new Date().toISOString();
+    const usuario = this.getUserName ? this.getUserName() : "Sistema";
+    const fields = {
+      Title: previa.key,
+      Semana_id: semanaId,
+      Dia: previa.dia,
+      Data_Operacao: previa.dataOperacao,
+      Status_Fechamento: options.recalcular ? "Recalculado" : "Fechado",
+      Total: Number(previa.totais.total || 0),
+      Principal: Number(previa.totais.principal || 0),
+      Light: Number(previa.totais.light || 0),
+      Carne: Number(previa.totais.carne || 0),
+      Massa: Number(previa.totais.massa || 0),
+      Lanche: Number(previa.totais.lanche || 0),
+      Extras: Number(previa.totais.extras || 0),
+      Cancelados: Number(previa.totais.cancelados || 0),
+      Ausentes: Number(previa.totais.ausentes || 0),
+      Checkins: Number(previa.totais.checkins || 0),
+      Duplicidades_Ignoradas: Number(previa.totais.duplicidadesIgnoradas || 0),
+      Gerado_Por: previa.geradoPor || usuario,
+      Gerado_Em: previa.geradoEm || agora,
+      Fechado_Por: usuario,
+      Fechado_Em: agora,
+      Hash_Resumo: previa.hashResumo,
+      Snapshot_JSON: this._jsonSeguro(previa),
+      Observacao: options.observacao || "Fechamento oficial gerado pela Operação do Dia."
+    };
+
+    let fechamento;
+    if (existente?.id) fechamento = await this.updateItem(listas.diario, existente.id, fields);
+    else fechamento = await this.createItem(listas.diario, fields);
+
+    await this._limparItensFechamento(previa.key);
+    for (const item of [...previa.incluidos, ...previa.excluidos]) {
+      await this._salvarItemFechamento(previa.key, semanaId, previa.dia, previa.dataOperacao, item);
+    }
+
+    await this.registrarAuditoriaRefeitorio({
+      semanaId,
+      dia: previa.dia,
+      dataOperacao: previa.dataOperacao,
+      modulo: "Operação do Dia",
+      listaOrigem: listas.diario,
+      itemId: this.pick(fechamento, "id", "ID") || this.pick(existente, "id", "ID") || "",
+      acao: existente?.id ? "fechamento_recalculado" : "fechamento_criado",
+      motivo: options.observacao || "Fechamento oficial confirmado.",
+      antes: existente || null,
+      depois: fields,
+      origemAcao: "fechamento-dia"
+    }).catch(e => console.warn("[Fechamento] Falha ao registrar auditoria:", e));
+
+    this.clearListCache(listas.diario);
+    this.clearListCache(listas.itens);
+    this.clearListCache(listas.auditoria);
+    this._emitSync?.("fechamento", previa.key);
+
+    return { fechamento, previa };
+  },
+
+  async reabrirFechamentoDia(semanaId, dia, motivo = "") {
+    await this.ensureLogin?.();
+    const listas = this._fechamentoListas();
+    const existente = await this.getFechamentoDia(semanaId, dia);
+    if (!existente?.id) throw new Error("Não há fechamento para reabrir.");
+    if (!String(motivo || "").trim()) throw new Error("Informe o motivo da reabertura.");
+
+    const fields = {
+      Status_Fechamento: "Reaberto",
+      Reaberto_Por: this.getUserName ? this.getUserName() : "Sistema",
+      Reaberto_Em: new Date().toISOString(),
+      Motivo_Reabertura: motivo
+    };
+    const result = await this.updateItem(listas.diario, existente.id, fields);
+    await this.registrarAuditoriaRefeitorio({
+      semanaId,
+      dia,
+      dataOperacao: this.pick(existente, "Data_Operacao") || this.getDataRefBySemanaDia(semanaId, dia),
+      modulo: "Operação do Dia",
+      listaOrigem: listas.diario,
+      itemId: existente.id,
+      acao: "fechamento_reaberto",
+      motivo,
+      antes: existente,
+      depois: { ...existente, ...fields },
+      origemAcao: "reabertura"
+    }).catch(e => console.warn("[Fechamento] Falha ao auditar reabertura:", e));
+    return result;
+  },
+
+  async registrarAuditoriaRefeitorio(params = {}) {
+    const lista = this._fechamentoListas().auditoria;
+    const agora = new Date().toISOString();
+    const usuario = this.getUserName ? this.getUserName() : "Sistema";
+    const email = this.getUserEmail ? this.getUserEmail() : "";
+    const antes = params.antes ?? null;
+    const depois = params.depois ?? null;
+    const hash = this._hashTexto(this._jsonSeguro({ antes, depois, acao: params.acao, itemId: params.itemId, ts: agora }));
+    return this.createItem(lista, {
+      Title: `${params.semanaId || "semana"}-${params.dia || "dia"}-${params.acao || "acao"}-${params.itemId || Date.now()}`,
+      Semana_id: params.semanaId || "",
+      Dia: params.dia || "",
+      Data_Operacao: params.dataOperacao || null,
+      Modulo: params.modulo || "Sistema",
+      Lista_Origem: params.listaOrigem || "",
+      Item_Id: String(params.itemId || ""),
+      Acao: params.acao || "outro",
+      Motivo: params.motivo || "",
+      Antes_JSON: this._jsonSeguro(antes),
+      Depois_JSON: this._jsonSeguro(depois),
+      Usuario: usuario,
+      Email_Usuario: email,
+      Data_Hora: agora,
+      Hash_Auditoria: hash,
+      Origem_Acao: params.origemAcao || "sistema"
+    });
   }
+
 
 };
 
