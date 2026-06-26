@@ -1984,8 +1984,20 @@ const SP = {
   },
 
   async _criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, ausencia, colaborador, pedidos, options = {}) {
-    // v7 — Retorno automático não retroage.
-    // Se o dia operacional já passou, o sistema não pode criar nem converter pedido para Principal.
+    // v10 — Retorno de ausência NÃO cria Principal automaticamente.
+    // O fim da ausência apenas libera o colaborador para marcar os dias seguintes.
+    // Principal automático só pode nascer no travamento/prazo final, quando não houver escolha explícita.
+    if (!options || options.forcarPrincipalNoRetorno !== true) {
+      return {
+        criado: 0,
+        atualizado: 0,
+        ignorado: 1,
+        motivo: "Retorno de ausência não cria pedido; aguardando escolha explícita ou travamento automático por falta de escolha."
+      };
+    }
+
+    // Compatibilidade emergencial: só executa o comportamento antigo quando chamado explicitamente com
+    // { forcarPrincipalNoRetorno:true }. O fluxo normal do sistema não deve usar esta opção.
     if (!this._podeGerarRetornoAutomatico(diaInfo, options)) {
       return {
         criado: 0,
@@ -2176,38 +2188,11 @@ const SP = {
         if (!idPref) continue;
 
         if (this._pedidoStatusAusenciaOuOrigem(preferido)) {
-          if (diaPassado) {
-            retornosIgnoradosPorDiaPassado++;
-            continue;
-          }
-
-          const colaborador = colabPorKey?.get(colabKey) || {
-            Colaborador_id: this.pick(preferido, "Colaborador_id", "ColaboradorId", "colaboradorId"),
-            Colaborador_nome: this.pick(preferido, "Colaborador_nome", "Colaborador", "Nome", "Title"),
-            Centro_Custo: this.pick(preferido, "Centro_Custo", "CentroCusto", "Setor", "Departamento")
-          };
-          const colabId = String(this.pick(colaborador, "id", "ID", "Colaborador_id") || this.pick(preferido, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
-          const nome = this.pick(colaborador, "Nome", "Title", "Colaborador_nome") || this.pick(preferido, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Colaborador";
-          const cc = this._pickCentroCusto(colaborador) || this.pick(preferido, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || await this._resolverCentroCustoColaborador(colabId, nome);
-          const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, diaInfo.dia, "principal").catch(() => "") || "Prato Principal";
-          const fieldsRet = {
-            Semana_id: semanaId,
-            Colaborador_id: colabId,
-            Colaborador_nome: nome,
-            Dia: diaInfo.dia,
-            Opcao: "principal",
-            Nome_Prato: nomePrato,
-            Confirmado: true,
-            Data_Hora: `${diaInfo.data}T12:00:00`,
-            Centro_Custo: cc || "",
-            Status: "Confirmado",
-            Observacao: "Retorno automático: ausência não está vigente para este dia.",
-            Origem: "Retorno automático de ausência",
-            Alterado_Por: this.getUserName ? this.getUserName() : "Sistema"
-          };
-          await this.updatePedido(idPref, fieldsRet);
-          Object.assign(preferido, fieldsRet);
-          pedidosAtualizados++;
+          // v10 — ausência encerrada não vira Principal aqui.
+          // O colaborador fica disponível para marcação; se ninguém marcar até o prazo,
+          // o Principal nasce somente pelo travamento automático controlado.
+          retornosIgnoradosPorDiaPassado++;
+          continue;
         }
 
         if (diaPassado) continue;
@@ -2272,34 +2257,14 @@ const SP = {
         }
       }
 
-      // Retorno automático: se uma ausência terminou dentro da semana,
-      // os dias seguintes da mesma semana passam a ser Principal automaticamente.
+      // v10 — Fim de ausência não cria Principal automaticamente.
+      // O retorno apenas libera marcação no Marcar Refeição/Admin.
+      // Principal por falta de escolha é gerado somente no travamento/fechamento.
       for (const a of ausenciasOrdenadas) {
         if (!this._ausenciaPodeGerarHistorico(a)) continue;
         const fimAus = this._ausenciaFimISO(a);
         if (!fimAus || fimAus < semanaIni || fimAus >= semanaFim) continue;
-        const colabKey = this._colabKey({
-          Colaborador_id: this.pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
-          Colaborador_nome: this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
-        });
-        const colaborador = colabPorKey.get(colabKey);
-        if (!colaborador) continue;
-
-        for (const diaInfo of dias) {
-          if (diaInfo.data <= fimAus) continue;
-          const outraAusenciaCobreDia = ausenciasOperacionais.some(x => {
-            const xKey = this._colabKey({
-              Colaborador_id: this.pick(x, "Colaborador_id", "ColaboradorId", "colaboradorId"),
-              Colaborador_nome: this.pick(x, "Colaborador_nome", "Colaborador", "Nome", "Title")
-            });
-            return xKey === colabKey && this._ausenciaConsideradaParaData(x, diaInfo.data);
-          });
-          if (outraAusenciaCobreDia) continue;
-
-          const r = await this._criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, a, colaborador, pedidos);
-          retornoCriados += r.criado || 0;
-          retornoAtualizados += r.atualizado || 0;
-        }
+        retornoAtualizados += 0;
       }
 
       const normPedidos = await this._normalizarPedidosPorAusenciasSemana(semanaId, pedidos, ausenciasOrdenadas, dias, colabPorKey)
@@ -2867,6 +2832,292 @@ const SP = {
   async saveCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
     return this.registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor);
   },
+
+  // ============================================================
+  // REGRA PÓS-AUSÊNCIA v10
+  // - Ausência vigente bloqueia o dia.
+  // - Fim de ausência libera marcação; não cria Principal sozinho.
+  // - Escolha explícita vence qualquer automático.
+  // - Principal automático só nasce no travamento/prazo final/fechamento.
+  // ============================================================
+  _diaInfoOperacional(semanaId, dia) {
+    const diaNorm = this.norm(dia || "");
+    return { dia: diaNorm, data: this.getDataRefBySemanaDia(semanaId, diaNorm) };
+  },
+
+  _pedidoEhAutomaticoSemEscolha(p) {
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    const obs = this.norm(this.pick(p, "Observacao", "Observação", "observacao") || "");
+    return origem.includes("travamento automatico") || origem.includes("travamento automático") ||
+      origem.includes("retorno automatico") || origem.includes("retorno automático") ||
+      obs.includes("sem escolha registrada ate o prazo") || obs.includes("sem escolha registrada até o prazo");
+  },
+
+  _pedidoEscolhaExplicita(p) {
+    if (!p || this._isPedidoAdicionalColaborador?.(p) || this.isExtraPedido?.(p)) return false;
+    if (!this._pedidoProdutivoValido(p)) return false;
+    return !this._pedidoEhAutomaticoSemEscolha(p);
+  },
+
+  _pedidoTravamentoAutomatico(p) {
+    if (!p || this._isPedidoAdicionalColaborador?.(p) || this.isExtraPedido?.(p)) return false;
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    const status = this.norm(this.pick(p, "Status", "status") || "");
+    return (origem.includes("travamento automatico") || origem.includes("travamento automático")) &&
+      (status === "travado" || status === "confirmado" || this.isTrue(this.pick(p, "Confirmado", "confirmado")));
+  },
+
+  _ausenciaVigenteColaboradorData(ausencias, colaborador, dataISO) {
+    const colabKey = this._colabKey(colaborador);
+    if (!colabKey || !dataISO) return null;
+    const candidatas = (ausencias || []).filter(a => {
+      if (!this._ausenciaAtivaPorCampo(a)) return false;
+      const aKey = this._colabKey({
+        Colaborador_id: this.pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+        Colaborador_nome: this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
+      });
+      if (aKey !== colabKey) return false;
+      const ini = this._ausenciaInicioISO(a);
+      const fim = this._ausenciaFimISO(a) || ini;
+      return !!ini && !!fim && ini <= dataISO && fim >= dataISO;
+    });
+    if (!candidatas.length) return null;
+    return this._ausenciaPreferidaParaSobreposicao ? this._ausenciaPreferidaParaSobreposicao(candidatas) : candidatas[0];
+  },
+
+  _pedidoNormalColaboradorDiaDeLista(pedidos, semanaId, colaborador, dia) {
+    const colabKey = this._colabKey(colaborador);
+    const diaNorm = this.norm(dia || "");
+    const candidatos = (pedidos || []).filter(p => {
+      if (this._isPedidoAdicionalColaborador?.(p) || this.isExtraPedido?.(p)) return false;
+      if (String(this.pick(p, "Semana_id", "Semana") || "") !== String(semanaId || "")) return false;
+      if (this.norm(this.pick(p, "Dia", "dia") || "") !== diaNorm) return false;
+      return this._colabKey({
+        Colaborador_id: this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId"),
+        Colaborador_nome: this.pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title")
+      }) === colabKey;
+    });
+    if (!candidatos.length) return null;
+    return this._pedidoPreferidoGrupoColaborador(candidatos);
+  },
+
+  resolverEstadoRefeicaoColaboradorDia(semanaId, colaborador, dia, context = {}) {
+    const diaInfo = this._diaInfoOperacional(semanaId, dia);
+    const pedidos = context.pedidos || [];
+    const ausencias = context.ausencias || [];
+    const ausencia = this._ausenciaVigenteColaboradorData(ausencias, colaborador, diaInfo.data);
+    const pedido = this._pedidoNormalColaboradorDiaDeLista(pedidos, semanaId, colaborador, diaInfo.dia);
+
+    if (ausencia) {
+      const motivo = this._formatarMotivoAusenciaSistema?.(this.pick(ausencia, "Motivo", "motivo", "Status") || "Ausente") || "Ausente";
+      return {
+        semanaId,
+        dia: diaInfo.dia,
+        data: diaInfo.data,
+        statusTela: "bloqueado-ausencia",
+        podeMarcar: false,
+        contaProducao: false,
+        motivo,
+        mensagem: motivo,
+        ausencia,
+        pedido
+      };
+    }
+
+    if (pedido && this._pedidoEscolhaExplicita(pedido)) {
+      return {
+        semanaId,
+        dia: diaInfo.dia,
+        data: diaInfo.data,
+        statusTela: "confirmado",
+        podeMarcar: false,
+        contaProducao: true,
+        opcao: this.pick(pedido, "Opcao", "opcao") || "principal",
+        nomePrato: this.pick(pedido, "Nome_Prato", "nomePrato") || "",
+        motivo: "Escolha já registrada.",
+        pedido
+      };
+    }
+
+    if (pedido && this._pedidoTravamentoAutomatico(pedido)) {
+      return {
+        semanaId,
+        dia: diaInfo.dia,
+        data: diaInfo.data,
+        statusTela: "travado-principal",
+        podeMarcar: false,
+        contaProducao: true,
+        opcao: "principal",
+        nomePrato: this.pick(pedido, "Nome_Prato", "nomePrato") || "Prato Principal",
+        motivo: "Principal automático por falta de escolha até o prazo.",
+        pedido
+      };
+    }
+
+    const statusPedido = this.norm(this.pick(pedido, "Status", "status") || "");
+    const origemPedido = this.norm(this.pick(pedido, "Origem", "origem") || "");
+    const veioDeAusenciaEncerrada = !!pedido && (this._pedidoStatusAusenciaOuOrigem?.(pedido) || origemPedido.includes("ausencia") || origemPedido.includes("ausência"));
+
+    return {
+      semanaId,
+      dia: diaInfo.dia,
+      data: diaInfo.data,
+      statusTela: "disponivel",
+      podeMarcar: true,
+      contaProducao: false,
+      motivo: veioDeAusenciaEncerrada
+        ? "Ausência encerrada; colaborador liberado para escolher."
+        : "Disponível para escolha.",
+      pedido,
+      ausencia: null,
+      veioDeAusenciaEncerrada,
+      statusPedido
+    };
+  },
+
+  calcularEstadosRefeicaoColaboradorSemana(semanaId, colaborador, context = {}) {
+    const dias = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    return dias.map(dia => this.resolverEstadoRefeicaoColaboradorDia(semanaId, colaborador, dia, context));
+  },
+
+  async getEstadosRefeicaoColaboradorSemana(semanaId, colaborador, context = {}) {
+    await this.ensureLogin?.();
+    const [pedidos, ausencias] = await Promise.all([
+      context.pedidos ? Promise.resolve(context.pedidos) : this.getPedidos(semanaId, { reparar: false, force: true }),
+      context.ausencias ? Promise.resolve(context.ausencias) : this.getItems("Ausencias do Refeitorio").catch(() => [])
+    ]);
+    return this.calcularEstadosRefeicaoColaboradorSemana(semanaId, colaborador, { ...context, pedidos, ausencias });
+  },
+
+  async _podeAplicarTravamentoAutomaticoDia(semanaId, dia, options = {}) {
+    if (options.forcarTravamentoAutomatico === true || options.forcar === true) return true;
+    const data = this.getDataRefBySemanaDia(semanaId, dia);
+    const hoje = new Date().toISOString().slice(0, 10);
+    if (data <= hoje) return true;
+    try {
+      const prazo = await this.getPrazoMarcacao?.();
+      if (prazo) {
+        const dt = new Date(prazo);
+        if (!isNaN(dt) && Date.now() > dt.getTime()) return true;
+      }
+    } catch (_) {}
+    return false;
+  },
+
+  async _pendentesPrincipalAutomaticoDia(semanaId, dia, options = {}) {
+    const diaNorm = this.norm(dia || "");
+    const data = this.getDataRefBySemanaDia(semanaId, diaNorm);
+    const [colaboradores, ausencias, pedidos, cardapio] = await Promise.all([
+      options.colaboradores ? Promise.resolve(options.colaboradores) : this.getTodosColaboradores().catch(() => []),
+      options.ausencias ? Promise.resolve(options.ausencias) : this.getItems("Ausencias do Refeitorio").catch(() => []),
+      options.pedidos ? Promise.resolve(options.pedidos) : this.getPedidos(semanaId, { reparar: false, force: true }),
+      options.cardapio ? Promise.resolve(options.cardapio) : this.getCardapio?.(semanaId).catch(() => [])
+    ]);
+
+    const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, diaNorm, "principal").catch(() => "") || "Prato Principal";
+    const pendentes = [];
+    const ativos = (colaboradores || []).filter(c => this._colaboradorAtivo(c));
+
+    for (const c of ativos) {
+      const estado = this.resolverEstadoRefeicaoColaboradorDia(semanaId, c, diaNorm, { pedidos, ausencias });
+      if (!estado.podeMarcar || estado.statusTela !== "disponivel") continue;
+      const colabId = String(this.pick(c, "id", "ID", "Colaborador_id", "Matricula", "Matrícula") || "").trim();
+      const nome = this.pick(c, "Nome", "Title", "Colaborador_nome") || "Colaborador";
+      const cc = this._pickCentroCusto?.(c) || this.pick(c, "Centro_Custo", "CentroCusto", "Departamento", "Setor") || await this._resolverCentroCustoColaborador(colabId, nome);
+      pendentes.push({ colaborador: c, colabId, nome, cc, pedidoExistente: estado.pedido || null, data, dia: diaNorm, nomePrato });
+    }
+    return pendentes;
+  },
+
+  async simularPrincipalAutomaticoPendentesDia(semanaId, dia, options = {}) {
+    const pendentes = await this._pendentesPrincipalAutomaticoDia(semanaId, dia, options);
+    return pendentes.map(p => ({
+      id: `travamento-virtual-${p.colabId || this.norm(p.nome)}-${this.norm(dia)}`,
+      _virtualTravamentoAutomatico: true,
+      Semana_id: semanaId,
+      Colaborador_id: p.colabId || this.norm(p.nome),
+      Colaborador_nome: p.nome,
+      Dia: p.dia,
+      Opcao: "principal",
+      Nome_Prato: p.nomePrato,
+      Confirmado: true,
+      Data_Hora: `${p.data}T12:00:00`,
+      Centro_Custo: p.cc || "",
+      Status: "Travado",
+      Observacao: "Simulação: sem escolha registrada até o prazo. Principal será aplicado automaticamente no fechamento.",
+      Origem: "Travamento automático"
+    }));
+  },
+
+  async aplicarPrincipalAutomaticoPendentesDia(semanaId, dia, options = {}) {
+    await this.ensureLogin?.();
+    const diaNorm = this.norm(dia || "");
+    const podeAplicar = await this._podeAplicarTravamentoAutomaticoDia(semanaId, diaNorm, options);
+    if (!podeAplicar) return { criados: 0, atualizados: 0, ignorados: 0, motivo: "Ainda dentro do prazo; não aplicar Principal automático." };
+
+    const fechamento = await this.getFechamentoDia?.(semanaId, diaNorm).catch(() => null);
+    const statusFechamento = this.norm(this.pick(fechamento, "Status_Fechamento", "Status") || "");
+    if (fechamento?.id && statusFechamento !== "reaberto" && statusFechamento !== "cancelado" && !options.forcarMesmoFechado) {
+      return { criados: 0, atualizados: 0, ignorados: 0, motivo: "Dia já possui fechamento oficial." };
+    }
+
+    const pendentes = await this._pendentesPrincipalAutomaticoDia(semanaId, diaNorm, options);
+    let criados = 0, atualizados = 0, ignorados = 0;
+    const alterados = [];
+
+    for (const p of pendentes) {
+      const fields = {
+        Semana_id: semanaId,
+        Colaborador_id: p.colabId || this.norm(p.nome),
+        Colaborador_nome: p.nome,
+        Dia: diaNorm,
+        Opcao: "principal",
+        Nome_Prato: p.nomePrato,
+        Confirmado: true,
+        Data_Hora: `${p.data}T12:00:00`,
+        Centro_Custo: p.cc || "",
+        Status: "Travado",
+        Observacao: "Sem escolha registrada até o prazo. Principal aplicado automaticamente.",
+        Origem: "Travamento automático",
+        Alterado_Por: this.getUserName ? this.getUserName() : "Sistema"
+      };
+
+      try {
+        if (p.pedidoExistente?.id) {
+          await this.updatePedido(p.pedidoExistente.id, fields);
+          atualizados++;
+          alterados.push({ id: p.pedidoExistente.id, acao: "atualizado", ...fields });
+        } else {
+          const criado = await this.createItem("Pedidos", { Title: `${semanaId}-${fields.Colaborador_id}-${diaNorm}-travamento`, ...fields });
+          criados++;
+          alterados.push({ id: this.pick(criado, "id", "ID") || "", acao: "criado", ...fields });
+        }
+      } catch (e) {
+        ignorados++;
+        console.warn("[Travamento automático] Falha ao aplicar Principal automático:", p.nome, e);
+      }
+    }
+
+    if (criados || atualizados) {
+      this.clearListCache?.("Pedidos");
+      await this.registrarAuditoriaRefeitorio?.({
+        semanaId,
+        dia: diaNorm,
+        dataOperacao: this.getDataRefBySemanaDia(semanaId, diaNorm),
+        modulo: "Fechamento/Travamento",
+        listaOrigem: "Pedidos",
+        itemId: "lote",
+        acao: "pedido_corrigido",
+        motivo: `Principal automático aplicado para ${criados + atualizados} pendente(s) sem escolha após prazo/travamento.`,
+        antes: null,
+        depois: { criados, atualizados, ignorados, alterados },
+        origemAcao: "travamento-automatico"
+      }).catch(e => console.warn("[Travamento automático] Falha ao registrar auditoria:", e));
+    }
+
+    return { criados, atualizados, ignorados, alterados };
+  },
+
   // ============================================================
   // FECHAMENTO OFICIAL DO DIA — Verdade operacional auditável
   // Listas novas:
@@ -3068,11 +3319,21 @@ const SP = {
     const diaNorm = this.norm(dia || "");
     if (!semanaId || !diaNorm) throw new Error("Informe semana e dia para gerar o fechamento.");
 
-    const [pedidos, checkins, existente] = await Promise.all([
+    const [pedidosBase, checkins, existente] = await Promise.all([
       options.pedidosBase ? Promise.resolve(options.pedidosBase) : this.getPedidos(semanaId, { reparar: false, force: true }),
       this.getCheckIn ? this.getCheckIn(semanaId, diaNorm).catch(() => []) : Promise.resolve([]),
       this.getFechamentoDia(semanaId, diaNorm).catch(() => null)
     ]);
+
+    let pedidos = pedidosBase || [];
+    let pendentesSimulados = [];
+    if (options.incluirPendentesComoPrincipal !== false) {
+      const podeSimular = await this._podeAplicarTravamentoAutomaticoDia(semanaId, diaNorm, options).catch(() => false);
+      if (podeSimular) {
+        pendentesSimulados = await this.simularPrincipalAutomaticoPendentesDia(semanaId, diaNorm, { ...options, pedidos }).catch(() => []);
+        if (pendentesSimulados.length) pedidos = [...pedidos, ...pendentesSimulados];
+      }
+    }
 
     const calc = this._calcularFechamentoPorPedidos(semanaId, diaNorm, pedidos || []);
     const dataOperacao = this.getDataRefBySemanaDia(semanaId, diaNorm);
@@ -3089,6 +3350,8 @@ const SP = {
       totais: { ...calc.resumo, checkins: retiradas },
       incluidos: calc.incluidos,
       excluidos: calc.excluidos,
+      pendentesSimulados: pendentesSimulados.length,
+      observacaoTravamento: pendentesSimulados.length ? `${pendentesSimulados.length} pendente(s) simulados como Principal automático para fechamento.` : "",
       existente: existente || null
     };
     snapshot.hashResumo = this._hashTexto(this._jsonSeguro({ totais: snapshot.totais, incluidos: snapshot.incluidos.map(i => i.pedidoId), excluidos: snapshot.excluidos.map(i => [i.pedidoId, i.motivo]) }));
@@ -3153,9 +3416,15 @@ const SP = {
 
   async salvarFechamentoDia(semanaId, dia, options = {}) {
     await this.ensureLogin?.();
-    const previa = options.previa || await this.gerarPreviaFechamentoDia(semanaId, dia, options);
+    const diaNormSalvar = this.norm(dia || "");
+    if (!options.naoAplicarTravamentoAutomatico) {
+      await this.aplicarPrincipalAutomaticoPendentesDia(semanaId, diaNormSalvar, { ...options, forcarTravamentoAutomatico: true }).catch(e => {
+        console.warn("[Fechamento] Travamento automático por falta de escolha ignorado:", e);
+      });
+    }
+    const previa = await this.gerarPreviaFechamentoDia(semanaId, diaNormSalvar, { ...options, pedidosBase: null, incluirPendentesComoPrincipal: false });
     const listas = this._fechamentoListas();
-    const existente = previa.existente || await this.getFechamentoDia(semanaId, dia).catch(() => null);
+    const existente = previa.existente || await this.getFechamentoDia(semanaId, diaNormSalvar).catch(() => null);
     const statusExistente = this.norm(this.pick(existente, "Status_Fechamento", "Status") || "");
 
     if (existente?.id && statusExistente === "fechado" && !options.recalcular && !options.sobrescrever) {
