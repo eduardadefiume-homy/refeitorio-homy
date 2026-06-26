@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-fechamento-operacional-v8-20260626
+// v: fix-fechamento-correcao-assistida-v9-20260626
 // ============================================================
 
 const SP = {
@@ -3277,7 +3277,436 @@ const SP = {
       Hash_Auditoria: hash,
       Origem_Acao: params.origemAcao || "sistema"
     });
-  }
+  },
+  // ============================================================
+  // CORREÇÃO ASSISTIDA DE INTEGRIDADE — v9
+  // Objetivo:
+  // - limpar bases históricas sujas antes do fechamento oficial;
+  // - nunca aplicar ação silenciosa;
+  // - só gravar com confirmação do usuário pela tela;
+  // - após existir fechamento oficial, auditoria compara contra o fechamento.
+  // ============================================================
+  _referenciasHistoricasOperacionais() {
+    return {
+      "2026-W26": {
+        fonte: "Luana",
+        valores: {
+          segunda: { principal: 44, light: 4, carne: 17, massa: 0, lanche: 0, total: 65 },
+          terca:   { principal: 49, light: 6, carne: 8,  massa: 6, lanche: 0, total: 69 },
+          quarta:  { principal: 45, light: 3, carne: 17, massa: 5, lanche: 0, total: 70 },
+          quinta:  { principal: 57, light: 5, carne: 4,  massa: 4, lanche: 0, total: 70 }
+        }
+      }
+    };
+  },
+
+  getReferenciaHistoricaOperacional(semanaId) {
+    return this._referenciasHistoricasOperacionais()[String(semanaId || "").trim()] || null;
+  },
+
+  _resumoCorrecaoVazio() {
+    return { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, outros: 0, semOpcao: 0 };
+  },
+
+  _normalizarResumoCorrecao(resumo = {}) {
+    const out = this._resumoCorrecaoVazio();
+    for (const k of Object.keys(out)) out[k] = Number(resumo?.[k] || 0);
+    return out;
+  },
+
+  _deltaResumoCorrecao(atual = {}, alvo = {}) {
+    const a = this._normalizarResumoCorrecao(atual);
+    const b = this._normalizarResumoCorrecao(alvo);
+    return {
+      total: a.total - b.total,
+      principal: a.principal - b.principal,
+      light: a.light - b.light,
+      carne: a.carne - b.carne,
+      massa: a.massa - b.massa,
+      lanche: a.lanche - b.lanche
+    };
+  },
+
+  _resumoBateCorrecao(atual = {}, alvo = {}) {
+    const d = this._deltaResumoCorrecao(atual, alvo);
+    return ["total", "principal", "light", "carne", "massa", "lanche"].every(k => Number(d[k] || 0) === 0);
+  },
+
+  _aplicarDeltaResumoCorrecao(resumo, delta = {}) {
+    const r = this._normalizarResumoCorrecao(resumo);
+    for (const k of ["total", "principal", "light", "carne", "massa", "lanche", "outros", "semOpcao"]) {
+      if (delta[k]) r[k] = Number(r[k] || 0) + Number(delta[k] || 0);
+    }
+    return r;
+  },
+
+  _opcaoDeltaCorrecao(opcao) {
+    const op = this._opcaoResumoFechamento ? this._opcaoResumoFechamento(opcao) : this.norm(opcao || "principal");
+    return ["principal", "light", "carne", "massa", "lanche"].includes(op) ? op : "outros";
+  },
+
+  _pedidoByIdCorrecao(pedidos = []) {
+    const m = new Map();
+    for (const p of (pedidos || [])) {
+      const id = String(this.pick(p, "id", "ID") || "");
+      if (id) m.set(id, p);
+    }
+    return m;
+  },
+
+  _acaoCancelarPedidoCorrecao(item, motivo, justificativa, manterId = "") {
+    const opcao = this._opcaoDeltaCorrecao(item.opcao || "principal");
+    const delta = { total: -1 };
+    delta[opcao] = -1;
+    return {
+      acao: "cancelar",
+      autoAplicavel: true,
+      motivo,
+      pedidoId: String(item.pedidoId || ""),
+      nome: item.colaboradorNome || item.nome || "",
+      dia: item.dia || "",
+      opcao,
+      statusAtual: item.status || "",
+      confirmadoAtual: !!item.confirmado,
+      origemAtual: item.origem || "",
+      categoria: item.categoria || "outro",
+      manterId: manterId || "",
+      delta,
+      justificativa,
+      camposSugeridos: {
+        Status: "Cancelado",
+        Confirmado: false,
+        Origem: "Correção de integridade",
+        Observacao: `Correção de integridade: ${justificativa}`
+      },
+      pedido: item
+    };
+  },
+
+  _acaoReativarPedidoCorrecao(item, motivo, justificativa) {
+    const opcao = this._opcaoDeltaCorrecao(item.opcao || "principal");
+    const delta = { total: 1 };
+    delta[opcao] = 1;
+    return {
+      acao: "reativar",
+      autoAplicavel: true,
+      motivo,
+      pedidoId: String(item.pedidoId || ""),
+      nome: item.colaboradorNome || item.nome || "",
+      dia: item.dia || "",
+      opcao,
+      statusAtual: item.status || "",
+      confirmadoAtual: !!item.confirmado,
+      origemAtual: item.origem || "",
+      categoria: item.categoria || "outro",
+      delta,
+      justificativa,
+      camposSugeridos: {
+        Status: "Confirmado",
+        Confirmado: true,
+        Opcao: opcao === "outros" ? (item.opcao || "principal") : opcao,
+        Origem: "Correção de integridade",
+        Observacao: `Correção de integridade: ${justificativa}`
+      },
+      pedido: item
+    };
+  },
+
+  _acaoRevisarCorrecao(dia, opcao, quantidade, justificativa, candidatos = []) {
+    return {
+      acao: "revisar",
+      autoAplicavel: false,
+      motivo: "revisao-manual",
+      dia,
+      opcao,
+      quantidade: Number(quantidade || 0),
+      delta: {},
+      justificativa,
+      candidatos: candidatos.slice(0, 20)
+    };
+  },
+
+  _selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas = []) {
+    let simulado = this._normalizarResumoCorrecao(atual);
+    const selecionadas = [];
+
+    const aindaSobra = (opcao) => {
+      const d = this._deltaResumoCorrecao(simulado, alvo);
+      return Number(d.total || 0) > 0 && Number(d[opcao] || 0) > 0;
+    };
+
+    const aindaFalta = (opcao) => {
+      const d = this._deltaResumoCorrecao(simulado, alvo);
+      return Number(d.total || 0) < 0 || Number(d[opcao] || 0) < 0;
+    };
+
+    // Primeiro reativa o que está faltando, porque isso pode ser necessário junto com cancelamentos.
+    for (const acao of candidatas.filter(a => a.acao === "reativar")) {
+      const op = this._opcaoDeltaCorrecao(acao.opcao || "principal");
+      if (!aindaFalta(op)) continue;
+      selecionadas.push(acao);
+      simulado = this._aplicarDeltaResumoCorrecao(simulado, acao.delta);
+    }
+
+    // Depois cancela duplicados e retornos retroativos, sem passar do alvo.
+    const ordemCancelamento = { "extra-duplicado": 1, "retorno-automatico-retroativo": 2 };
+    const cancelamentos = candidatas
+      .filter(a => a.acao === "cancelar")
+      .sort((a, b) => (ordemCancelamento[a.motivo] || 9) - (ordemCancelamento[b.motivo] || 9));
+
+    for (const acao of cancelamentos) {
+      const op = this._opcaoDeltaCorrecao(acao.opcao || "principal");
+      if (!aindaSobra(op)) continue;
+      selecionadas.push(acao);
+      simulado = this._aplicarDeltaResumoCorrecao(simulado, acao.delta);
+    }
+
+    return { selecionadas, simulado };
+  },
+
+  async _referenciaComparacaoCorrecao(semanaId, dia, options = {}) {
+    const diaNorm = this.norm(dia || "");
+    const fechamento = await this.getFechamentoDia(semanaId, diaNorm).catch(() => null);
+    const statusFechamento = this.norm(this.pick(fechamento, "Status_Fechamento", "Status") || "");
+    if (fechamento?.id && statusFechamento !== "reaberto" && statusFechamento !== "cancelado") {
+      return {
+        tipo: "fechamento-oficial",
+        fonte: "Fechamento Oficial",
+        valores: {
+          total: Number(this.pick(fechamento, "Total") || 0),
+          principal: Number(this.pick(fechamento, "Principal") || 0),
+          light: Number(this.pick(fechamento, "Light") || 0),
+          carne: Number(this.pick(fechamento, "Carne") || 0),
+          massa: Number(this.pick(fechamento, "Massa") || 0),
+          lanche: Number(this.pick(fechamento, "Lanche") || 0)
+        },
+        fechamento
+      };
+    }
+
+    const historica = this.getReferenciaHistoricaOperacional(semanaId);
+    const refDia = historica?.valores?.[diaNorm];
+    if (refDia) {
+      return {
+        tipo: "referencia-historica",
+        fonte: historica.fonte || "Referência histórica",
+        valores: this._normalizarResumoCorrecao(refDia),
+        fechamento: null
+      };
+    }
+
+    return null;
+  },
+
+  async validarPreviaFechamentoContraReferencia(semanaId, dia, previa = null, options = {}) {
+    const ref = await this._referenciaComparacaoCorrecao(semanaId, dia, options);
+    if (!ref) {
+      return { temReferencia: false, bloquear: false, status: "sem-referencia", mensagem: "Sem fechamento oficial ou referência histórica para comparar." };
+    }
+
+    const atual = this._normalizarResumoCorrecao(previa?.totais || {});
+    const alvo = this._normalizarResumoCorrecao(ref.valores || {});
+    const delta = this._deltaResumoCorrecao(atual, alvo);
+    const bate = this._resumoBateCorrecao(atual, alvo);
+    const bloquear = !bate && (ref.tipo === "fechamento-oficial" || ref.tipo === "referencia-historica");
+
+    return {
+      temReferencia: true,
+      tipoReferencia: ref.tipo,
+      fonte: ref.fonte,
+      bloquear,
+      bate,
+      atual,
+      alvo,
+      delta,
+      mensagem: bate
+        ? `Prévia bate com ${ref.fonte}.`
+        : `Prévia divergente de ${ref.fonte}. Corrija pela Correção Assistida antes de fechar.`
+    };
+  },
+
+  _candidatasCorrecaoDia(calc, alvo, dia) {
+    const incluidos = calc?.incluidos || [];
+    const excluidos = calc?.excluidos || [];
+    const candidatas = [];
+
+    // Extras duplicados: mesmo dia + categoria especial + nome/colaborador/opção.
+    const gruposExtras = new Map();
+    for (const item of incluidos) {
+      const cat = this.norm(item.categoria || "");
+      if (!["guarda", "investigador", "extra", "prestador", "visitante", "terceiro"].includes(cat)) continue;
+      const key = [dia, cat, this.norm(item.colaboradorId || item.colaboradorNome || ""), this.norm(item.colaboradorNome || ""), this._opcaoDeltaCorrecao(item.opcao || "principal")].join("|");
+      if (!gruposExtras.has(key)) gruposExtras.set(key, []);
+      gruposExtras.get(key).push(item);
+    }
+
+    for (const grupo of gruposExtras.values()) {
+      if (grupo.length <= 1) continue;
+      const ordenado = [...grupo].sort((a, b) => Number(a.pedidoId || 0) - Number(b.pedidoId || 0));
+      const manter = ordenado[0];
+      for (const dup of ordenado.slice(1)) {
+        candidatas.push(this._acaoCancelarPedidoCorrecao(
+          dup,
+          "extra-duplicado",
+          `Extra duplicado: manter ID ${manter.pedidoId} e cancelar este registro.`,
+          manter.pedidoId
+        ));
+      }
+    }
+
+    // Retornos automáticos retroativos: só são candidatos, não vencem duplicidade.
+    for (const item of incluidos) {
+      const origem = this.norm(item.origem || "");
+      if (!origem.includes("retorno automatico") && !origem.includes("retorno automático")) continue;
+      candidatas.push(this._acaoCancelarPedidoCorrecao(
+        item,
+        "retorno-automatico-retroativo",
+        "Retorno automático criado em dia operacional passado."
+      ));
+    }
+
+    // Pedido cancelado/duplicado que pode preencher opção faltante.
+    const deltaInicial = this._deltaResumoCorrecao(calc.resumo, alvo);
+    for (const item of excluidos) {
+      const status = this.norm(item.status || "");
+      const origem = this.norm(item.origem || "");
+      const op = this._opcaoDeltaCorrecao(item.opcao || "principal");
+      if (Number(deltaInicial[op] || 0) >= 0) continue;
+      if (status !== "cancelado" && !origem.includes("duplicado inativado")) continue;
+      candidatas.push(this._acaoReativarPedidoCorrecao(
+        item,
+        "pedido-correto-cancelado",
+        `Pedido ${op} estava cancelado/inativado e é necessário para fechar a referência.`
+      ));
+    }
+
+    return candidatas;
+  },
+
+  async gerarPlanoCorrecaoAssistida(semanaId, options = {}) {
+    await this.ensureLogin?.();
+    const diasBase = options.dia
+      ? [this.norm(options.dia)]
+      : ["segunda", "terca", "quarta", "quinta", "sexta"];
+
+    const pedidos = options.pedidosBase || await this.getPedidos(semanaId, { reparar: false, force: true });
+    const dias = [];
+
+    for (const dia of diasBase) {
+      const ref = await this._referenciaComparacaoCorrecao(semanaId, dia, options);
+      if (!ref) continue;
+
+      const calc = this._calcularFechamentoPorPedidos(semanaId, dia, pedidos || []);
+      const atual = this._normalizarResumoCorrecao(calc.resumo);
+      const alvo = this._normalizarResumoCorrecao(ref.valores);
+      const deltaInicial = this._deltaResumoCorrecao(atual, alvo);
+      const candidatas = this._candidatasCorrecaoDia(calc, alvo, dia);
+      const { selecionadas, simulado } = this._selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
+      const deltaFinal = this._deltaResumoCorrecao(simulado, alvo);
+      const fechaExato = this._resumoBateCorrecao(simulado, alvo);
+      const jaBate = this._resumoBateCorrecao(atual, alvo);
+
+      const revisoes = [];
+      for (const op of ["principal", "light", "carne", "massa", "lanche"]) {
+        const sobra = Number(deltaFinal[op] || 0);
+        if (sobra > 0) {
+          const candidatos = (calc.incluidos || []).filter(i => this._opcaoDeltaCorrecao(i.opcao || "principal") === op);
+          revisoes.push(this._acaoRevisarCorrecao(dia, op, sobra, `Ainda sobram ${sobra} ${op} após aplicar as ações seguras.`, candidatos));
+        }
+        if (sobra < 0) {
+          revisoes.push(this._acaoRevisarCorrecao(dia, op, Math.abs(sobra), `Ainda faltam ${Math.abs(sobra)} ${op} após aplicar as ações seguras.`, []));
+        }
+      }
+
+      dias.push({
+        semanaId,
+        dia,
+        dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "",
+        referencia: ref,
+        atual,
+        alvo,
+        deltaInicial,
+        candidatas,
+        acoesSeguras: selecionadas,
+        revisoes,
+        simulado,
+        deltaFinal,
+        jaBate,
+        fechaExato,
+        status: jaBate ? "ok" : (fechaExato ? "corrigivel" : (selecionadas.length ? "parcial" : "revisao")),
+        mensagem: jaBate
+          ? "Base atual já bate com a referência."
+          : (fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.")
+      });
+    }
+
+    const plano = {
+      semanaId,
+      geradoEm: new Date().toISOString(),
+      status: "somente-leitura",
+      dias,
+      totais: {
+        dias: dias.length,
+        acoesSeguras: dias.reduce((n, d) => n + (d.acoesSeguras?.length || 0), 0),
+        revisoes: dias.reduce((n, d) => n + (d.revisoes?.length || 0), 0),
+        corrigiveis: dias.filter(d => d.fechaExato && !d.jaBate).length,
+        parciais: dias.filter(d => d.status === "parcial").length
+      }
+    };
+    plano.hashPlano = this._hashTexto(this._jsonSeguro({ semanaId, dias: dias.map(d => ({ dia: d.dia, acoes: d.acoesSeguras.map(a => [a.acao, a.pedidoId]), simulado: d.simulado })) }));
+    return plano;
+  },
+
+  async aplicarPlanoCorrecaoAssistida(planoOuDia, options = {}) {
+    await this.ensureLogin?.();
+    const dias = Array.isArray(planoOuDia?.dias) ? planoOuDia.dias : [planoOuDia];
+    const somenteSeFechaExato = options.somenteSeFechaExato === true;
+    const aplicarParcial = options.aplicarParcial !== false;
+    const resultados = [];
+
+    for (const diaPlano of dias) {
+      if (!diaPlano || diaPlano.jaBate) continue;
+      if (somenteSeFechaExato && !diaPlano.fechaExato) {
+        resultados.push({ dia: diaPlano.dia, pulado: true, motivo: "Plano não fecha exatamente com a referência." });
+        continue;
+      }
+      if (!diaPlano.fechaExato && !aplicarParcial) {
+        resultados.push({ dia: diaPlano.dia, pulado: true, motivo: "Aplicação parcial desabilitada." });
+        continue;
+      }
+
+      for (const acao of (diaPlano.acoesSeguras || [])) {
+        if (!acao.autoAplicavel || !acao.pedidoId) continue;
+        const pedidoAntes = (await this.getItems("Pedidos", { force: true }).catch(() => []))
+          .find(p => String(this.pick(p, "id", "ID") || "") === String(acao.pedidoId));
+
+        const fields = { ...(acao.camposSugeridos || {}) };
+        const atualizado = await this.updateItem("Pedidos", acao.pedidoId, fields);
+
+        await this.registrarAuditoriaRefeitorio({
+          semanaId: diaPlano.semanaId,
+          dia: diaPlano.dia,
+          dataOperacao: diaPlano.dataOperacao || this.getDataRefBySemanaDia?.(diaPlano.semanaId, diaPlano.dia) || null,
+          modulo: "Correção Assistida",
+          listaOrigem: "Pedidos",
+          itemId: acao.pedidoId,
+          acao: acao.acao === "reativar" ? "pedido_reativado" : (acao.motivo === "extra-duplicado" ? "extra_cancelado" : "pedido_cancelado"),
+          motivo: acao.justificativa || acao.motivo || "Correção assistida de integridade.",
+          antes: pedidoAntes || null,
+          depois: { ...(pedidoAntes || {}), ...fields },
+          origemAcao: "correcao-assistida"
+        }).catch(e => console.warn("[Correção Assistida] Falha ao auditar ação:", e));
+
+        resultados.push({ dia: diaPlano.dia, pedidoId: acao.pedidoId, acao: acao.acao, motivo: acao.motivo, atualizado });
+      }
+    }
+
+    this.clearListCache?.("Pedidos");
+    this.clearListCache?.(this._fechamentoListas().auditoria);
+    this._emitSync?.("pedidos", "correcao-assistida");
+    return { aplicadoEm: new Date().toISOString(), total: resultados.filter(r => !r.pulado).length, resultados };
+  },
+
 
 
 };
