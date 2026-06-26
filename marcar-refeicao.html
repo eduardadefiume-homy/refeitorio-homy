@@ -155,6 +155,8 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 .step-item.locked .step-dot{border-color:rgba(255,180,80,0.7);background:rgba(255,180,80,0.14);color:#ffe1a3}
 .step-item.travado .step-dot{border-color:rgba(100,170,255,0.7);background:rgba(80,140,255,0.14);color:#b9d6ff}
 .func-card.parcial .func-status-badge{background:rgba(255,180,80,.12);border-color:rgba(255,180,80,.35);color:#ffe1a3}
+.func-card.bloqueado{opacity:.78;cursor:not-allowed;border-color:rgba(255,180,80,.22)}
+.func-card.bloqueado .func-status-badge{background:rgba(255,180,80,.10);border-color:rgba(255,180,80,.32);color:#ffe1a3}
 
 .resumo-aviso{border-radius:11px;border:1px solid rgba(255,150,0,0.2);background:rgba(255,150,0,0.06);padding:0.75rem 1rem;font-size:0.8rem;color:rgba(255,180,80,0.85);line-height:1.5}
 
@@ -402,6 +404,17 @@ function getSemanaAtual(){
   return d.getFullYear()+"-W"+String(wn).padStart(2,"0");
 }
 
+async function getSemanaAlvoMarcacaoLocal(){
+  if(window.SP && typeof SP.getSemanaAlvoMarcacao === "function"){
+    const semana = await SP.getSemanaAlvoMarcacao();
+    if(semana) return semana;
+  }
+  if(window.SP && typeof SP.getNextWeekId === "function") return SP.getNextWeekId(new Date());
+  const atual = getSemanaAtual();
+  const [ano, w] = atual.split("-W");
+  return ano + "-W" + String(Number(w || 0) + 1).padStart(2, "0");
+}
+
 function getWeekDatesLocal(semanaId){
   if(window.SP && SP.getWeekDates) return SP.getWeekDates(semanaId);
   const [year,week]=semanaId.split("-W").map(Number);
@@ -413,6 +426,10 @@ function getWeekDatesLocal(semanaId){
 
 function formatDataCurta(date){
   return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+}
+
+function formatDataCompleta(date){
+  return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
 }
 
 function ehObsVascon(texto){
@@ -608,9 +625,9 @@ async function carregarDadosSharePoint(){
     const podeMarcar = await verificarBloqueioMarcacao();
     if(!podeMarcar) return;
 
-    SEMANA_ID = getSemanaAtual();
+    SEMANA_ID = await getSemanaAlvoMarcacaoLocal();
     const datas = getWeekDatesLocal(SEMANA_ID);
-    DIAS_SEMANA.forEach((d,i)=>{ d.data = formatDataCurta(datas[i]); });
+    DIAS_SEMANA.forEach((d,i)=>{ d.data = datas[i] ? formatDataCompleta(datas[i]) : ""; });
 
     const [colabs, itensCardapio, pedidosExistentes, ausenciasExistentes] = await Promise.all([
       SP.getColaboradores().catch(()=>[]),
@@ -643,11 +660,14 @@ async function carregarDadosSharePoint(){
           }, { pedidos: pedidosExistentes, ausencias: ausenciasExistentes })
         : [];
       ESTADOS_REFEICAO[base.id] = estados;
+      const bloqueadosAusencia = estados.filter(e => e.statusTela === "bloqueado-ausencia");
       const diasNaoBloqueados = estados.filter(e => e.statusTela !== "bloqueado-ausencia");
       const resolvidos = diasNaoBloqueados.filter(e => e.statusTela === "confirmado" || e.statusTela === "travado-principal");
       const disponiveis = diasNaoBloqueados.filter(e => e.podeMarcar);
-      base.confirmado = diasNaoBloqueados.length > 0 && resolvidos.length === diasNaoBloqueados.length;
-      base.parcial = !base.confirmado && (resolvidos.length > 0 || disponiveis.length > 0 || estados.some(e => e.statusTela === "bloqueado-ausencia"));
+      base.indisponivelSemana = estados.length > 0 && bloqueadosAusencia.length === estados.length;
+      base.motivoIndisponibilidade = base.indisponivelSemana ? (bloqueadosAusencia[0]?.motivo || "Ausência") : "";
+      base.confirmado = !base.indisponivelSemana && diasNaoBloqueados.length > 0 && resolvidos.length === diasNaoBloqueados.length;
+      base.parcial = !base.confirmado && !base.indisponivelSemana && (resolvidos.length > 0 || disponiveis.length > 0 || bloqueadosAusencia.length > 0);
       base.estados = estados;
       return base;
     }).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
@@ -675,15 +695,18 @@ function renderFuncs(lista){
   grid.innerHTML="";
   lista.forEach(func=>{
     const card=document.createElement("div");
-    card.className="func-card"+(func.confirmado?" confirmado":(func.parcial?" parcial":""));
+    card.className="func-card"+(func.confirmado?" confirmado":(func.parcial?" parcial":""))+(func.indisponivelSemana?" bloqueado":"");
+    const statusTexto = func.indisponivelSemana
+      ? (func.motivoIndisponibilidade || "Ausência") + " na semana"
+      : (func.confirmado ? "Confirmado" : (func.parcial ? "Parcial / disponível" : "Pendente"));
     card.innerHTML=
       '<div class="func-avatar">'+esc(getInitials(func.nome))+'</div>'+
       '<div class="func-info">'+
         '<div class="func-name">'+esc(func.nome)+'</div>'+
         (func.dept?'<div class="func-dept">'+esc(func.dept)+'</div>':'')+
-        '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+(func.confirmado?"Confirmado":(func.parcial?"Parcial / disponível":"Pendente"))+'</span>'+
+        '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+esc(statusTexto)+'</span>'+
       '</div>';
-    if(!func.confirmado) card.addEventListener("click",()=>selecionarFunc(func));
+    if(!func.confirmado && !func.indisponivelSemana) card.addEventListener("click",()=>selecionarFunc(func));
     grid.appendChild(card);
   });
 }
@@ -781,7 +804,7 @@ function renderStep(){
   const content=document.getElementById("dayContent");
   content.innerHTML=
     '<div class="day-title">'+esc(dia.label)+'</div>'+
-    '<div class="day-subtitle">'+(dia.data||"")+'/2026 — Escolha uma opção</div>'+
+    '<div class="day-subtitle">'+(dia.data||"")+' — Escolha uma opção</div>'+
     '<div class="opcoes-grid" id="opcoesGrid"></div>';
 
   const grid=document.getElementById("opcoesGrid");
