@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: fix-fechamento-correcao-assistida-v9-20260626
+// v: regra-pos-ausencia-travamento-v10-1-20260626
 // ============================================================
 
 const SP = {
@@ -1375,13 +1375,24 @@ const SP = {
   },
 
   async getSemanaAlvoMarcacao(fallback = null) {
-    const alvo = await this.getConfig("marcacao_semana_alvo").catch(() => null);
-    if (alvo && /^\d{4}-W\d{1,2}$/i.test(String(alvo).trim())) return String(alvo).trim().replace(/W(\d)$/i, "W0$1");
+    const normalizarSemana = (valor) => {
+      const s = String(valor || "").trim();
+      if (!/^\d{4}-W\d{1,2}$/i.test(s)) return "";
+      return s.replace(/W(\d)$/i, "W0$1");
+    };
 
-    const visivel = await this.getConfig("cardapio_semana_visivel").catch(() => null);
-    if (visivel && /^\d{4}-W\d{1,2}$/i.test(String(visivel).trim())) return String(visivel).trim().replace(/W(\d)$/i, "W0$1");
+    const hoje = new Date().toISOString().slice(0, 10);
+    const proximaSemana = fallback || this.getNextWeekId(new Date());
+    const alvo = normalizarSemana(await this.getConfig("marcacao_semana_alvo").catch(() => null));
 
-    return fallback || this.getNextWeekId(new Date());
+    if (alvo) {
+      const inicioAlvo = this.getDataRefBySemanaDia(alvo, "segunda");
+      // Regra operacional: a marcação pública é sempre da semana futura.
+      // Se uma configuração antiga apontar para semana atual/passada, ignora e usa a próxima.
+      if (inicioAlvo && inicioAlvo > hoje) return alvo;
+    }
+
+    return proximaSemana;
   },
 
   async setSemanaAlvoMarcacao(semanaId) {
