@@ -73,8 +73,6 @@
     },
 
     _ensureUI() {
-      if (this._normalizarBotoesCorrecao()) return;
-
       const reload = document.getElementById("btnRecarregarOperacao");
       if (!reload || document.getElementById("btnCorrecaoIntegridadeAssistida")) return;
 
@@ -88,25 +86,6 @@
       const fechamentoActions = document.querySelector(".fechamento-actions");
       if (fechamentoActions) fechamentoActions.appendChild(btn);
       else reload.insertAdjacentElement("beforebegin", btn);
-    },
-
-    _normalizarBotoesCorrecao() {
-      const botoes = Array.from(document.querySelectorAll("button"))
-        .filter(btn => this._norm(btn.textContent).includes("correcao assistida"));
-
-      if (!botoes.length) return false;
-
-      const principal = botoes[0];
-      const clone = principal.cloneNode(true);
-      clone.id = "btnCorrecaoIntegridadeAssistida";
-      clone.type = "button";
-      clone.className = principal.className || "btn-secondary";
-      clone.textContent = "🛠 Correção assistida";
-      clone.addEventListener("click", () => this.abrir());
-      principal.replaceWith(clone);
-
-      botoes.slice(1).forEach(btn => btn.remove());
-      return true;
     },
 
     async abrir(options = {}) {
