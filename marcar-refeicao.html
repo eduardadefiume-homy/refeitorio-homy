@@ -405,14 +405,33 @@ function getSemanaAtual(){
 }
 
 async function getSemanaAlvoMarcacaoLocal(){
-  if(window.SP && typeof SP.getSemanaAlvoMarcacao === "function"){
-    const semana = await SP.getSemanaAlvoMarcacao();
-    if(semana) return semana;
-  }
-  if(window.SP && typeof SP.getNextWeekId === "function") return SP.getNextWeekId(new Date());
+  // v10.2: a marcação pública deve sempre mirar uma semana futura.
+  // Se existir configuração antiga apontando para semana atual/passada, ignora e usa próxima semana.
   const atual = getSemanaAtual();
-  const [ano, w] = atual.split("-W");
-  return ano + "-W" + String(Number(w || 0) + 1).padStart(2, "0");
+  const proxima = (window.SP && typeof SP.getNextWeekId === "function")
+    ? SP.getNextWeekId(new Date())
+    : (()=>{ const [ano,w]=atual.split("-W"); return ano+"-W"+String(Number(w||0)+1).padStart(2,"0"); })();
+
+  function semanaNum(s){
+    const m=String(s||"").match(/^(\d{4})-W(\d{1,2})$/);
+    return m ? (Number(m[1])*100+Number(m[2])) : 0;
+  }
+
+  try{
+    if(window.SP && typeof SP.getConfig === "function"){
+      const cfg = await SP.getConfig("marcacao_semana_alvo", "").catch(()=>"");
+      if(cfg && semanaNum(cfg) > semanaNum(atual)) return cfg;
+    }
+  }catch(_){ }
+
+  try{
+    if(window.SP && typeof SP.getSemanaAlvoMarcacao === "function"){
+      const semana = await SP.getSemanaAlvoMarcacao().catch(()=>"");
+      if(semana && semanaNum(semana) > semanaNum(atual)) return semana;
+    }
+  }catch(_){ }
+
+  return proxima;
 }
 
 function getWeekDatesLocal(semanaId){
@@ -422,6 +441,147 @@ function getWeekDatesLocal(semanaId){
   const start=new Date(jan4);
   start.setDate(jan4.getDate()-(jan4.getDay()||7)+1+(week-1)*7);
   return Array.from({length:5},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d;});
+}
+
+
+function dateISO(v){
+  if(!v) return "";
+  if(v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  const s=String(v||"").trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const d=new Date(s);
+  return d && !isNaN(d) ? d.toISOString().slice(0,10) : "";
+}
+
+function pickLocal(obj,...keys){
+  if(window.SP && typeof SP.pick === "function"){
+    const v=SP.pick(obj,...keys);
+    if(v!==undefined && v!==null && String(v).trim()!=="") return v;
+  }
+  for(const k of keys){
+    const v=obj && obj[k];
+    if(v!==undefined && v!==null && String(v).trim()!=="") return v;
+  }
+  return "";
+}
+
+function isTrueLocal(v){
+  if(window.SP && typeof SP.isTrue === "function") return SP.isTrue(v);
+  if(v===true || v===1) return true;
+  return ["true","1","sim","yes","x"].includes(norm(v));
+}
+
+function ausenciaAtivaLocal(a){
+  const status=norm(pickLocal(a,"Status","status","Status_Ausencia","statusAusencia"));
+  if(["inativo","cancelado","encerrado","periodo encerrado","período encerrado","duplicado inativado","duplicidade inativada","false","nao","não","0"].includes(status)) return false;
+  const ativo=pickLocal(a,"Ativo","ativo");
+  if(ativo==="") return true;
+  return isTrueLocal(ativo);
+}
+
+function colaboradorMesmoLocal(colab,aOuPedido){
+  const id1=String(pickLocal(colab,"id","ID","Colaborador_id","colaboradorId","ColaboradorId")||"").trim();
+  const id2=String(pickLocal(aOuPedido,"Colaborador_id","colaboradorId","ColaboradorId","id","ID")||"").trim();
+  if(id1 && id2 && id1===id2) return true;
+  const n1=norm(pickLocal(colab,"Nome","Title","Colaborador_nome","colaboradorNome"));
+  const n2=norm(pickLocal(aOuPedido,"Colaborador_nome","colaboradorNome","Colaborador","Nome","Title"));
+  return !!n1 && !!n2 && n1===n2;
+}
+
+function motivoAusenciaLocal(a){
+  const m=pickLocal(a,"Motivo","motivo","Status","status") || "Ausência";
+  const n=norm(m);
+  if(n==="ferias") return "Férias";
+  if(n==="nao_vai_almocar" || n==="nao vai almocar") return "Não vai almoçar";
+  if(n==="afastado") return "Afastado";
+  if(n==="atestado") return "Atestado";
+  if(n==="licenca") return "Licença";
+  return String(m||"Ausência");
+}
+
+function ausenciaDoColaboradorNoDiaLocal(semanaId,colaborador,dia,ausencias){
+  const datas=getWeekDatesLocal(semanaId);
+  const idx=DIAS_SEMANA.findIndex(d=>normDia(d.key)===normDia(dia));
+  const dataRef=datas[idx] ? dateISO(datas[idx]) : "";
+  if(!dataRef) return null;
+  return (ausencias||[]).find(a=>{
+    if(!ausenciaAtivaLocal(a)) return false;
+    if(!colaboradorMesmoLocal(colaborador,a)) return false;
+    const ini=dateISO(pickLocal(a,"Data_Inicio","Inicio","DataInicio","Data"));
+    const fim=dateISO(pickLocal(a,"Data_Fim","Fim","DataFim","Data")) || ini;
+    return !!ini && !!fim && ini<=dataRef && fim>=dataRef;
+  }) || null;
+}
+
+function pedidoBloqueiaProducaoLocal(p){
+  const s=norm(pickLocal(p,"Status","status"));
+  return ["cancelado","bloqueado","ausente","ferias","férias","afastado","atestado","licenca","licença","nao vai almocar","não vai almoçar","nao_vai_almocar"].includes(s);
+}
+
+function pedidoProdutivoLocal(p){
+  const status=norm(pickLocal(p,"Status","status"));
+  const origem=norm(pickLocal(p,"Origem","origem","tipo","Tipo"));
+  if(status==="travado" && origem.includes("travamento")) return true;
+  if(pedidoBloqueiaProducaoLocal(p)) return false;
+  return ["confirmado","aprovado","extra"].includes(status) || isTrueLocal(pickLocal(p,"Confirmado","confirmado"));
+}
+
+function pedidosDoColaboradorDiaLocal(semanaId,colaborador,dia,pedidosLista){
+  const diaN=normDia(dia);
+  return (pedidosLista||[]).filter(p=>{
+    if(String(pickLocal(p,"Semana_id","Semana")||"") && String(pickLocal(p,"Semana_id","Semana")||"")!==String(semanaId)) return false;
+    if(normDia(pickLocal(p,"Dia","dia"))!==diaN) return false;
+    return colaboradorMesmoLocal(colaborador,p);
+  }).sort((a,b)=>{
+    const ta=Date.parse(pickLocal(a,"Modified","modified","Data_Hora","Created","created")||"") || Number(pickLocal(a,"id","ID")||0) || 0;
+    const tb=Date.parse(pickLocal(b,"Modified","modified","Data_Hora","Created","created")||"") || Number(pickLocal(b,"id","ID")||0) || 0;
+    return tb-ta;
+  });
+}
+
+function calcularEstadosRefeicaoColaboradorSemanaLocal(semanaId,colaborador,ctx){
+  const pedidosLista=ctx?.pedidos||[];
+  const ausenciasLista=ctx?.ausencias||[];
+  return DIAS_SEMANA.map(dia=>{
+    const aus=ausenciaDoColaboradorNoDiaLocal(semanaId,colaborador,dia.key,ausenciasLista);
+    if(aus){
+      return {
+        dia: dia.key,
+        statusTela: "bloqueado-ausencia",
+        podeMarcar: false,
+        contaProducao: false,
+        motivo: motivoAusenciaLocal(aus),
+        ausencia: aus
+      };
+    }
+
+    const pedidosDia=pedidosDoColaboradorDiaLocal(semanaId,colaborador,dia.key,pedidosLista);
+    const escolhido=pedidosDia.find(p=>pedidoProdutivoLocal(p)) || pedidosDia.find(p=>!pedidoBloqueiaProducaoLocal(p)) || null;
+
+    if(escolhido && pedidoProdutivoLocal(escolhido)){
+      const origem=norm(pickLocal(escolhido,"Origem","origem","tipo","Tipo"));
+      const status=norm(pickLocal(escolhido,"Status","status"));
+      const opcao=norm(pickLocal(escolhido,"Opcao","opcao")) || "principal";
+      return {
+        dia: dia.key,
+        statusTela: (status==="travado" || origem.includes("travamento")) ? "travado-principal" : "confirmado",
+        podeMarcar: false,
+        contaProducao: true,
+        opcao,
+        nomePrato: pickLocal(escolhido,"Nome_Prato","nomePrato") || "",
+        pedido: escolhido,
+        motivo: origem.includes("travamento") ? "Principal automático por travamento" : "Escolha já registrada"
+      };
+    }
+
+    return {
+      dia: dia.key,
+      statusTela: "disponivel",
+      podeMarcar: true,
+      contaProducao: false,
+      motivo: "Disponível para marcação"
+    };
+  });
 }
 
 function formatDataCurta(date){
@@ -647,18 +807,16 @@ async function carregarDadosSharePoint(){
         cc:         String(SP.pick(c,"Centro_Custo")||""),
         raw:        c
       };
-      const estados = typeof SP.calcularEstadosRefeicaoColaboradorSemana === "function"
-        ? SP.calcularEstadosRefeicaoColaboradorSemana(SEMANA_ID, {
-            id: base.id,
-            ID: base.id,
-            Nome: base.nome,
-            Title: base.nome,
-            Colaborador_id: base.id,
-            Colaborador_nome: base.nome,
-            Centro_Custo: base.cc,
-            Departamento: base.dept
-          }, { pedidos: pedidosExistentes, ausencias: ausenciasExistentes })
-        : [];
+      const estados = calcularEstadosRefeicaoColaboradorSemanaLocal(SEMANA_ID, {
+        id: base.id,
+        ID: base.id,
+        Nome: base.nome,
+        Title: base.nome,
+        Colaborador_id: base.id,
+        Colaborador_nome: base.nome,
+        Centro_Custo: base.cc,
+        Departamento: base.dept
+      }, { pedidos: pedidosExistentes, ausencias: ausenciasExistentes });
       ESTADOS_REFEICAO[base.id] = estados;
       const bloqueadosAusencia = estados.filter(e => e.statusTela === "bloqueado-ausencia");
       const diasNaoBloqueados = estados.filter(e => e.statusTela !== "bloqueado-ausencia");
