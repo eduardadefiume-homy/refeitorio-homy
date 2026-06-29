@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-7-20260629
+// v: base-centralizada-v10-9-20260629
 // ============================================================
 
 const SP = {
@@ -2833,6 +2833,49 @@ const SP = {
     await this.ensureLogin?.();
     if (!semanaId) throw new Error("Informe a semana para travar pendentes.");
 
+    const fechamentoSemana = await this.getStatusFechamentoSemana(semanaId).catch(() => null);
+    const decisaoFechamento = this._R()?.podeTravarSemana?.({ fechamentoSemana, ignorarFechamento: options.ignorarFechamento === true }) || { bloqueadoPorFechamento: !!(fechamentoSemana?.temFechamento && options.ignorarFechamento !== true), motivoBloqueio: this._R()?.motivoBloqueioTravamentoSemana?.(fechamentoSemana) || "Travamento bloqueado por Fechamento Oficial." };
+    if (decisaoFechamento.bloqueadoPorFechamento) {
+      const porDia = {};
+      for (const dia of fechamentoSemana.diasOperacionais || this._diasOperacionaisPadrao()) {
+        const f = fechamentoSemana.porDia?.[dia] || null;
+        porDia[dia] = {
+          dia,
+          data: f?.data || this.getDataRefBySemanaDia?.(semanaId, dia) || "",
+          fechado: !!f,
+          totalOficial: f?.total || 0,
+          confirmados: f?.total || 0,
+          travados: 0,
+          ausentes: f?.ausentes || 0,
+          pendentesElegiveis: 0,
+          retornosAutomaticosLegados: 0,
+          acoes: 0
+        };
+      }
+      return {
+        semanaId,
+        geradoEm: new Date().toISOString(),
+        geradoPor: this.getUserName ? this.getUserName() : "Sistema",
+        prazo: await this._prazoTravamentoSemana(semanaId).catch(() => ({ prazoConfigurado: false, prazoVencido: false })),
+        fechamentoSemana,
+        bloqueado: true,
+        motivoBloqueio: decisaoFechamento.motivoBloqueio,
+        totais: {
+          colaboradoresAtivos: 0,
+          diasAvaliados: Object.keys(porDia).length,
+          confirmados: 0,
+          travadosExistentes: 0,
+          ausentesIgnorados: 0,
+          pendentesElegiveis: 0,
+          retornosAutomaticosLegados: 0,
+          acoesTravamento: 0
+        },
+        porDia,
+        acoes: [],
+        hashPlano: this._hashTexto(this._jsonSeguro({ semanaId, bloqueado: true, fechamento: fechamentoSemana.diasFechados }))
+      };
+    }
+
     const [{ dias }, prazoInfo, colaboradores, pedidos, ausencias] = await Promise.all([
       Promise.resolve(this._semanaInicioFimISO(semanaId)),
       this._prazoTravamentoSemana(semanaId),
@@ -2854,7 +2897,8 @@ const SP = {
     }
 
     const permitirAntesDoPrazo = options.ignorarPrazo === true;
-    const podeTravar = permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido);
+    const decisaoTravamento = this._R()?.podeTravarSemana?.({ fechamentoSemana: null, prazoInfo, permitirAntesDoPrazo, ignorarFechamento: true }) || { podeTravar: permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido), bloqueado: !(permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido)), motivoBloqueio: "" };
+    const podeTravar = !!decisaoTravamento.podeTravar;
     const acoes = [];
     const porDia = {};
     for (const d of diasOperacao) {
@@ -2954,11 +2998,7 @@ const SP = {
     }
 
     const bloqueado = !podeTravar;
-    const motivoBloqueio = bloqueado
-      ? (!prazoInfo.prazoConfigurado
-          ? "Travamento bloqueado: prazo da semana não está configurado."
-          : "Travamento bloqueado: prazo da semana ainda não venceu.")
-      : "";
+    const motivoBloqueio = bloqueado ? decisaoTravamento.motivoBloqueio : "";
 
     return {
       semanaId,
@@ -2978,6 +3018,12 @@ const SP = {
     await this.ensureLogin?.();
     if (options.confirmacaoExplicita !== true && options.confirmado !== true) {
       throw new Error("Travamento bloqueado: confirmação explícita ausente.");
+    }
+
+    const fechamentoSemana = await this.getStatusFechamentoSemana(semanaId).catch(() => null);
+    const decisaoFechamento = this._R()?.podeTravarSemana?.({ fechamentoSemana, ignorarFechamento: options.ignorarFechamento === true }) || { bloqueadoPorFechamento: !!(fechamentoSemana?.temFechamento && options.ignorarFechamento !== true), motivoBloqueio: "Travamento bloqueado por Fechamento Oficial." };
+    if (decisaoFechamento.bloqueadoPorFechamento) {
+      throw new Error(decisaoFechamento.motivoBloqueio || "Travamento bloqueado por Fechamento Oficial.");
     }
 
     const previa = options.previa || await this.gerarPreviaTravamentoPendentesSemana(semanaId, options);
@@ -3068,89 +3114,41 @@ const SP = {
   },
 
   _opcaoResumoFechamento(opcao) {
-    const op = this.norm(opcao || "");
-    if (op === "principal") return "principal";
-    if (op === "light") return "light";
-    if (op === "carne") return "carne";
-    if (op === "massa") return "massa";
-    if (op === "lanche") return "lanche";
-    if (!op) return "semOpcao";
-    return "outros";
+    const R = this._R();
+    return R?.opcaoResumoFechamento ? R.opcaoResumoFechamento(opcao) : this.norm(opcao || "principal") || "semOpcao";
   },
 
   _categoriaPedidoFechamento(p) {
-    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
-    const nome = this.norm(this.pick(p, "Colaborador_nome", "Nome", "Title") || "");
-    const id = this.norm(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "");
-
-    if (origem.includes("investigador") || nome.includes("investigador")) return "investigador";
-    if (origem.includes("guarda") || nome.includes("guarda")) return "guarda";
-    if (origem.includes("prestador")) return "prestador";
-    if (origem.includes("visitante")) return "visitante";
-    if (origem.includes("terceiro")) return "terceiro";
-    if (origem.includes("extra") || nome.includes("refeicao extra") || id.startsWith("extra-")) return "extra";
-    if (origem.includes("ausencia") || origem.includes("ausência")) return "ausencia";
-    return "colaborador";
+    const R = this._R();
+    return R?.categoriaPedidoFechamento ? R.categoriaPedidoFechamento(p) : "colaborador";
   },
 
   _statusBloqueiaFechamento(p) {
-    const status = this.norm(this.pick(p, "Status", "status") || "");
-    return [
-      "cancelado", "bloqueado", "nao vai almocar", "nao_vai_almocar",
-      "não vai almoçar", "ausente", "ferias", "férias", "afastado",
-      "atestado", "licenca", "licença", "banco horas", "banco_horas",
-      "homy office", "homy_office", "falta", "duplicado inativado"
-    ].includes(status);
+    const R = this._R();
+    return R?.statusBloqueiaFechamento ? R.statusBloqueiaFechamento(p) : false;
   },
 
   _pedidoProdutivoFechamento(p) {
-    const status = this.norm(this.pick(p, "Status", "status") || "");
-    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
-    const confirmado = this.isTrue(this.pick(p, "Confirmado", "confirmado"));
-
-    if (status === "travado" && origem.includes("travamento")) return true;
-
-    // v10.5 — legado de retorno automático não entra em produção nem fechamento.
-    if (this._isRetornoAutomaticoAusenciaPedido(p)) return false;
-
-    if (this._statusBloqueiaFechamento(p)) return false;
-    return ["confirmado", "aprovado", "extra"].includes(status) || confirmado;
+    const R = this._R();
+    return R?.pedidoProdutivoFechamento ? R.pedidoProdutivoFechamento(p) : this.isTrue(this.pick(p, "Confirmado", "confirmado"));
   },
 
   _pedidoTimestampFechamento(p) {
-    const raw = this.pick(p, "Modified", "modified", "Data_Hora", "DataHora", "Created", "created") || "";
-    const dt = raw ? new Date(raw) : null;
-    if (dt && !isNaN(dt)) return dt.getTime();
-    const id = Number(this.pick(p, "id", "ID") || 0);
-    return Number.isFinite(id) ? id : 0;
+    const R = this._R();
+    return R?.timestampPedido ? R.timestampPedido(p) : 0;
   },
 
   _pedidoKeyFechamento(p) {
-    const categoria = this._categoriaPedidoFechamento(p);
+    const R = this._R();
+    if (R?.pedidoKeyFechamento) return R.pedidoKeyFechamento(p);
     const dia = this.norm(this.pick(p, "Dia", "dia") || "");
-    const opcao = this.norm(this.pick(p, "Opcao", "opcao") || "principal");
     const id = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
-    const nome = this.norm(this.pick(p, "Colaborador_nome", "Nome", "Title") || "");
-
-    if (["extra", "guarda", "investigador", "prestador", "visitante", "terceiro"].includes(categoria)) {
-      // Extras/especiais: id de extra vence; se não houver, usa nome/categoria/opção.
-      return `especial|${dia}|${categoria}|${opcao}|${id || nome}`;
-    }
-
-    if (id) return `colaborador|${dia}|id:${id}`;
-    return `colaborador|${dia}|nome:${nome}`;
+    return `${dia}|${id || this.norm(this.pick(p, "Colaborador_nome", "Nome", "Title") || "")}`;
   },
 
   _ordenarPreferenciaFechamento(a, b) {
-    const ap = this._pedidoProdutivoFechamento(a) ? 1 : 0;
-    const bp = this._pedidoProdutivoFechamento(b) ? 1 : 0;
-    if (ap !== bp) return bp - ap;
-
-    const ab = this._statusBloqueiaFechamento(a) ? 1 : 0;
-    const bb = this._statusBloqueiaFechamento(b) ? 1 : 0;
-    if (ab !== bb) return ab - bb;
-
-    return this._pedidoTimestampFechamento(b) - this._pedidoTimestampFechamento(a);
+    const R = this._R();
+    return R?.compararPreferenciaFechamento ? R.compararPreferenciaFechamento(a, b) : 0;
   },
 
   _snapshotPedidoFechamento(p, contaProducao, motivo, categoria = null) {
@@ -3266,33 +3264,56 @@ const SP = {
   },
 
   _statusFechamentoAtivo(item) {
-    const status = this.norm(this.pick(item, "Status_Fechamento", "Status") || "");
-    return status === "fechado" || status === "recalculado";
+    const R = this._R();
+    return R?.statusFechamentoAtivo ? R.statusFechamentoAtivo(item) : ["fechado", "recalculado"].includes(this.norm(this.pick(item, "Status_Fechamento", "Status") || ""));
   },
 
   _dataFechamentoOrdem(item) {
-    const raw = this.pick(item, "Fechado_Em", "Modified", "Gerado_Em", "Created") || "";
-    const t = raw ? new Date(raw).getTime() : 0;
-    return Number.isFinite(t) ? t : Number(this.pick(item, "id", "ID") || 0) || 0;
+    const R = this._R();
+    return R?.dataFechamentoOrdem ? R.dataFechamentoOrdem(item) : 0;
   },
 
   _motivoTotalZeroValido(motivo) {
-    const texto = String(motivo || "").trim();
-    const n = this.norm(texto);
-    if (texto.length < 5) return false;
-    return ![
-      "fechamento conferido pela operacao do dia",
-      "fechamento oficial gerado pela operacao do dia",
-      "fechamento oficial confirmado",
-      "ok",
-      "sim"
-    ].includes(n);
+    const R = this._R();
+    return R?.motivoTotalZeroValido ? R.motivoTotalZeroValido(motivo) : String(motivo || "").trim().length >= 5;
   },
 
   async getFechamentosSemana(semanaId) {
     const lista = this._fechamentoListas().diario;
     const items = await this.getItems(lista, { force: true }).catch(() => []);
     return (items || []).filter(i => String(this.pick(i, "Semana_id") || "") === String(semanaId || ""));
+  },
+
+  _diasOperacionaisPadrao() {
+    return ["segunda", "terca", "quarta", "quinta", "sexta"];
+  },
+
+  async getFechamentosAtivosSemana(semanaId) {
+    const itens = await this.getFechamentosSemana(semanaId).catch(() => []);
+    const ativos = (itens || []).filter(i => this._statusFechamentoAtivo(i));
+    ativos.sort((a, b) => this._dataFechamentoOrdem(b) - this._dataFechamentoOrdem(a));
+    return ativos;
+  },
+
+  _resumoFechamentoParaTela(fechamento) {
+    const R = this._R();
+    return R?.resumoFechamentoParaTela ? R.resumoFechamentoParaTela(fechamento) : null;
+  },
+
+  async getStatusFechamentoSemana(semanaId) {
+    const R = this._R();
+    const dias = R?.diasOperacionais ? R.diasOperacionais() : this._diasOperacionaisPadrao();
+    const itens = await this.getFechamentosSemana(semanaId).catch(() => []);
+    if (R?.analisarFechamentoSemana) return R.analisarFechamentoSemana(itens, { semanaId, diasOperacionais: dias });
+    const ativos = (itens || []).filter(i => this._statusFechamentoAtivo(i));
+    const porDia = {};
+    for (const item of ativos) {
+      const dia = this.norm(this.pick(item, "Dia") || "");
+      if (!dia || porDia[dia]) continue;
+      porDia[dia] = this._resumoFechamentoParaTela(item);
+    }
+    const diasFechados = dias.filter(d => !!porDia[d]);
+    return { semanaId, temFechamento: diasFechados.length > 0, semanaFechada: dias.every(d => !!porDia[d]), diasOperacionais: dias, diasFechados, diasAbertos: dias.filter(d => !porDia[d]), totalDiasFechados: diasFechados.length, porDia, mensagem: "" };
   },
 
   async getFechamentoDia(semanaId, dia, options = {}) {
@@ -3959,6 +3980,108 @@ const SP = {
   // ============================================================
   // DASHBOARD — resumo somente leitura
   // ============================================================
+  async getRelatorioOficialPeriodo(ini, fim, options = {}) {
+    await this.init();
+    if (!ini || !fim) throw new Error("Informe data inicial e final para o relatório.");
+    if (ini > fim) throw new Error("Data inicial maior que data final.");
+
+    const R = (typeof window !== "undefined" ? window.HomyRefeitorioRegras : null) ||
+              (typeof globalThis !== "undefined" ? globalThis.HomyRefeitorioRegras : null) || null;
+    const norm = v => R?.norm ? R.norm(v) : this.norm(v);
+    const pick = (obj, ...keys) => this.pick(obj, ...keys);
+    const contaProducao = p => R?.pedidoConfirmadoProducao ? R.pedidoConfirmadoProducao(p) : this._pedidoProdutivoValido?.(p);
+
+    const [fechamentosTodos, itensFechamentoTodos, pedidosTodos] = await Promise.all([
+      this.getItems(this._fechamentoListas().diario, { force: !!options.force }).catch(() => []),
+      this.getItems(this._fechamentoListas().itens, { force: !!options.force }).catch(() => []),
+      this.getItems("Pedidos", { force: !!options.force }).catch(() => [])
+    ]);
+
+    const fechamentosAtivos = (fechamentosTodos || [])
+      .filter(f => this._statusFechamentoAtivo(f))
+      .map(f => this._resumoFechamentoParaTela(f))
+      .filter(f => f.data && f.data >= ini && f.data <= fim)
+      .sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.dia).localeCompare(String(b.dia)));
+
+    const keysFechamento = new Set(fechamentosAtivos.map(f => f.title || this._fechamentoKey(f.semanaId, f.dia)));
+    const datasFechadas = new Set(fechamentosAtivos.map(f => f.data));
+
+    const itensFechamento = (itensFechamentoTodos || [])
+      .filter(i => keysFechamento.has(String(pick(i, "Fechamento_Key") || "")))
+      .filter(i => this.isTrue(pick(i, "Conta_Producao", "ContaProducao")))
+      .map(i => ({
+        fonte: "Fechamento Oficial",
+        id: String(pick(i, "Pedido_Id", "PedidoId", "id", "ID") || ""),
+        Semana_id: pick(i, "Semana_id") || "",
+        Dia: pick(i, "Dia") || "",
+        Data_Hora: `${this._dataISOOperacional(pick(i, "Data_Operacao", "Data")) || ""}T12:00:00`,
+        Data_Operacao: this._dataISOOperacional(pick(i, "Data_Operacao", "Data")) || "",
+        Colaborador_id: pick(i, "Colaborador_id", "ColaboradorId") || "",
+        Colaborador_nome: pick(i, "Colaborador_nome", "Colaborador", "Title") || "",
+        Centro_Custo: pick(i, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || "",
+        Opcao: norm(pick(i, "Opcao", "opcao") || "principal") || "principal",
+        Nome_Prato: pick(i, "Nome_Prato", "Prato") || "",
+        Status: pick(i, "Status_Pedido", "Status") || "Confirmado",
+        Confirmado: true,
+        Origem: pick(i, "Origem") || "Fechamento Oficial",
+        Categoria: pick(i, "Categoria") || "colaborador"
+      }));
+
+    const resumoPorData = new Map();
+    for (const f of fechamentosAtivos) {
+      resumoPorData.set(f.data, {
+        data: f.data,
+        semanaId: f.semanaId,
+        dia: f.dia,
+        fonte: "Fechamento Oficial",
+        principal: Number(f.principal || 0),
+        light: Number(f.light || 0),
+        carne: Number(f.carne || 0),
+        massa: Number(f.massa || 0),
+        lanche: Number(f.lanche || 0),
+        total: Number(f.total || 0),
+        fechamento: f
+      });
+    }
+
+    const pedidosAbertos = (pedidosTodos || [])
+      .filter(p => {
+        const data = this._dataISOOperacional(pick(p, "Data_Hora", "Data", "Created"));
+        return data && data >= ini && data <= fim && !datasFechadas.has(data) && contaProducao(p);
+      });
+
+    for (const p of pedidosAbertos) {
+      const data = this._dataISOOperacional(pick(p, "Data_Hora", "Data", "Created"));
+      if (!resumoPorData.has(data)) {
+        resumoPorData.set(data, { data, semanaId: pick(p, "Semana_id") || "", dia: pick(p, "Dia") || "", fonte: "Pedidos calculados", principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, total: 0 });
+      }
+      const r = resumoPorData.get(data);
+      const op = norm(pick(p, "Opcao", "opcao") || "principal");
+      if (Object.prototype.hasOwnProperty.call(r, op)) r[op]++;
+      else r.principal++;
+      r.total++;
+    }
+
+    const itensAbertos = pedidosAbertos.map(p => ({ ...p, fonte: "Pedidos calculados", Data_Operacao: this._dataISOOperacional(pick(p, "Data_Hora", "Data", "Created")) }));
+    const itens = [...itensFechamento, ...itensAbertos];
+    const dias = [...resumoPorData.values()].sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    const totais = dias.reduce((acc, d) => {
+      for (const k of ["principal", "light", "carne", "massa", "lanche", "total"]) acc[k] += Number(d[k] || 0);
+      return acc;
+    }, { principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, total: 0 });
+
+    return {
+      ini,
+      fim,
+      fonte: fechamentosAtivos.length ? "Fechamento Oficial + Pedidos calculados" : "Pedidos calculados",
+      usaFechamento: fechamentosAtivos.length > 0,
+      fechamentosUsados: fechamentosAtivos,
+      dias,
+      itens,
+      totais
+    };
+  },
+
   async getDashboardResumo(semanaId, options = {}) {
     await this.init();
 
@@ -3995,12 +4118,13 @@ const SP = {
       ? R.ausenciaVigenteParaColaborador(ausencias, key, dataISO)
       : null;
 
-    const [colaboradoresTodos, pedidos, ausencias, extras, checkins] = await Promise.all([
+    const [colaboradoresTodos, pedidos, ausencias, extras, checkins, fechamentoSemana] = await Promise.all([
       this.getTodosColaboradores?.().catch(() => []) || [],
       this.getPedidos(semanaId, { force: !!options.force }).catch(() => []),
       this.getAusencias?.(false).catch(() => []) || [],
       this.getItems("Extras", { force: !!options.force }).catch(() => []),
-      this.getItems("CheckIn", { force: !!options.force }).catch(() => [])
+      this.getItems("CheckIn", { force: !!options.force }).catch(() => []),
+      this.getStatusFechamentoSemana?.(semanaId).catch(() => null)
     ]);
 
     const colaboradoresAtivosLista = (colaboradoresTodos || []).filter(colabAtivo);
@@ -4034,7 +4158,23 @@ const SP = {
         porColab.get(k).push(p);
       }
 
-      const resumo = { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, pendentes: 0, ausentes: 0, travados: 0 };
+      const resumo = { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, pendentes: 0, ausentes: 0, travados: 0, fechado: false, fonte: "Pedidos" };
+
+      const fechamentoDia = fechamentoSemana?.porDia?.[this.norm(dia)] || null;
+      if (fechamentoDia) {
+        resumo.fechado = true;
+        resumo.fonte = "Fechamento Oficial";
+        resumo.total = Number(fechamentoDia.total || 0);
+        resumo.principal = Number(fechamentoDia.principal || 0);
+        resumo.light = Number(fechamentoDia.light || 0);
+        resumo.carne = Number(fechamentoDia.carne || 0);
+        resumo.massa = Number(fechamentoDia.massa || 0);
+        resumo.lanche = Number(fechamentoDia.lanche || 0);
+        resumo.ausentes = Number(fechamentoDia.ausentes || 0);
+        totalPedidosSemana += resumo.total;
+        porDia[dia] = resumo;
+        continue;
+      }
 
       for (const c of colaboradoresAtivosLista) {
         const key = keyColab(c);
@@ -4116,6 +4256,9 @@ const SP = {
       lightHoje: Number(hoje.light || 0),
       outrasHoje: Number(hoje.carne || 0) + Number(hoje.massa || 0) + Number(hoje.lanche || 0),
       travadosSemana,
+      fechamentoSemana: fechamentoSemana || null,
+      semanaFechada: !!fechamentoSemana?.semanaFechada,
+      semanaTemFechamento: !!fechamentoSemana?.temFechamento,
       porDia,
       setoresHoje: [...setoresHoje.entries()].sort((a, b) => b[1] - a[1])
     };
