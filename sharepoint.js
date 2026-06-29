@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: safe-readonly-v10-3-20260626
+// v: base-limpa-v10-4-20260629
 // ============================================================
 
 const SP = {
@@ -419,15 +419,12 @@ const SP = {
   },
 
   agendarReparoIntegridadeSemana(semanaId, pedidosBase = null) {
-    if (!semanaId) return;
-    const now = Date.now();
-    const last = this._repairCache[semanaId] || 0;
-    if (last && (now - last) < this._REPAIR_TTL_MS) return;
-    setTimeout(() => {
-      this.repararIntegridadeSemana(semanaId, { pedidosBase }).catch(e =>
-        console.warn("[SharePoint] Reparo de integridade em segundo plano ignorado:", e)
-      );
-    }, 50);
+    // v10.4 — leitura nunca agenda gravação em segundo plano.
+    // Mantida apenas por compatibilidade com chamadas antigas. Qualquer reparo
+    // que altere Pedidos/Ausências/Extras deve ser acionado por botão explícito,
+    // com confirmação e auditoria.
+    console.info("[SharePoint] Reparo automático não agendado: leituras são somente leitura.", semanaId || "");
+    return { agendado: false, somenteLeitura: true, motivo: "reparo automático desativado" };
   },
 
   // ============================================================
@@ -755,7 +752,7 @@ const SP = {
     const items = await this.getItems("Pedidos", { force: !!options.force, ttl: this._ITEMS_CACHE_TTL_MS });
     const pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
 
-    // v10.3 — leitura nunca grava.
+    // v10.4 — leitura nunca grava.
     // Antes, getPedidos() podia agendar repararIntegridadeSemana(), que por sua vez
     // podia criar/cancelar/atualizar pedidos em segundo plano apenas ao abrir telas.
     // A partir daqui, qualquer reparo/travamento/correção precisa de ação explícita.
@@ -1600,7 +1597,7 @@ const SP = {
   },
 
   async sincronizarAusenciasEncerradas(dataRef = null, options = {}) {
-    // v10.3 — somente leitura.
+    // v10.4 — somente leitura.
     // Ausência encerrada não precisa receber Status/Status_Ausencia.
     // A validade é calculada por Data_Inicio <= data <= Data_Fim e Ativo.
     const hoje = dataRef || this._hojeISO();
@@ -1626,7 +1623,7 @@ const SP = {
   },
 
   async getAusencias(apenasAtivas = true) {
-    // v10.3 — somente leitura.
+    // v10.4 — somente leitura.
     // Não chamar sincronizarAusenciasEncerradas() aqui. Carregar Dashboard/Operação/
     // Marcar Refeição não pode tentar atualizar a lista Ausencias do Refeitorio.
     const items = await this.getItems("Ausencias do Refeitorio", {
@@ -1966,56 +1963,16 @@ const SP = {
   },
 
   async _criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, ausencia, colaborador, pedidos, options = {}) {
-    // v7 — Retorno automático não retroage.
-    // Se o dia operacional já passou, o sistema não pode criar nem converter pedido para Principal.
-    if (!this._podeGerarRetornoAutomatico(diaInfo, options)) {
-      return {
-        criado: 0,
-        atualizado: 0,
-        ignorado: 1,
-        motivo: "Retorno automático bloqueado: dia operacional passado."
-      };
-    }
-
-    const colabId = String(this.pick(colaborador, "id", "ID", "Colaborador_id") || this.pick(ausencia, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
-    const nome = this.pick(colaborador, "Nome", "Title", "Colaborador_nome") || this.pick(ausencia, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Colaborador";
-    const colabKey = this._colabKey({ Colaborador_id: colabId, Colaborador_nome: nome });
-    if (!colabKey) return { criado: 0, atualizado: 0 };
-
-    const existente = (pedidos || []).find(p => this._pedidoNormalDoColaboradorNoDia(p, semanaId, colabKey, diaInfo.dia));
-    if (existente && !this._pedidoAusenciaParaAtualizar(existente)) return { criado: 0, atualizado: 0 };
-
-    const cc = this._pickCentroCusto(colaborador) || this.pick(ausencia, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || await this._resolverCentroCustoColaborador(colabId, nome);
-    const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, diaInfo.dia, "principal").catch(() => "") || "Prato Principal";
-    const fim = this._ausenciaFimISO(ausencia);
-    const fields = {
-      Semana_id: semanaId,
-      Colaborador_id: colabId,
-      Colaborador_nome: nome,
-      Dia: diaInfo.dia,
-      Opcao: "principal",
-      Nome_Prato: nomePrato,
-      Confirmado: true,
-      Data_Hora: `${diaInfo.data}T12:00:00`,
-      Centro_Custo: cc || "",
-      Status: "Confirmado",
-      Observacao: `Retorno automático após ausência encerrada em ${fim}.`,
-      Origem: "Retorno automático de ausência",
-      Alterado_Por: this.getUserName ? this.getUserName() : "Sistema"
+    // v10.4 — retorno de ausência nunca cria Principal automaticamente.
+    // O fim da ausência apenas libera marcação. Se ninguém marcar até o prazo,
+    // Principal só é gerado por travamento/fechamento explícito.
+    return {
+      criado: 0,
+      atualizado: 0,
+      ignorado: 1,
+      somenteLeitura: true,
+      motivo: "Retorno de ausência não gera Principal automático; aguarda marcação ou travamento."
     };
-
-    if (existente?.id) {
-      await this.updatePedido(existente.id, fields);
-      Object.assign(existente, fields);
-      return { criado: 0, atualizado: 1 };
-    }
-
-    const criado = await this.createItem("Pedidos", {
-      Title: `${semanaId}-${colabId || this.norm(nome)}-${diaInfo.dia}-retorno`,
-      ...fields
-    });
-    pedidos.push({ id: criado?.id || criado?.ID || "", ...fields });
-    return { criado: 1, atualizado: 0 };
   },
 
 
@@ -2158,7 +2115,7 @@ const SP = {
         if (!idPref) continue;
 
         if (this._pedidoStatusAusenciaOuOrigem(preferido)) {
-          // v10.3 — ausência encerrada não vira Principal aqui.
+          // v10.4 — ausência encerrada não vira Principal aqui.
           // Mantém o registro como está para histórico/auditoria. O colaborador fica pendente
           // na Operação/Marcar Refeição até escolher ou até o travamento/fechamento explícito.
           retornosIgnoradosPorDiaPassado++;
@@ -2196,7 +2153,7 @@ const SP = {
       });
       duplicadasInativadas = dup?.duplicadasInativadas || 0;
 
-      // v10.3 — não atualizar ausências encerradas durante sincronização.
+      // v10.4 — não atualizar ausências encerradas durante sincronização.
       // Períodos vencidos são interpretados por Data_Inicio/Data_Fim.
 
       const { ini: semanaIni, fim: semanaFim, dias } = this._semanaInicioFimISO(semanaId);
@@ -2228,7 +2185,7 @@ const SP = {
         }
       }
 
-      // v10.3 — retorno de ausência NÃO cria Principal automaticamente.
+      // v10.4 — retorno de ausência NÃO cria Principal automaticamente.
       // O fim da ausência apenas libera o colaborador para escolher.
       // Se ninguém marcar até o prazo, o Principal é gerado somente pelo travamento/fechamento explícito.
 
@@ -3019,19 +2976,52 @@ const SP = {
     return snapshot;
   },
 
+  _statusFechamentoAtivo(item) {
+    const status = this.norm(this.pick(item, "Status_Fechamento", "Status") || "");
+    return status === "fechado" || status === "recalculado";
+  },
+
+  _dataFechamentoOrdem(item) {
+    const raw = this.pick(item, "Fechado_Em", "Modified", "Gerado_Em", "Created") || "";
+    const t = raw ? new Date(raw).getTime() : 0;
+    return Number.isFinite(t) ? t : Number(this.pick(item, "id", "ID") || 0) || 0;
+  },
+
+  _motivoTotalZeroValido(motivo) {
+    const texto = String(motivo || "").trim();
+    const n = this.norm(texto);
+    if (texto.length < 5) return false;
+    return ![
+      "fechamento conferido pela operacao do dia",
+      "fechamento oficial gerado pela operacao do dia",
+      "fechamento oficial confirmado",
+      "ok",
+      "sim"
+    ].includes(n);
+  },
+
   async getFechamentosSemana(semanaId) {
     const lista = this._fechamentoListas().diario;
     const items = await this.getItems(lista, { force: true }).catch(() => []);
     return (items || []).filter(i => String(this.pick(i, "Semana_id") || "") === String(semanaId || ""));
   },
 
-  async getFechamentoDia(semanaId, dia) {
+  async getFechamentoDia(semanaId, dia, options = {}) {
     const key = this._fechamentoKey(semanaId, dia);
+    const diaNorm = this.norm(dia || "");
     const semana = await this.getFechamentosSemana(semanaId);
-    return (semana || []).find(i =>
+
+    let candidatos = (semana || []).filter(i =>
       String(this.pick(i, "Title") || "") === key ||
-      (String(this.pick(i, "Semana_id") || "") === String(semanaId || "") && this.norm(this.pick(i, "Dia") || "") === this.norm(dia || ""))
-    ) || null;
+      (String(this.pick(i, "Semana_id") || "") === String(semanaId || "") && this.norm(this.pick(i, "Dia") || "") === diaNorm)
+    );
+
+    if (!options.incluirInativos) {
+      candidatos = candidatos.filter(i => this._statusFechamentoAtivo(i));
+    }
+
+    candidatos.sort((a, b) => this._dataFechamentoOrdem(b) - this._dataFechamentoOrdem(a));
+    return candidatos[0] || null;
   },
 
   async getItensFechamento(fechamentoKey) {
@@ -3077,24 +3067,39 @@ const SP = {
 
   async salvarFechamentoDia(semanaId, dia, options = {}) {
     await this.ensureLogin?.();
+    if (options.confirmado !== true && options.confirmacaoExplicita !== true) {
+      throw new Error("Fechamento bloqueado: confirmação explícita ausente.");
+    }
+
     const previa = options.previa || await this.gerarPreviaFechamentoDia(semanaId, dia, options);
     const listas = this._fechamentoListas();
-    const existente = previa.existente || await this.getFechamentoDia(semanaId, dia).catch(() => null);
+    const existente = await this.getFechamentoDia(semanaId, dia).catch(() => null);
     const statusExistente = this.norm(this.pick(existente, "Status_Fechamento", "Status") || "");
 
     if (existente?.id && statusExistente === "fechado" && !options.recalcular && !options.sobrescrever) {
       throw new Error("Este dia já está fechado. Reabra ou use recalcular para substituir o fechamento.");
     }
 
+    const total = Number(previa?.totais?.total || 0);
+    const motivoZero = String(options.motivoTotalZero || options.motivoZero || "").trim();
+    if (total === 0 && !this._motivoTotalZeroValido(motivoZero)) {
+      throw new Error("Fechamento com Total 0 bloqueado: informe motivo operacional obrigatório, como 'Não terá almoço', 'Feriado' ou 'Empresa sem expediente'.");
+    }
+
     const agora = new Date().toISOString();
     const usuario = this.getUserName ? this.getUserName() : "Sistema";
+    const observacaoBase = String(options.observacao || "").trim();
+    const observacaoFinal = total === 0
+      ? [`Total 0: ${motivoZero}`, observacaoBase].filter(Boolean).join(" | ")
+      : (observacaoBase || "Fechamento oficial confirmado pela Operação do Dia.");
+
     const fields = {
       Title: previa.key,
       Semana_id: semanaId,
       Dia: previa.dia,
       Data_Operacao: previa.dataOperacao,
       Status_Fechamento: options.recalcular ? "Recalculado" : "Fechado",
-      Total: Number(previa.totais.total || 0),
+      Total: total,
       Principal: Number(previa.totais.principal || 0),
       Light: Number(previa.totais.light || 0),
       Carne: Number(previa.totais.carne || 0),
@@ -3110,8 +3115,8 @@ const SP = {
       Fechado_Por: usuario,
       Fechado_Em: agora,
       Hash_Resumo: previa.hashResumo,
-      Snapshot_JSON: this._jsonSeguro(previa),
-      Observacao: options.observacao || "Fechamento oficial gerado pela Operação do Dia."
+      Snapshot_JSON: this._jsonSeguro({ ...previa, motivoTotalZero: motivoZero || null }),
+      Observacao: observacaoFinal
     };
 
     let fechamento;
@@ -3131,7 +3136,7 @@ const SP = {
       listaOrigem: listas.diario,
       itemId: this.pick(fechamento, "id", "ID") || this.pick(existente, "id", "ID") || "",
       acao: existente?.id ? "fechamento_recalculado" : "fechamento_criado",
-      motivo: options.observacao || "Fechamento oficial confirmado.",
+      motivo: observacaoFinal,
       antes: existente || null,
       depois: fields,
       origemAcao: "fechamento-dia"
@@ -3143,6 +3148,36 @@ const SP = {
     this._emitSync?.("fechamento", previa.key);
 
     return { fechamento, previa };
+  },
+
+  async cancelarFechamentoDia(semanaId, dia, motivo = "") {
+    await this.ensureLogin?.();
+    const listas = this._fechamentoListas();
+    const existente = await this.getFechamentoDia(semanaId, dia, { incluirInativos: true });
+    if (!existente?.id) throw new Error("Fechamento não encontrado para cancelar.");
+    if (!String(motivo || "").trim()) throw new Error("Informe o motivo do cancelamento.");
+
+    const fields = {
+      Status_Fechamento: "Cancelado",
+      Observacao: [this.pick(existente, "Observacao", "Observação") || "", `Cancelado: ${motivo}`].filter(Boolean).join(" | ")
+    };
+    const result = await this.updateItem(listas.diario, existente.id, fields);
+    await this.registrarAuditoriaRefeitorio({
+      semanaId,
+      dia,
+      dataOperacao: this.pick(existente, "Data_Operacao") || this.getDataRefBySemanaDia(semanaId, dia),
+      modulo: "Operação do Dia",
+      listaOrigem: listas.diario,
+      itemId: existente.id,
+      acao: "fechamento_cancelado",
+      motivo,
+      antes: existente,
+      depois: { ...existente, ...fields },
+      origemAcao: "cancelamento-fechamento"
+    }).catch(e => console.warn("[Fechamento] Falha ao auditar cancelamento:", e));
+    this.clearListCache(listas.diario);
+    this._emitSync?.("fechamento", this._fechamentoKey(semanaId, dia));
+    return result;
   },
 
   async reabrirFechamentoDia(semanaId, dia, motivo = "") {
