@@ -1,5 +1,5 @@
-// admin-operacao-dia.js — Operação do Dia do Admin Homy · base limpa v10.4
-// Regra: carregar Operação do Dia é somente leitura. Reparo, travamento e correção só por ação explícita.
+// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.7
+// Regra: carregar Operação do Dia é somente leitura. Regras vêm de refeitorio-regras.js.
 
 const AdminOperacao = window.AdminOperacao = {
   _lista: [],
@@ -35,7 +35,7 @@ const AdminOperacao = window.AdminOperacao = {
   },
 
   _R() {
-    return global.HomyRefeitorioRegras || null;
+    return window.HomyRefeitorioRegras || globalThis.HomyRefeitorioRegras || null;
   },
 
   _pick(obj, ...keys) {
