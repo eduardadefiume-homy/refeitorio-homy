@@ -1,5 +1,5 @@
 // admin-dashboard.js — Dashboard do Admin Homy
-// v: base-limpa-dashboard-v10-6-20260629
+// v: base-limpa-dashboard-v10-7-20260629
 
 const AdminDashboard = window.AdminDashboard = {
 
