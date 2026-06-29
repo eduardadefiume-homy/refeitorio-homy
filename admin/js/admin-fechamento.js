@@ -1,6 +1,6 @@
 // ============================================================
 // admin-fechamento.js — Fechamento Oficial do Dia · Admin Homy
-// v: fechamento-operacional-v9-correcao-assistida-20260626
+// v: fechamento-operacional-safe-readonly-v10-3-20260626
 //
 // Carregar depois de admin-operacao-dia.js.
 // Não substitui a Operação do Dia; apenas injeta os controles de fechamento.
@@ -84,14 +84,12 @@
         <button class="btn-secondary" id="btnPreviaFechamentoDia" type="button">📋 Prévia fechamento</button>
         <button class="btn-success" id="btnFecharOperacaoDia" type="button">🔒 Fechar dia</button>
         <button class="btn-secondary" id="btnReabrirOperacaoDia" type="button" style="display:none">🔓 Reabrir</button>
-        <button class="btn-secondary" id="btnAbrirCorrecaoAssistidaFechamento" type="button">🛠 Correção assistida</button>
       `;
 
       reload.insertAdjacentElement("beforebegin", wrap);
       document.getElementById("btnPreviaFechamentoDia")?.addEventListener("click", () => this.abrirPrevia());
       document.getElementById("btnFecharOperacaoDia")?.addEventListener("click", () => this.fecharDia());
       document.getElementById("btnReabrirOperacaoDia")?.addEventListener("click", () => this.reabrirDia());
-      document.getElementById("btnAbrirCorrecaoAssistidaFechamento")?.addEventListener("click", () => global.AdminCorrecaoIntegridade?.abrir?.({ dia: this._diaAtual() }));
 
       const stats = document.querySelector("#mod-operacao .stats-grid");
       if (stats && !document.getElementById("fechamentoStatusBox")) {
