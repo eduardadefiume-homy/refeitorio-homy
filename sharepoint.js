@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-limpa-v10-4-20260629
+// v: base-centralizada-v10-6-20260629
 // ============================================================
 
 const SP = {
@@ -50,6 +50,10 @@ const SP = {
     return String(value || "")
       .normalize("NFD").replace(/[̀-ͯ]/g, "")
       .toLowerCase().trim();
+  },
+
+  _R() {
+    return globalThis.HomyRefeitorioRegras || null;
   },
 
   getSemanaId(date = new Date()) {
@@ -128,6 +132,8 @@ const SP = {
   },
 
   _statusBloqueiaProducao(status) {
+    const R = this._R?.();
+    if (R?.statusBloqueiaProducao) return R.statusBloqueiaProducao(status);
     const s = this.norm(status);
     return [
       "cancelado", "bloqueado",
@@ -138,15 +144,29 @@ const SP = {
     ].includes(s);
   },
 
+  _isRetornoAutomaticoAusenciaPedido(p) {
+    const R = this._R?.();
+    if (R?.isRetornoAutomaticoAusencia) return R.isRetornoAutomaticoAusencia(p);
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    return origem.includes("retorno automatico de ausencia") ||
+           origem.includes("retorno automático de ausência") ||
+           (origem.includes("retorno automatico") && origem.includes("ausencia")) ||
+           (origem.includes("retorno automático") && origem.includes("ausência"));
+  },
+
   _pedidoProdutivoValido(p) {
+    const R = this._R?.();
+    if (R?.pedidoConfirmadoProducao) return R.pedidoConfirmadoProducao(p);
     if (!p) return false;
     const status = this.pick(p, "Status", "status") || "";
     const statusNorm = this.norm(status);
     const origemNorm = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    if (this._isRetornoAutomaticoAusenciaPedido(p)) return false;
     if (statusNorm === "travado" && origemNorm.includes("travamento")) return true;
+    if (statusNorm === "travado") return false;
     if (this._statusBloqueiaProducao(status)) return false;
     const confirmado = this.isTrue(this.pick(p, "Confirmado", "confirmado"));
-    return confirmado || ["confirmado", "aprovado", "extra", "travado"].includes(statusNorm);
+    return confirmado || ["confirmado", "aprovado", "extra"].includes(statusNorm);
   },
 
   _extraIdempotenteKey(semanaId, dia, nome, tipo, opcao) {
@@ -419,7 +439,7 @@ const SP = {
   },
 
   agendarReparoIntegridadeSemana(semanaId, pedidosBase = null) {
-    // v10.4 — leitura nunca agenda gravação em segundo plano.
+    // v10.5 — leitura nunca agenda gravação em segundo plano.
     // Mantida apenas por compatibilidade com chamadas antigas. Qualquer reparo
     // que altere Pedidos/Ausências/Extras deve ser acionado por botão explícito,
     // com confirmação e auditoria.
@@ -752,7 +772,7 @@ const SP = {
     const items = await this.getItems("Pedidos", { force: !!options.force, ttl: this._ITEMS_CACHE_TTL_MS });
     const pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
 
-    // v10.4 — leitura nunca grava.
+    // v10.5 — leitura nunca grava.
     // Antes, getPedidos() podia agendar repararIntegridadeSemana(), que por sua vez
     // podia criar/cancelar/atualizar pedidos em segundo plano apenas ao abrir telas.
     // A partir daqui, qualquer reparo/travamento/correção precisa de ação explícita.
@@ -1597,7 +1617,7 @@ const SP = {
   },
 
   async sincronizarAusenciasEncerradas(dataRef = null, options = {}) {
-    // v10.4 — somente leitura.
+    // v10.5 — somente leitura.
     // Ausência encerrada não precisa receber Status/Status_Ausencia.
     // A validade é calculada por Data_Inicio <= data <= Data_Fim e Ativo.
     const hoje = dataRef || this._hojeISO();
@@ -1623,7 +1643,7 @@ const SP = {
   },
 
   async getAusencias(apenasAtivas = true) {
-    // v10.4 — somente leitura.
+    // v10.5 — somente leitura.
     // Não chamar sincronizarAusenciasEncerradas() aqui. Carregar Dashboard/Operação/
     // Marcar Refeição não pode tentar atualizar a lista Ausencias do Refeitorio.
     const items = await this.getItems("Ausencias do Refeitorio", {
@@ -1963,7 +1983,7 @@ const SP = {
   },
 
   async _criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, ausencia, colaborador, pedidos, options = {}) {
-    // v10.4 — retorno de ausência nunca cria Principal automaticamente.
+    // v10.5 — retorno de ausência nunca cria Principal automaticamente.
     // O fim da ausência apenas libera marcação. Se ninguém marcar até o prazo,
     // Principal só é gerado por travamento/fechamento explícito.
     return {
@@ -2115,7 +2135,7 @@ const SP = {
         if (!idPref) continue;
 
         if (this._pedidoStatusAusenciaOuOrigem(preferido)) {
-          // v10.4 — ausência encerrada não vira Principal aqui.
+          // v10.5 — ausência encerrada não vira Principal aqui.
           // Mantém o registro como está para histórico/auditoria. O colaborador fica pendente
           // na Operação/Marcar Refeição até escolher ou até o travamento/fechamento explícito.
           retornosIgnoradosPorDiaPassado++;
@@ -2153,7 +2173,7 @@ const SP = {
       });
       duplicadasInativadas = dup?.duplicadasInativadas || 0;
 
-      // v10.4 — não atualizar ausências encerradas durante sincronização.
+      // v10.5 — não atualizar ausências encerradas durante sincronização.
       // Períodos vencidos são interpretados por Data_Inicio/Data_Fim.
 
       const { ini: semanaIni, fim: semanaFim, dias } = this._semanaInicioFimISO(semanaId);
@@ -2185,7 +2205,7 @@ const SP = {
         }
       }
 
-      // v10.4 — retorno de ausência NÃO cria Principal automaticamente.
+      // v10.5 — retorno de ausência NÃO cria Principal automaticamente.
       // O fim da ausência apenas libera o colaborador para escolher.
       // Se ninguém marcar até o prazo, o Principal é gerado somente pelo travamento/fechamento explícito.
 
@@ -2755,6 +2775,271 @@ const SP = {
   // - Fechamento Itens Refeitorio
   // - Auditoria Refeitorio
   // ============================================================
+
+  // ============================================================
+  // TRAVAMENTO OFICIAL DE PENDENTES v10.5
+  // ============================================================
+  _pedidoPodeSerEscolhaReal(p) {
+    const R = this._R?.();
+    if (R?.pedidoEscolhaReal) return R.pedidoEscolhaReal(p);
+    if (!p) return false;
+    if (this._isRetornoAutomaticoAusenciaPedido(p)) return false;
+    const status = this.norm(this.pick(p, "Status", "status") || "");
+    const origem = this.norm(this.pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    if (status === "travado" && origem.includes("travamento")) return true;
+    if (status === "travado") return false;
+    if (this._statusBloqueiaProducao(status)) return false;
+    return this._pedidoProdutivoValido(p);
+  },
+
+  _pedidoCanceladoOuBloqueado(p) {
+    const R = this._R?.();
+    if (R?.pedidoCanceladoOuBloqueado) return R.pedidoCanceladoOuBloqueado(p);
+    const status = this.norm(this.pick(p, "Status", "status") || "");
+    return ["cancelado", "bloqueado", "duplicado inativado"].includes(status);
+  },
+
+  _pedidoNormalKeyTravamento(p) {
+    if (!p || this.isExtraPedido?.(p) || this._isPedidoAdicionalColaborador?.(p)) return "";
+    const dia = this.norm(this.pick(p, "Dia", "dia") || "");
+    const colabKey = this._pedidoColaboradorNormalKey(p);
+    if (!dia || !colabKey) return "";
+    return `${colabKey}|${dia}`;
+  },
+
+  _pedidoMaisAtualTravamento(grupo = []) {
+    return [...grupo].sort((a, b) => this._ordenarPedidoMaisAtual(a, b))[0] || null;
+  },
+
+  async _nomePratoPrincipalSemanaDia(semanaId, dia) {
+    return await this._nomePratoCardapioPorOpcao(semanaId, dia, "principal").catch(() => "") || "Prato Principal";
+  },
+
+  async _prazoTravamentoSemana(semanaId) {
+    const estado = await this.getEstadoMarcacao(semanaId).catch(() => null);
+    const prazoLimite = estado?.prazoLimite || await this.getPrazoMarcacao(semanaId).catch(() => null);
+    const prazo = prazoLimite ? new Date(prazoLimite) : null;
+    const prazoConfigurado = !!(prazo && !isNaN(prazo));
+    return {
+      semanaId,
+      prazoLimite: prazoConfigurado ? prazo.toISOString() : null,
+      prazoConfigurado,
+      prazoVencido: prazoConfigurado ? new Date() > prazo : false,
+      marcacaoLiberada: !!estado?.liberada
+    };
+  },
+
+  async gerarPreviaTravamentoPendentesSemana(semanaId, options = {}) {
+    await this.ensureLogin?.();
+    if (!semanaId) throw new Error("Informe a semana para travar pendentes.");
+
+    const [{ dias }, prazoInfo, colaboradores, pedidos, ausencias] = await Promise.all([
+      Promise.resolve(this._semanaInicioFimISO(semanaId)),
+      this._prazoTravamentoSemana(semanaId),
+      this.getTodosColaboradores().catch(() => []),
+      this.getPedidos(semanaId, { force: true, reparar: false }).catch(() => []),
+      this.getAusencias(false).catch(() => [])
+    ]);
+
+    const diasOperacao = (dias || []).filter(d => d.dia && d.data);
+    const colabsAtivos = (colaboradores || []).filter(c => this._colaboradorAtivo(c));
+    const pedidosPorKey = new Map();
+
+    for (const p of pedidos || []) {
+      if (String(this.pick(p, "Semana_id", "Semana") || "") !== String(semanaId)) continue;
+      const k = this._pedidoNormalKeyTravamento(p);
+      if (!k) continue;
+      if (!pedidosPorKey.has(k)) pedidosPorKey.set(k, []);
+      pedidosPorKey.get(k).push(p);
+    }
+
+    const permitirAntesDoPrazo = options.ignorarPrazo === true;
+    const podeTravar = permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido);
+    const acoes = [];
+    const porDia = {};
+    for (const d of diasOperacao) {
+      porDia[d.dia] = { dia: d.dia, data: d.data, confirmados: 0, travados: 0, ausentes: 0, pendentesElegiveis: 0, retornosAutomaticosLegados: 0, acoes: 0 };
+    }
+
+    const totais = {
+      colaboradoresAtivos: colabsAtivos.length,
+      diasAvaliados: diasOperacao.length,
+      confirmados: 0,
+      travadosExistentes: 0,
+      ausentesIgnorados: 0,
+      pendentesElegiveis: 0,
+      retornosAutomaticosLegados: 0,
+      acoesTravamento: 0
+    };
+
+    for (const c of colabsAtivos) {
+      const colabId = String(this.pick(c, "id", "ID", "Colaborador_id") || "").trim();
+      const nome = this.pick(c, "Nome", "Title", "Colaborador_nome") || "Colaborador";
+      const colabKey = this._colabKey({ Colaborador_id: colabId, Colaborador_nome: nome });
+      if (!colabKey) continue;
+      const centroCusto = this._pickCentroCusto(c) || await this._resolverCentroCustoColaborador(colabId, nome);
+
+      for (const diaInfo of diasOperacao) {
+        const diaNorm = this.norm(diaInfo.dia);
+        const resumoDia = porDia[diaInfo.dia];
+        const grupo = pedidosPorKey.get(`${colabKey}|${diaNorm}`) || [];
+        const retornosLegados = grupo.filter(p => this._isRetornoAutomaticoAusenciaPedido(p) && !this._pedidoCanceladoOuBloqueado(p));
+        const ausencia = this._ausenciaVigenteParaKeyData(ausencias, colabKey, diaInfo.data);
+
+        if (retornosLegados.length) {
+          totais.retornosAutomaticosLegados += retornosLegados.length;
+          resumoDia.retornosAutomaticosLegados += retornosLegados.length;
+        }
+
+        if (ausencia) {
+          totais.ausentesIgnorados++;
+          resumoDia.ausentes++;
+          continue;
+        }
+
+        const escolhasReais = grupo.filter(p => this._pedidoPodeSerEscolhaReal(p));
+        if (escolhasReais.length) {
+          const preferido = this._pedidoMaisAtualTravamento(escolhasReais);
+          const status = this.norm(this.pick(preferido, "Status", "status") || "");
+          const origem = this.norm(this.pick(preferido, "Origem", "origem", "tipo", "Tipo") || "");
+          if (status === "travado" && origem.includes("travamento")) {
+            totais.travadosExistentes++;
+            resumoDia.travados++;
+          } else {
+            totais.confirmados++;
+            resumoDia.confirmados++;
+          }
+          continue;
+        }
+
+        totais.pendentesElegiveis++;
+        resumoDia.pendentesElegiveis++;
+
+        if (!podeTravar) continue;
+
+        const alvo = retornosLegados[0] || grupo.find(p => !this._pedidoCanceladoOuBloqueado(p)) || null;
+        const pratoPrincipal = await this._nomePratoPrincipalSemanaDia(semanaId, diaInfo.dia);
+        const acao = {
+          acao: alvo?.id ? "converter-pendente-em-travado" : "criar-travado",
+          semanaId,
+          dia: diaInfo.dia,
+          dataOperacao: diaInfo.data,
+          colaboradorId: colabId,
+          colaboradorNome: nome,
+          centroCusto: centroCusto || "",
+          pedidoId: alvo?.id || "",
+          pedidoOrigemAtual: alvo ? this.pick(alvo, "Origem", "origem") || "" : "",
+          pedidoStatusAtual: alvo ? this.pick(alvo, "Status", "status") || "" : "sem pedido",
+          retornoAutomaticoLegado: !!(alvo && this._isRetornoAutomaticoAusenciaPedido(alvo)),
+          campos: {
+            Semana_id: semanaId,
+            Colaborador_id: colabId,
+            Colaborador_nome: nome,
+            Dia: diaInfo.dia,
+            Opcao: "principal",
+            Nome_Prato: pratoPrincipal,
+            Confirmado: true,
+            Data_Hora: `${diaInfo.data}T12:00:00`,
+            Centro_Custo: centroCusto || "",
+            Status: "Travado",
+            Origem: "Travamento automático",
+            Observacao: "Sem escolha registrada até o prazo. Principal aplicado automaticamente pelo travamento oficial.",
+            Alterado_Por: this.getUserName ? this.getUserName() : "Sistema"
+          }
+        };
+        acoes.push(acao);
+        totais.acoesTravamento++;
+        resumoDia.acoes++;
+      }
+    }
+
+    const bloqueado = !podeTravar;
+    const motivoBloqueio = bloqueado
+      ? (!prazoInfo.prazoConfigurado
+          ? "Travamento bloqueado: prazo da semana não está configurado."
+          : "Travamento bloqueado: prazo da semana ainda não venceu.")
+      : "";
+
+    return {
+      semanaId,
+      geradoEm: new Date().toISOString(),
+      geradoPor: this.getUserName ? this.getUserName() : "Sistema",
+      prazo: prazoInfo,
+      bloqueado,
+      motivoBloqueio,
+      totais,
+      porDia,
+      acoes,
+      hashPlano: this._hashTexto(this._jsonSeguro({ semanaId, totais, acoes: acoes.map(a => [a.acao, a.pedidoId, a.colaboradorId, a.dia]) }))
+    };
+  },
+
+  async aplicarTravamentoPendentesSemana(semanaId, options = {}) {
+    await this.ensureLogin?.();
+    if (options.confirmacaoExplicita !== true && options.confirmado !== true) {
+      throw new Error("Travamento bloqueado: confirmação explícita ausente.");
+    }
+
+    const previa = options.previa || await this.gerarPreviaTravamentoPendentesSemana(semanaId, options);
+    if (previa.bloqueado && options.ignorarPrazo !== true) {
+      throw new Error(previa.motivoBloqueio || "Travamento bloqueado.");
+    }
+
+    const usuario = this.getUserName ? this.getUserName() : "Sistema";
+    let criados = 0, atualizados = 0, erros = 0;
+    const detalhes = [];
+
+    for (const acao of previa.acoes || []) {
+      const fields = {
+        ...(acao.campos || {}),
+        Alterado_Por: usuario,
+        Observacao: [
+          acao.campos?.Observacao || "Travamento oficial.",
+          acao.retornoAutomaticoLegado ? "Registro legado de retorno automático convertido para Travamento automático." : ""
+        ].filter(Boolean).join(" | ")
+      };
+
+      try {
+        if (acao.pedidoId) {
+          await this.updatePedido(acao.pedidoId, fields);
+          atualizados++;
+          detalhes.push({ ...acao, resultado: "atualizado" });
+        } else {
+          await this.createItem("Pedidos", {
+            Title: `${semanaId}-${acao.colaboradorId || this.norm(acao.colaboradorNome)}-${acao.dia}-travado`,
+            ...fields
+          });
+          criados++;
+          detalhes.push({ ...acao, resultado: "criado" });
+        }
+      } catch (e) {
+        erros++;
+        detalhes.push({ ...acao, resultado: "erro", erro: e.message || String(e) });
+        console.warn("[Travamento] Falha ao aplicar ação:", acao, e);
+      }
+    }
+
+    this.clearListCache("Pedidos");
+    this._emitSync("travamento", semanaId);
+
+    await this.registrarAuditoriaRefeitorio?.({
+      semanaId,
+      dia: "semana",
+      dataOperacao: "",
+      modulo: "Dashboard",
+      listaOrigem: "Pedidos",
+      itemId: "",
+      acao: "Travar pendentes da semana",
+      antes: previa,
+      depois: { criados, atualizados, erros },
+      usuario,
+      observacao: `Travamento oficial de pendentes da semana ${semanaId}.`
+    }).catch(() => null);
+
+    return { semanaId, criados, atualizados, erros, total: criados + atualizados, detalhes };
+  },
+
+
   _fechamentoListas() {
     return {
       diario: "Fechamento Diario Refeitorio",
@@ -2824,6 +3109,10 @@ const SP = {
     const confirmado = this.isTrue(this.pick(p, "Confirmado", "confirmado"));
 
     if (status === "travado" && origem.includes("travamento")) return true;
+
+    // v10.5 — legado de retorno automático não entra em produção nem fechamento.
+    if (this._isRetornoAutomaticoAusenciaPedido(p)) return false;
+
     if (this._statusBloqueiaFechamento(p)) return false;
     return ["confirmado", "aprovado", "extra"].includes(status) || confirmado;
   },
