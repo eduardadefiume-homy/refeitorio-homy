@@ -1,6 +1,6 @@
 // ============================================================
 // admin-pos-ausencia.js — Regra pós-ausência · Operação do Dia
-// v: pos-ausencia-travamento-v10-20260626
+// v: base-limpa-pos-ausencia-v10-4-20260629
 //
 // Carregar depois de admin-operacao-dia.js.
 // Objetivo: impedir que pedido antigo de ausência encerrada vire Principal
@@ -16,6 +16,7 @@
     if (typeof AdminOperacao._normalizarPedidosObsoletosOperacao !== "function") return false;
 
     AdminOperacao.__posAusenciaV10 = true;
+    AdminOperacao.__posAusenciaOriginalNormalizar = AdminOperacao.__posAusenciaOriginalNormalizar || AdminOperacao._normalizarPedidosObsoletosOperacao;
     AdminOperacao._normalizarPedidosObsoletosOperacao = function _normalizarPedidosObsoletosOperacaoV10(lista, ausencias, semanaId, dia) {
       const grupos = new Map();
       const especiais = [];
