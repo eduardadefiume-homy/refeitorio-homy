@@ -1,6 +1,6 @@
 // ============================================================
 // admin-fechamento.js — Fechamento Oficial do Dia · Admin Homy
-// v: fechamento-operacional-safe-readonly-v10-3-20260626
+// v: base-limpa-fechamento-v10-4-20260629
 //
 // Carregar depois de admin-operacao-dia.js.
 // Não substitui a Operação do Dia; apenas injeta os controles de fechamento.
@@ -69,6 +69,28 @@
       return s.replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch]));
     },
 
+    _formatarDataHoraLocal(valor) {
+      if (!valor) return "";
+      const d = new Date(valor);
+      if (isNaN(d)) return String(valor).slice(0, 16).replace("T", " ");
+      return d.toLocaleString("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    },
+
+    _resumoEspecialFechamento(fechamento) {
+      const total = Number(global.SP?.pick?.(fechamento, "Total") ?? fechamento?.Total ?? 0);
+      const obs = String(global.SP?.pick?.(fechamento, "Observacao", "Observação") ?? fechamento?.Observacao ?? "");
+      if (total !== 0) return "";
+      const m = obs.match(/Total\s*0\s*:\s*([^|]+)/i);
+      return (m?.[1] || "Total 0 informado").trim();
+    },
+
     _toast(msg, tipo = "info") {
       if (global.AdminUtils?.toast) global.AdminUtils.toast(msg, tipo);
       else console.log(`[${tipo}] ${msg}`);
@@ -124,11 +146,12 @@
       const fechamento = await SP.getFechamentoDia(semanaId, dia).catch(() => null);
       const status = this._norm(SP.pick?.(fechamento, "Status_Fechamento", "Status") || "");
 
-      if (fechamento?.id && status !== "reaberto" && status !== "cancelado") {
+      if (fechamento?.id && (status === "fechado" || status === "recalculado")) {
         const total = SP.pick(fechamento, "Total") ?? "—";
         const fechadoPor = SP.pick(fechamento, "Fechado_Por") || "—";
         const fechadoEm = SP.pick(fechamento, "Fechado_Em") || "";
-        txt.innerHTML = `🔒 <b>${this._diaLabel(dia)} fechado</b> · Total oficial: <b>${this._esc(total)}</b> · Por: ${this._esc(fechadoPor)} ${fechadoEm ? `· ${this._esc(String(fechadoEm).slice(0,16).replace("T"," "))}` : ""}`;
+        const especial = this._resumoEspecialFechamento(fechamento);
+        txt.innerHTML = `🔒 <b>${this._diaLabel(dia)} fechado</b>${especial ? ` · <b>${this._esc(especial)}</b>` : ""} · Total oficial: <b>${this._esc(total)}</b> · Por: ${this._esc(fechadoPor)} ${fechadoEm ? `· ${this._esc(this._formatarDataHoraLocal(fechadoEm))}` : ""}`;
         box?.classList.add("is-fechado");
         if (btnFechar) btnFechar.style.display = "none";
         if (btnReabrir) btnReabrir.style.display = "";
@@ -170,11 +193,38 @@
           return;
         }
 
-        const msg = `Fechar ${this._diaLabel(dia)} como oficial?\n\nTotal: ${previa.totais.total}\nPrincipal: ${previa.totais.principal}\nLight: ${previa.totais.light}\nCarne: ${previa.totais.carne}\nMassa: ${previa.totais.massa}\n\nApós fechar, alterações antigas devem exigir reabertura/auditoria.`;
+        const total = Number(previa.totais.total || 0);
+        let motivoTotalZero = "";
+        if (total === 0) {
+          motivoTotalZero = prompt(
+            `Atenção: ${this._diaLabel(dia)} será fechado com TOTAL 0.
+
+Informe o motivo operacional obrigatório:`,
+            "Não terá almoço"
+          ) || "";
+          if (!motivoTotalZero.trim()) {
+            this._toast("Fechamento com Total 0 cancelado: motivo obrigatório não informado.", "error");
+            return;
+          }
+          if (!confirm(`Confirmar fechamento com TOTAL 0?
+
+Motivo: ${motivoTotalZero.trim()}`)) return;
+        }
+
+        const msg = `Fechar ${this._diaLabel(dia)} como oficial?
+
+Total: ${previa.totais.total}
+Principal: ${previa.totais.principal}
+Light: ${previa.totais.light}
+Carne: ${previa.totais.carne}
+Massa: ${previa.totais.massa}
+
+Após fechar, alterações antigas devem exigir reabertura/auditoria.`;
         if (!confirm(msg)) return;
 
-        const observacao = prompt("Observação do fechamento (opcional):", "Fechamento conferido pela Operação do Dia.") || "Fechamento conferido pela Operação do Dia.";
-        await SP.salvarFechamentoDia(semanaId, dia, { previa, observacao });
+        const obsPadrao = total === 0 ? `Total 0: ${motivoTotalZero.trim()}` : "Fechamento conferido pela Operação do Dia.";
+        const observacao = prompt("Observação do fechamento (opcional):", obsPadrao) || obsPadrao;
+        await SP.salvarFechamentoDia(semanaId, dia, { previa, observacao, motivoTotalZero: motivoTotalZero.trim(), confirmado: true });
         this._toast("Fechamento oficial salvo.", "success");
         await this.atualizarStatus();
         if (global.AdminOperacao?._carregar) await global.AdminOperacao._carregar(semanaId);
@@ -302,8 +352,14 @@
         ${esc(m.validacao.mensagem || "A prévia não bate com a referência.")}<br>
         <button class="btn-danger" type="button" onclick="AdminCorrecaoIntegridade?.abrir?.({dia:'${esc(m.dia)}'})">🛠 Abrir Correção Assistida</button>
       </div>` : (m.validacao?.bate ? `<div class="fechamento-alerta-ok">✅ Prévia validada contra ${esc(m.validacao.fonte || "referência")}.</div>` : "");
+    const zeroHtml = Number(m.totais.total || 0) === 0 ? `
+      <div class="fechamento-alerta-bloqueio">
+        <b>⚠️ Prévia com Total 0.</b><br>
+        Este fechamento só poderá ser salvo com motivo operacional obrigatório, como “Não terá almoço”, “Feriado” ou “Empresa sem expediente”.
+      </div>` : "";
     return `
       ${validacaoHtml}
+      ${zeroHtml}
       <div class="fechamento-grid">
         <div class="fechamento-kpi"><strong>${esc(m.totais.total || 0)}</strong><span>Total</span></div>
         <div class="fechamento-kpi"><strong>${esc(m.totais.principal || 0)}</strong><span>Principal</span></div>
