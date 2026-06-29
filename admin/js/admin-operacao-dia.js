@@ -1,5 +1,5 @@
-// admin-operacao-dia.js — Operação do Dia do Admin Homy · integridade extras/ausências
-// Correção: operação deduplica pedidos, sincroniza ausências, remove ausência obsoleta e aplica retorno automático como Principal.
+// admin-operacao-dia.js — Operação do Dia do Admin Homy · base limpa v10.4
+// Regra: carregar Operação do Dia é somente leitura. Reparo, travamento e correção só por ação explícita.
 
 const AdminOperacao = window.AdminOperacao = {
   _lista: [],
@@ -499,9 +499,8 @@ const AdminOperacao = window.AdminOperacao = {
     for (const extra of extrasDoDia) {
       if (resultado.some(p => this._pedidoCorrespondeExtra(p, extra, dia))) continue;
 
-      // Performance: a Operação do Dia não grava espelho durante a renderização.
-      // Ela mostra a linha virtual imediatamente e o sharepoint.js repara o Pedido
-      // espelho em segundo plano com trava/TTL.
+      // A Operação do Dia não grava espelho durante a renderização.
+      // Ela mostra a linha virtual; criação/correção de espelho deve ocorrer apenas por ação explícita.
       const tipo = this._pick(extra, "tipo", "Tipo") || "extra";
       const nome = this._pick(extra, "Nome", "Title") || "Refeição Extra";
       const opcao = this._pick(extra, "Opcao", "Opção") || "principal";
@@ -669,15 +668,11 @@ const AdminOperacao = window.AdminOperacao = {
     try {
       await SP.init();
       const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
-      if (typeof SP.repararIntegridadeSemana === "function") {
-        SP.repararIntegridadeSemana(semanaId).then(r => {
-          if (r?.mudouDados && window.AdminState?.moduloAtivo === "operacao") {
-            setTimeout(() => this._carregar(semanaId).catch(console.warn), 900);
-          }
-        }).catch(e => console.warn("[Operação] Reparo de integridade em segundo plano ignorado:", e));
-      }
+      // v10.4 — somente leitura ao abrir a tela.
+      // Não chamar SP.repararIntegridadeSemana() aqui. Essa função pode gravar/cancelar
+      // pedidos e só deve rodar por ação explícita da Luana/TI, com confirmação.
       let [pedidos, ausencias, colaboradoresAtivos] = await Promise.all([
-        SP.getPedidos(semanaId),
+        SP.getPedidos(semanaId, { reparar: false }),
         this._buscarAusencias(),
         this._buscarColaboradoresAtivos()
       ]);
