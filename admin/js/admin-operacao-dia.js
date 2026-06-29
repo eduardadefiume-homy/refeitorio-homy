@@ -34,6 +34,10 @@ const AdminOperacao = window.AdminOperacao = {
     return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   },
 
+  _R() {
+    return global.HomyRefeitorioRegras || null;
+  },
+
   _pick(obj, ...keys) {
     for (const k of keys) {
       const v = SP.pick ? SP.pick(obj, k) : obj?.[k];
@@ -188,12 +192,23 @@ const AdminOperacao = window.AdminOperacao = {
 
 
 
+  _isRetornoAutomaticoAusenciaOperacao(p) {
+    const R = this._R?.();
+    if (R?.isRetornoAutomaticoAusencia) return R.isRetornoAutomaticoAusencia(p);
+    const origem = this._norm(this._pick(p, "Origem", "origem", "tipo", "Tipo") || "");
+    return origem.includes("retorno automatico de ausencia") ||
+           origem.includes("retorno automático de ausência") ||
+           (origem.includes("retorno automatico") && origem.includes("ausencia")) ||
+           (origem.includes("retorno automático") && origem.includes("ausência"));
+  },
+
   _pedidoAusenciaObsoleta(p, ausencias, semanaId, dia) {
     if (!this._isAusenteOperacao(p) && !this._norm(this._pick(p, "Origem", "origem", "tipo", "Tipo")).includes("ausencia") && !this._norm(this._pick(p, "Origem", "origem", "tipo", "Tipo")).includes("ausência")) return false;
     return !this._ausenciaDoPedidoNoDia(p, ausencias, semanaId, dia);
   },
 
   _normalizarPedidosObsoletosOperacao(lista, ausencias, semanaId, dia) {
+    const R = this._R?.();
     const grupos = new Map();
     const especiais = [];
 
@@ -219,25 +234,36 @@ const AdminOperacao = window.AdminOperacao = {
         continue;
       }
 
-      const normais = grupo.filter(p => !this._pedidoAusenciaObsoleta(p, ausencias, semanaId, dia) && !["cancelado","bloqueado"].includes(this._norm(this._pick(p,"Status","status"))));
+      const normais = grupo.filter(p => {
+        if (this._pedidoAusenciaObsoleta(p, ausencias, semanaId, dia)) return false;
+        if (R?.pedidoPodeAparecerNaOperacao) return R.pedidoPodeAparecerNaOperacao(p);
+        return !this._isRetornoAutomaticoAusenciaOperacao(p) &&
+          !["cancelado", "bloqueado"].includes(this._norm(this._pick(p, "Status", "status")));
+      });
       if (normais.length) {
         normais.sort((a,b)=>this._compararPedidoOperacao(b,a));
         saida.push(normais[0]);
         continue;
       }
 
-      // Só restou pedido antigo de ausência, mas a ausência não cobre mais o dia.
-      // Na Operação, isso deve voltar como Principal automático para não sumir nem duplicar.
+      // v10.6 — se só restou pedido antigo de ausência/retorno automático e
+      // a ausência não cobre mais o dia, a Operação mostra pendente.
+      // Principal só nasce pelo botão oficial de Travar pendentes.
       const stale = grupo.sort((a,b)=>this._compararPedidoOperacao(b,a))[0];
-      saida.push({
-        ...stale,
-        Status: "Confirmado",
-        Confirmado: true,
-        Opcao: this._pick(stale,"Opcao","opcao") || "principal",
-        Nome_Prato: this._norm(this._pick(stale,"Nome_Prato","nome_prato")).includes("ferias") ? "Prato Principal" : (this._pick(stale,"Nome_Prato","nome_prato") || "Prato Principal"),
-        Origem: "Retorno automático de ausência",
-        _ausenciaOperacao: null
-      });
+      saida.push(R?.criarPendenteAusenciaEncerrada
+        ? R.criarPendenteAusenciaEncerrada(stale)
+        : {
+            ...stale,
+            _virtualPendente: true,
+            _ausenciaEncerradaAguardandoMarcacao: true,
+            Status: "Pendente",
+            Confirmado: false,
+            Opcao: this._pick(stale,"Opcao","opcao") || "principal",
+            Nome_Prato: "Sem marcação",
+            Origem: "Ausência encerrada - aguardando marcação",
+            Observacao: "Ausência encerrada ou retorno automático legado. Colaborador liberado para escolher; Principal só será aplicado no travamento oficial se ninguém marcar."
+          }
+      );
     }
 
     return this._deduplicarPedidosOperacao(saida);
@@ -337,6 +363,8 @@ const AdminOperacao = window.AdminOperacao = {
   },
 
   _isAusenteOperacao(p) {
+    const R = this._R?.();
+    if (R?.pedidoAusente) return R.pedidoAusente(p) || !!p?._ausenciaOperacao;
     const s = this._norm(this._statusDisplay(p));
     return ["ausente", "nao vai almocar", "não vai almoçar", "ferias", "férias", "afastado", "atestado", "licenca", "licença"].includes(s);
   },
