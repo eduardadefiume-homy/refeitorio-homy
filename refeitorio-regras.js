@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-7-20260629
+// v: base-centralizada-v10-9-20260629
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -644,6 +644,176 @@
     }
 
     return alertas;
+  };
+
+
+
+  // ============================================================
+  // FECHAMENTO OFICIAL / TRAVAMENTO / RELATÓRIOS
+  // ============================================================
+  Regras.DIAS_OPERACIONAIS = ["segunda", "terca", "quarta", "quinta", "sexta"];
+
+  Regras.diasOperacionais = function diasOperacionais() {
+    return [...Regras.DIAS_OPERACIONAIS];
+  };
+
+  Regras.statusFechamentoAtivo = function statusFechamentoAtivo(item) {
+    const status = Regras.norm(Regras.pick(item, "Status_Fechamento", "Status") || "");
+    return status === "fechado" || status === "recalculado";
+  };
+
+  Regras.dataFechamentoOrdem = function dataFechamentoOrdem(item) {
+    const raw = Regras.pick(item, "Fechado_Em", "Modified", "Gerado_Em", "Created") || "";
+    const t = raw ? new Date(raw).getTime() : 0;
+    return Number.isFinite(t) ? t : Number(Regras.pick(item, "id", "ID") || 0) || 0;
+  };
+
+  Regras.resumoFechamentoParaTela = function resumoFechamentoParaTela(fechamento) {
+    if (!fechamento) return null;
+    const n = (...keys) => Number(Regras.pick(fechamento, ...keys) || 0) || 0;
+    return {
+      id: String(Regras.pick(fechamento, "id", "ID") || ""),
+      title: Regras.pick(fechamento, "Title") || "",
+      semanaId: Regras.pick(fechamento, "Semana_id") || "",
+      dia: Regras.norm(Regras.pick(fechamento, "Dia") || ""),
+      data: Regras.dataISO(Regras.pick(fechamento, "Data_Operacao", "Data", "Created")),
+      status: Regras.pick(fechamento, "Status_Fechamento", "Status") || "",
+      total: n("Total"),
+      principal: n("Principal"),
+      light: n("Light"),
+      carne: n("Carne"),
+      massa: n("Massa"),
+      lanche: n("Lanche"),
+      extras: n("Extras"),
+      cancelados: n("Cancelados"),
+      ausentes: n("Ausentes"),
+      checkins: n("Checkins"),
+      fechadoPor: Regras.pick(fechamento, "Fechado_Por") || "",
+      fechadoEm: Regras.pick(fechamento, "Fechado_Em", "Modified", "Created") || "",
+      observacao: Regras.pick(fechamento, "Observacao") || ""
+    };
+  };
+
+  Regras.analisarFechamentoSemana = function analisarFechamentoSemana(fechamentos = [], options = {}) {
+    const semanaId = options.semanaId || Regras.pick((fechamentos || [])[0] || {}, "Semana_id") || "";
+    const dias = options.diasOperacionais || Regras.diasOperacionais();
+    const ativos = (fechamentos || [])
+      .filter(Regras.statusFechamentoAtivo)
+      .sort((a, b) => Regras.dataFechamentoOrdem(b) - Regras.dataFechamentoOrdem(a));
+    const porDia = {};
+    for (const item of ativos) {
+      const dia = Regras.norm(Regras.pick(item, "Dia") || "");
+      if (!dia || porDia[dia]) continue;
+      porDia[dia] = Regras.resumoFechamentoParaTela(item);
+    }
+    const diasFechados = dias.filter(d => !!porDia[d]);
+    const temFechamento = diasFechados.length > 0;
+    const semanaFechada = dias.length > 0 && dias.every(d => !!porDia[d]);
+    return {
+      semanaId,
+      temFechamento,
+      semanaFechada,
+      diasOperacionais: dias,
+      diasFechados,
+      diasAbertos: dias.filter(d => !porDia[d]),
+      totalDiasFechados: diasFechados.length,
+      porDia,
+      mensagem: semanaFechada
+        ? "Semana fechada: relatório usa Fechamento Oficial."
+        : (temFechamento ? "Semana parcialmente fechada: travamento semanal bloqueado." : "Semana sem fechamento oficial.")
+    };
+  };
+
+  Regras.motivoBloqueioTravamentoSemana = function motivoBloqueioTravamentoSemana(fechamentoSemana) {
+    if (!fechamentoSemana?.temFechamento) return "";
+    return fechamentoSemana.semanaFechada
+      ? "Travamento bloqueado: semana já possui Fechamento Oficial. Use reabertura/auditoria, não travamento."
+      : "Travamento bloqueado: a semana já possui dia fechado. O travamento semanal só pode ocorrer antes do primeiro fechamento.";
+  };
+
+  Regras.podeTravarSemana = function podeTravarSemana({ fechamentoSemana = null, prazoInfo = null, permitirAntesDoPrazo = false, ignorarFechamento = false } = {}) {
+    if (!ignorarFechamento && fechamentoSemana?.temFechamento) {
+      return { podeTravar: false, bloqueado: true, bloqueadoPorFechamento: true, bloqueadoPorPrazo: false, motivoBloqueio: Regras.motivoBloqueioTravamentoSemana(fechamentoSemana) };
+    }
+    const prazoConfigurado = !!prazoInfo?.prazoConfigurado;
+    const prazoVencido = !!prazoInfo?.prazoVencido;
+    const podePorPrazo = permitirAntesDoPrazo || (prazoConfigurado && prazoVencido);
+    if (!podePorPrazo) {
+      return {
+        podeTravar: false,
+        bloqueado: true,
+        bloqueadoPorFechamento: false,
+        bloqueadoPorPrazo: true,
+        motivoBloqueio: !prazoConfigurado ? "Travamento bloqueado: prazo da semana não está configurado." : "Travamento bloqueado: prazo da semana ainda não venceu."
+      };
+    }
+    return { podeTravar: true, bloqueado: false, bloqueadoPorFechamento: false, bloqueadoPorPrazo: false, motivoBloqueio: "" };
+  };
+
+  Regras.motivoTotalZeroValido = function motivoTotalZeroValido(motivo) {
+    const texto = String(motivo || "").trim();
+    const n = Regras.norm(texto);
+    if (texto.length < 5) return false;
+    return !["fechamento conferido pela operacao do dia", "fechamento oficial gerado pela operacao do dia", "fechamento oficial confirmado", "ok", "sim"].includes(n);
+  };
+
+  Regras.definirFonteRelatorioDia = function definirFonteRelatorioDia({ fechamento = null } = {}) {
+    return fechamento && Regras.statusFechamentoAtivo(fechamento)
+      ? { fonte: "Fechamento Oficial", usaFechamento: true }
+      : { fonte: "Pedidos calculados", usaFechamento: false };
+  };
+
+  Regras.opcaoResumoFechamento = function opcaoResumoFechamento(opcao) {
+    const op = Regras.norm(opcao || "");
+    if (["principal", "light", "carne", "massa", "lanche"].includes(op)) return op;
+    if (!op) return "semOpcao";
+    return "outros";
+  };
+
+  Regras.categoriaPedidoFechamento = function categoriaPedidoFechamento(p) {
+    const origem = Regras.norm(Regras.getOrigem(p));
+    const nome = Regras.norm(Regras.getNome(p));
+    const id = Regras.norm(Regras.getColaboradorId(p));
+    if (origem.includes("investigador") || nome.includes("investigador")) return "investigador";
+    if (origem.includes("guarda") || nome.includes("guarda")) return "guarda";
+    if (origem.includes("prestador")) return "prestador";
+    if (origem.includes("visitante")) return "visitante";
+    if (origem.includes("terceiro")) return "terceiro";
+    if (origem.includes("extra") || nome.includes("refeicao extra") || id.startsWith("extra-")) return "extra";
+    if (origem.includes("ausencia") || origem.includes("ausência")) return "ausencia";
+    return "colaborador";
+  };
+
+  Regras.statusBloqueiaFechamento = function statusBloqueiaFechamento(p) {
+    const status = Regras.norm(Regras.getStatus(p));
+    return Regras.statusBloqueiaProducao(status) || status === "duplicado inativado" || status === "duplicidade inativada";
+  };
+
+  Regras.pedidoProdutivoFechamento = function pedidoProdutivoFechamento(p) {
+    return Regras.pedidoConfirmadoProducao(p);
+  };
+
+  Regras.pedidoKeyFechamento = function pedidoKeyFechamento(p) {
+    const categoria = Regras.categoriaPedidoFechamento(p);
+    const dia = Regras.norm(Regras.getDia(p));
+    const opcao = Regras.norm(Regras.getOpcao(p) || "principal");
+    const id = Regras.getColaboradorId(p);
+    const nome = Regras.norm(Regras.getNome(p));
+    if (["extra", "guarda", "investigador", "prestador", "visitante", "terceiro"].includes(categoria)) {
+      return `especial|${dia}|${categoria}|${opcao}|${id || nome}`;
+    }
+    if (id) return `colaborador|${dia}|id:${id}`;
+    return `colaborador|${dia}|nome:${nome}`;
+  };
+
+  Regras.compararPreferenciaFechamento = function compararPreferenciaFechamento(a, b) {
+    const ap = Regras.pedidoProdutivoFechamento(a) ? 1 : 0;
+    const bp = Regras.pedidoProdutivoFechamento(b) ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    const ab = Regras.statusBloqueiaFechamento(a) ? 1 : 0;
+    const bb = Regras.statusBloqueiaFechamento(b) ? 1 : 0;
+    if (ab !== bb) return ab - bb;
+    return Regras.timestampPedido(b) - Regras.timestampPedido(a);
   };
 
   // Exporta para browser e para testes em Node, sem dependências.
