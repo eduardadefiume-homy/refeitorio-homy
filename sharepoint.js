@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: admin-safe-v10-2-20260626
+// v: safe-readonly-v10-3-20260626
 // ============================================================
 
 const SP = {
@@ -755,13 +755,10 @@ const SP = {
     const items = await this.getItems("Pedidos", { force: !!options.force, ttl: this._ITEMS_CACHE_TTL_MS });
     const pedidos = items.filter(i => this.pick(i, "Semana_id") === semanaId);
 
-    // Performance: a integridade pesada (ausências/extras → pedidos) roda em segundo plano
-    // e com intervalo mínimo. A tela carrega rápido usando a última verdade do SharePoint
-    // e recebe atualização automática quando o reparo terminar.
-    if (semanaId && options.reparar !== false) {
-      this.agendarReparoIntegridadeSemana(semanaId, pedidos);
-    }
-
+    // v10.3 — leitura nunca grava.
+    // Antes, getPedidos() podia agendar repararIntegridadeSemana(), que por sua vez
+    // podia criar/cancelar/atualizar pedidos em segundo plano apenas ao abrir telas.
+    // A partir daqui, qualquer reparo/travamento/correção precisa de ação explícita.
     return pedidos;
   },
 
@@ -1603,68 +1600,55 @@ const SP = {
   },
 
   async sincronizarAusenciasEncerradas(dataRef = null, options = {}) {
+    // v10.3 — somente leitura.
+    // Ausência encerrada não precisa receber Status/Status_Ausencia.
+    // A validade é calculada por Data_Inicio <= data <= Data_Fim e Ativo.
     const hoje = dataRef || this._hojeISO();
-    const now = Date.now();
-    if (!options.force && this._ausenciasEncerradasLastRun && (now - this._ausenciasEncerradasLastRun) < this._REPAIR_TTL_MS) {
-      return { verificadas: 0, encerradas: 0, ignorado: "verificação recente" };
-    }
-    this._ausenciasEncerradasLastRun = now;
     const lista = "Ausencias do Refeitorio";
     let items = [];
     try {
-      items = await this.getItems(lista);
+      items = await this.getItems(lista, { force: !!options.force });
     } catch (e) {
       console.warn("[SharePoint] Não foi possível verificar ausências encerradas.", e);
-      return { verificadas: 0, encerradas: 0 };
+      return { verificadas: 0, encerradas: 0, somenteLeitura: true };
     }
 
-    let encerradas = 0;
-    for (const a of items || []) {
-      const id = this.pick(a, "id", "ID");
-      if (!id) continue;
-      if (!this._ausenciaAtivaPorCampo(a)) continue;
-      if (!this.ausenciaPeriodoEncerrado(a, hoje)) continue;
+    const encerradas = (items || []).filter(a =>
+      this._ausenciaAtivaPorCampo(a) && this.ausenciaPeriodoEncerrado(a, hoje)
+    );
 
-      const obsAtual = this.pick(a, "Observacao", "Observação", "Obs") || "";
-      const obsEnc = obsAtual && this.norm(obsAtual).includes("periodo encerrado")
-        ? obsAtual
-        : [obsAtual, `Período encerrado automaticamente em ${hoje}.`].filter(Boolean).join(" | ");
-
-      try {
-        // Não inativar Ativo automaticamente aqui: ausência encerrada continua
-        // sendo histórico válido para os dias dentro do período. A validade operacional
-        // é sempre calculada por Data_Inicio <= dia <= Data_Fim.
-        await this.updateItem(lista, id, {
-          Status: "Período encerrado",
-          Status_Ausencia: "Período encerrado",
-          Observacao: obsEnc
-        });
-        encerradas++;
-      } catch (e) {
-        console.warn(`[SharePoint] Falha ao marcar ausência ${id} como período encerrado.`, e);
-      }
-    }
-
-    return { verificadas: (items || []).length, encerradas };
+    return {
+      verificadas: (items || []).length,
+      encerradas: encerradas.length,
+      somenteLeitura: true,
+      mensagem: "Ausências encerradas não são atualizadas automaticamente; o período é interpretado por data."
+    };
   },
 
   async getAusencias(apenasAtivas = true) {
-    this.sincronizarAusenciasEncerradas().catch(e => console.warn("[SharePoint] Sincronização de ausências encerradas ignorada:", e));
-    const items = await this.getItems("Ausencias do Refeitorio", { ttl: this._ITEMS_CACHE_TTL_MS });
+    // v10.3 — somente leitura.
+    // Não chamar sincronizarAusenciasEncerradas() aqui. Carregar Dashboard/Operação/
+    // Marcar Refeição não pode tentar atualizar a lista Ausencias do Refeitorio.
+    const items = await this.getItems("Ausencias do Refeitorio", {
+      force: false,
+      ttl: this._ITEMS_CACHE_TTL_MS
+    });
     if (!apenasAtivas) return items;
     const hoje = this._hojeISO();
     return items.filter(i => this._ausenciaAtivaPorCampo(i) && !this.ausenciaPeriodoEncerrado(i, hoje));
   },
 
   async getAusenciasColaborador(colaboradorId, dataRef = null) {
-    const items = await this.getAusencias(true);
+    // Usa a lista completa para permitir auditoria/consulta histórica por dataRef.
+    const items = await this.getAusencias(false);
     return items.filter(i => {
+      if (!this._ausenciaAtivaPorCampo(i)) return false;
       if (String(this.pick(i, "Colaborador_id")) !== String(colaboradorId)) return false;
-      if (!dataRef) return true;
-      const d   = new Date(dataRef);
-      const ini = this.pick(i, "Data_Inicio") ? new Date(this.pick(i, "Data_Inicio")) : null;
-      const fim = this.pick(i, "Data_Fim")    ? new Date(this.pick(i, "Data_Fim"))    : null;
-      return ini && fim && d >= ini && d <= fim;
+      if (!dataRef) return !this.ausenciaPeriodoEncerrado(i, this._hojeISO());
+      const ref = this._dataISOAusencia(dataRef);
+      const ini = this._dataISOAusencia(this.pick(i, "Data_Inicio", "Inicio", "DataInicio", "Data"));
+      const fim = this._dataISOAusencia(this.pick(i, "Data_Fim", "Fim", "DataFim", "Data")) || ini;
+      return !!ref && !!ini && !!fim && ini <= ref && fim >= ref;
     });
   },
 
@@ -1903,8 +1887,6 @@ const SP = {
           try {
             await this.updateItem("Ausencias do Refeitorio", id, {
               Ativo: false,
-              Status: "Duplicado inativado",
-              Status_Ausencia: "Duplicado inativado",
               Observacao: obs
             });
             duplicadasInativadas++;
@@ -2176,38 +2158,11 @@ const SP = {
         if (!idPref) continue;
 
         if (this._pedidoStatusAusenciaOuOrigem(preferido)) {
-          if (diaPassado) {
-            retornosIgnoradosPorDiaPassado++;
-            continue;
-          }
-
-          const colaborador = colabPorKey?.get(colabKey) || {
-            Colaborador_id: this.pick(preferido, "Colaborador_id", "ColaboradorId", "colaboradorId"),
-            Colaborador_nome: this.pick(preferido, "Colaborador_nome", "Colaborador", "Nome", "Title"),
-            Centro_Custo: this.pick(preferido, "Centro_Custo", "CentroCusto", "Setor", "Departamento")
-          };
-          const colabId = String(this.pick(colaborador, "id", "ID", "Colaborador_id") || this.pick(preferido, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
-          const nome = this.pick(colaborador, "Nome", "Title", "Colaborador_nome") || this.pick(preferido, "Colaborador_nome", "Colaborador", "Nome", "Title") || "Colaborador";
-          const cc = this._pickCentroCusto(colaborador) || this.pick(preferido, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || await this._resolverCentroCustoColaborador(colabId, nome);
-          const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, diaInfo.dia, "principal").catch(() => "") || "Prato Principal";
-          const fieldsRet = {
-            Semana_id: semanaId,
-            Colaborador_id: colabId,
-            Colaborador_nome: nome,
-            Dia: diaInfo.dia,
-            Opcao: "principal",
-            Nome_Prato: nomePrato,
-            Confirmado: true,
-            Data_Hora: `${diaInfo.data}T12:00:00`,
-            Centro_Custo: cc || "",
-            Status: "Confirmado",
-            Observacao: "Retorno automático: ausência não está vigente para este dia.",
-            Origem: "Retorno automático de ausência",
-            Alterado_Por: this.getUserName ? this.getUserName() : "Sistema"
-          };
-          await this.updatePedido(idPref, fieldsRet);
-          Object.assign(preferido, fieldsRet);
-          pedidosAtualizados++;
+          // v10.3 — ausência encerrada não vira Principal aqui.
+          // Mantém o registro como está para histórico/auditoria. O colaborador fica pendente
+          // na Operação/Marcar Refeição até escolher ou até o travamento/fechamento explícito.
+          retornosIgnoradosPorDiaPassado++;
+          continue;
         }
 
         if (diaPassado) continue;
@@ -2241,7 +2196,8 @@ const SP = {
       });
       duplicadasInativadas = dup?.duplicadasInativadas || 0;
 
-      await this.sincronizarAusenciasEncerradas().catch(e => console.warn("[SharePoint] Encerramento de ausências vencidas ignorado.", e));
+      // v10.3 — não atualizar ausências encerradas durante sincronização.
+      // Períodos vencidos são interpretados por Data_Inicio/Data_Fim.
 
       const { ini: semanaIni, fim: semanaFim, dias } = this._semanaInicioFimISO(semanaId);
       if (!semanaIni || !semanaFim) return { ausenciasCriadas, ausenciasAtualizadas, retornoCriados, retornoAtualizados, duplicadasInativadas, pedidosAtualizados, pedidosCancelados };
@@ -2272,35 +2228,9 @@ const SP = {
         }
       }
 
-      // Retorno automático: se uma ausência terminou dentro da semana,
-      // os dias seguintes da mesma semana passam a ser Principal automaticamente.
-      for (const a of ausenciasOrdenadas) {
-        if (!this._ausenciaPodeGerarHistorico(a)) continue;
-        const fimAus = this._ausenciaFimISO(a);
-        if (!fimAus || fimAus < semanaIni || fimAus >= semanaFim) continue;
-        const colabKey = this._colabKey({
-          Colaborador_id: this.pick(a, "Colaborador_id", "ColaboradorId", "colaboradorId"),
-          Colaborador_nome: this.pick(a, "Colaborador_nome", "Colaborador", "Nome", "Title")
-        });
-        const colaborador = colabPorKey.get(colabKey);
-        if (!colaborador) continue;
-
-        for (const diaInfo of dias) {
-          if (diaInfo.data <= fimAus) continue;
-          const outraAusenciaCobreDia = ausenciasOperacionais.some(x => {
-            const xKey = this._colabKey({
-              Colaborador_id: this.pick(x, "Colaborador_id", "ColaboradorId", "colaboradorId"),
-              Colaborador_nome: this.pick(x, "Colaborador_nome", "Colaborador", "Nome", "Title")
-            });
-            return xKey === colabKey && this._ausenciaConsideradaParaData(x, diaInfo.data);
-          });
-          if (outraAusenciaCobreDia) continue;
-
-          const r = await this._criarOuAtualizarPedidoRetornoPrincipal(semanaId, diaInfo, a, colaborador, pedidos);
-          retornoCriados += r.criado || 0;
-          retornoAtualizados += r.atualizado || 0;
-        }
-      }
+      // v10.3 — retorno de ausência NÃO cria Principal automaticamente.
+      // O fim da ausência apenas libera o colaborador para escolher.
+      // Se ninguém marcar até o prazo, o Principal é gerado somente pelo travamento/fechamento explícito.
 
       const normPedidos = await this._normalizarPedidosPorAusenciasSemana(semanaId, pedidos, ausenciasOrdenadas, dias, colabPorKey)
         .catch(e => {
@@ -2371,8 +2301,6 @@ const SP = {
       Motivo:           motivo,
       Observacao:       dados.observacao  || dados.Observacao || "",
       Ativo:            dados.ativo       ?? dados.Ativo      ?? true,
-      Status:           dados.Status      || dados.status     || "Ativo",
-      Status_Ausencia:  dados.Status_Ausencia || dados.statusAusencia || "Ativo",
       Criado_Por:       dados.criadoPor   || dados.Criado_Por || this.getUserName()
     };
 
@@ -2403,10 +2331,6 @@ const SP = {
     const fields = {};
     if (dados.ativo       !== undefined) fields.Ativo     = dados.ativo;
     if (dados.Ativo       !== undefined) fields.Ativo     = dados.Ativo;
-    if (dados.Status      !== undefined) fields.Status    = dados.Status;
-    if (dados.status      !== undefined) fields.Status    = dados.status;
-    if (dados.Status_Ausencia !== undefined) fields.Status_Ausencia = dados.Status_Ausencia;
-    if (dados.statusAusencia  !== undefined) fields.Status_Ausencia = dados.statusAusencia;
     if (dados.motivo      !== undefined) fields.Motivo    = dados.motivo;
     if (dados.Motivo      !== undefined) fields.Motivo    = dados.Motivo;
     if (dados.observacao  !== undefined) fields.Observacao = dados.observacao;
