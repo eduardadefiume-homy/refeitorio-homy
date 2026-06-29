@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-6-20260629
+// v: base-centralizada-v10-7-20260629
 // ============================================================
 
 const SP = {
@@ -3953,6 +3953,172 @@ const SP = {
     this.clearListCache?.(this._fechamentoListas().auditoria);
     this._emitSync?.("pedidos", "correcao-assistida");
     return { aplicadoEm: new Date().toISOString(), total: resultados.filter(r => !r.pulado).length, resultados };
+  },
+
+
+  // ============================================================
+  // DASHBOARD — resumo somente leitura
+  // ============================================================
+  async getDashboardResumo(semanaId, options = {}) {
+    await this.init();
+
+    const R = (typeof window !== "undefined" ? window.HomyRefeitorioRegras : null) ||
+              (typeof globalThis !== "undefined" ? globalThis.HomyRefeitorioRegras : null) || null;
+    const norm = v => R?.norm ? R.norm(v) : this.norm(v);
+    const pick = (obj, ...keys) => this.pick ? this.pick(obj, ...keys) : keys.map(k => obj?.[k]).find(v => v !== undefined && v !== null) ?? "";
+    const dias = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    const dataHoje = options.dataRef || (typeof this._hojeISO === "function" ? this._hojeISO() : new Date().toISOString().slice(0, 10));
+
+    function colabAtivo(c) {
+      const ativo = pick(c, "Ativo", "ativo");
+      if (ativo === null || ativo === undefined || String(ativo).trim() === "") return true;
+      return R?.isTrue ? R.isTrue(ativo) : SP.isTrue(ativo);
+    }
+
+    const keyColab = obj => R?.colaboradorKey
+      ? R.colaboradorKey(obj)
+      : (() => {
+          const id = String(pick(obj, "Colaborador_id", "ColaboradorId", "colaboradorId", "id", "ID") || "").trim();
+          if (id) return `id:${id}`;
+          const nome = norm(pick(obj, "Colaborador_nome", "Colaborador", "Nome", "Title") || "");
+          return nome ? `nome:${nome}` : "";
+        })();
+
+    const isExtra = p => R?.isExtra ? R.isExtra(p) : this.isExtraPedido?.(p);
+    const isAdicional = p => R?.isPedidoAdicionalColaborador ? R.isPedidoAdicionalColaborador(p) : this._isPedidoAdicionalColaborador?.(p);
+    const contaProducao = p => R?.pedidoConfirmadoProducao ? R.pedidoConfirmadoProducao(p) : this._pedidoProdutivoValido?.(p);
+    const escolhaReal = p => R?.pedidoEscolhaReal ? R.pedidoEscolhaReal(p) : contaProducao(p);
+    const isTravado = p => R?.isTravamentoAutomatico
+      ? R.isTravamentoAutomatico(p)
+      : (norm(pick(p, "Status")) === "travado" && norm(pick(p, "Origem")).includes("travamento"));
+    const ausenciaPara = (ausencias, key, dataISO) => R?.ausenciaVigenteParaColaborador
+      ? R.ausenciaVigenteParaColaborador(ausencias, key, dataISO)
+      : null;
+
+    const [colaboradoresTodos, pedidos, ausencias, extras, checkins] = await Promise.all([
+      this.getTodosColaboradores?.().catch(() => []) || [],
+      this.getPedidos(semanaId, { force: !!options.force }).catch(() => []),
+      this.getAusencias?.(false).catch(() => []) || [],
+      this.getItems("Extras", { force: !!options.force }).catch(() => []),
+      this.getItems("CheckIn", { force: !!options.force }).catch(() => [])
+    ]);
+
+    const colaboradoresAtivosLista = (colaboradoresTodos || []).filter(colabAtivo);
+    const colaboradoresAtivos = colaboradoresAtivosLista.length;
+
+    const diaHoje = dias.find(dia => {
+      try { return this.getDataRefBySemanaDia(semanaId, dia) === dataHoje; }
+      catch (_) { return false; }
+    }) || ({1:"segunda",2:"terca",3:"quarta",4:"quinta",5:"sexta"}[new Date().getDay()] || "segunda");
+
+    const pedidosSemana = (pedidos || []).filter(p => String(pick(p, "Semana_id", "Semana") || "") === String(semanaId || ""));
+    const pedidosNormais = pedidosSemana.filter(p => !isExtra(p) && !isAdicional(p));
+    const extrasSemana = (extras || []).filter(e => String(pick(e, "Semana_id", "Semana") || "") === String(semanaId || ""));
+
+    const porDia = {};
+    const pendentesKeys = new Set();
+    const confirmadosKeys = new Set();
+    const setoresHoje = new Map();
+    let totalPedidosSemana = 0;
+    let ausenciasHoje = 0;
+    let travadosSemana = 0;
+
+    for (const dia of dias) {
+      const dataDia = this.getDataRefBySemanaDia?.(semanaId, dia) || "";
+      const pedidosDia = pedidosNormais.filter(p => norm(pick(p, "Dia", "dia")) === norm(dia));
+      const porColab = new Map();
+      for (const p of pedidosDia) {
+        const k = keyColab(p);
+        if (!k) continue;
+        if (!porColab.has(k)) porColab.set(k, []);
+        porColab.get(k).push(p);
+      }
+
+      const resumo = { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, pendentes: 0, ausentes: 0, travados: 0 };
+
+      for (const c of colaboradoresAtivosLista) {
+        const key = keyColab(c);
+        if (!key) continue;
+        const aus = dataDia ? ausenciaPara(ausencias, key, dataDia) : null;
+        if (aus) {
+          resumo.ausentes++;
+          if (dia === diaHoje) ausenciasHoje++;
+          continue;
+        }
+
+        const lista = porColab.get(key) || [];
+        const valido = lista.find(escolhaReal) || lista.find(contaProducao) || null;
+        if (valido && contaProducao(valido)) {
+          const op = norm(pick(valido, "Opcao", "opcao") || "principal");
+          if (Object.prototype.hasOwnProperty.call(resumo, op)) resumo[op]++;
+          else resumo.principal++;
+          resumo.total++;
+          totalPedidosSemana++;
+          confirmadosKeys.add(key);
+          if (isTravado(valido)) { resumo.travados++; travadosSemana++; }
+          if (dia === diaHoje) {
+            const setor = pick(valido, "Centro_Custo", "CentroCusto", "Departamento", "Setor") || pick(c, "Centro_Custo", "Departamento", "Setor") || "Sem setor";
+            setoresHoje.set(setor, (setoresHoje.get(setor) || 0) + 1);
+          }
+        } else {
+          resumo.pendentes++;
+          pendentesKeys.add(key);
+        }
+      }
+
+      // Extras produtivos entram no total do dia/semana, mas não viram pendência de colaborador.
+      const extrasDia = pedidosSemana.filter(p => isExtra(p) && norm(pick(p, "Dia", "dia")) === norm(dia) && contaProducao(p));
+      for (const p of extrasDia) {
+        const op = norm(pick(p, "Opcao", "opcao") || "principal");
+        if (Object.prototype.hasOwnProperty.call(resumo, op)) resumo[op]++;
+        else resumo.principal++;
+        resumo.total++;
+        totalPedidosSemana++;
+      }
+
+      porDia[dia] = resumo;
+    }
+
+    const hoje = porDia[diaHoje] || {};
+    const checkinsHoje = (checkins || []).filter(c => {
+      const semana = String(pick(c, "Semana_id", "Semana") || "");
+      const dia = norm(pick(c, "Dia", "dia") || "");
+      const data = this._dataISOOperacional ? this._dataISOOperacional(pick(c, "Data", "Data_Hora", "Created")) : "";
+      return (semana ? semana === String(semanaId) : true) && (dia ? dia === norm(diaHoje) : true) && (!data || data === dataHoje);
+    }).length;
+
+    const extraAtivo = e => {
+      const status = norm(pick(e, "Status", "status") || "");
+      if (["cancelado", "bloqueado", "inativo", "excluido", "excluído"].includes(status)) return false;
+      const ativo = pick(e, "Ativo", "ativo");
+      if (ativo === null || ativo === undefined || String(ativo).trim() === "") return true;
+      return this.isTrue(ativo);
+    };
+    const extrasAtivos = extrasSemana.filter(extraAtivo).length;
+    const extrasConfirmados = extrasSemana.filter(e => extraAtivo(e) && !["pendente", "solicitado"].includes(norm(pick(e, "Status", "status") || "confirmado"))).length;
+    const extrasPendentes = Math.max(0, extrasAtivos - extrasConfirmados);
+
+    return {
+      semanaId,
+      diaHoje,
+      dataHoje,
+      colaboradoresAtivos,
+      pedidosConfirmadosColaboradores: confirmadosKeys.size,
+      pendentesColaboradores: pendentesKeys.size,
+      checkinsHoje,
+      extrasAtivos,
+      extrasConfirmados,
+      extrasPendentes,
+      totalPedidosHoje: Number(hoje.total || 0),
+      totalPedidosSemana,
+      ausenciasHoje,
+      principalHoje: Number(hoje.principal || 0),
+      lightHoje: Number(hoje.light || 0),
+      outrasHoje: Number(hoje.carne || 0) + Number(hoje.massa || 0) + Number(hoje.lanche || 0),
+      travadosSemana,
+      porDia,
+      setoresHoje: [...setoresHoje.entries()].sort((a, b) => b[1] - a[1])
+    };
   },
 
 
