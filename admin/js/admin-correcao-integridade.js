@@ -1,6 +1,6 @@
 // ============================================================
 // admin-correcao-integridade.js — Correção Assistida · Admin Homy
-// v: correcao-assistida-integridade-v9-20260626
+// v: correcao-assistida-safe-v10-3-20260626
 //
 // Carregar depois de admin-fechamento.js e admin-operacao-dia.js.
 // Não executa correção automática. Só aplica após confirmação explícita.
@@ -74,18 +74,42 @@
 
     _ensureUI() {
       const reload = document.getElementById("btnRecarregarOperacao");
-      if (!reload || document.getElementById("btnCorrecaoIntegridadeAssistida")) return;
+      if (!reload) return;
 
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.id = "btnCorrecaoIntegridadeAssistida";
-      btn.className = "btn-secondary";
-      btn.textContent = "🛠 Correção assistida";
-      btn.addEventListener("click", () => this.abrir());
+      // v10.3 — Correção Assistida tem um único dono visual: este módulo.
+      // Remove botões criados por versões antigas do admin-fechamento.js e evita duplicidade por cache.
+      const botoes = [...document.querySelectorAll("button")].filter(b =>
+        String(b.textContent || "")
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .includes("correcao assistida")
+      );
 
-      const fechamentoActions = document.querySelector(".fechamento-actions");
-      if (fechamentoActions) fechamentoActions.appendChild(btn);
-      else reload.insertAdjacentElement("beforebegin", btn);
+      let btn = document.getElementById("btnCorrecaoIntegridadeAssistida") || null;
+      for (const b of botoes) {
+        if (!btn && b.id !== "btnAbrirCorrecaoAssistidaFechamento") {
+          btn = b;
+          btn.id = "btnCorrecaoIntegridadeAssistida";
+          continue;
+        }
+        if (b !== btn) b.remove();
+      }
+
+      if (!btn) {
+        btn = document.createElement("button");
+        btn.type = "button";
+        btn.id = "btnCorrecaoIntegridadeAssistida";
+        btn.className = "btn-secondary";
+        btn.textContent = "🛠 Correção assistida";
+        const fechamentoActions = document.querySelector(".fechamento-actions");
+        if (fechamentoActions) fechamentoActions.appendChild(btn);
+        else reload.insertAdjacentElement("beforebegin", btn);
+      }
+
+      if (!btn.dataset.correcaoIntegridadeBound) {
+        btn.dataset.correcaoIntegridadeBound = "1";
+        btn.addEventListener("click", () => this.abrir());
+      }
     },
 
     async abrir(options = {}) {
