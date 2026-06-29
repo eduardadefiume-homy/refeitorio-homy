@@ -148,16 +148,6 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
 .resumo-dia-opcao{display:flex;align-items:center;gap:0.5rem;flex:1;flex-wrap:wrap}
 .resumo-dia-nome{font-size:0.88rem;color:rgba(200,220,255,0.85)}
 .resumo-ausencia-obs{font-size:0.75rem;color:rgba(255,180,100,0.7);margin-top:2px}
-
-.opcao-card.locked,.dia-bloqueado-card{border-radius:16px;border:2px solid rgba(255,180,80,0.25);background:rgba(255,180,80,0.06);padding:1rem;display:flex;flex-direction:column;gap:.5rem;cursor:not-allowed;opacity:.95}
-.dia-bloqueado-card .lock-title{font-size:1rem;font-weight:800;color:#ffe1a3;display:flex;align-items:center;gap:.45rem}
-.dia-bloqueado-card .lock-sub{font-size:.82rem;color:rgba(255,225,170,.75);line-height:1.45}
-.step-item.locked .step-dot{border-color:rgba(255,180,80,0.7);background:rgba(255,180,80,0.14);color:#ffe1a3}
-.step-item.travado .step-dot{border-color:rgba(100,170,255,0.7);background:rgba(80,140,255,0.14);color:#b9d6ff}
-.func-card.parcial .func-status-badge{background:rgba(255,180,80,.12);border-color:rgba(255,180,80,.35);color:#ffe1a3}
-.func-card.bloqueado{opacity:.78;cursor:not-allowed;border-color:rgba(255,180,80,.22)}
-.func-card.bloqueado .func-status-badge{background:rgba(255,180,80,.10);border-color:rgba(255,180,80,.32);color:#ffe1a3}
-
 .resumo-aviso{border-radius:11px;border:1px solid rgba(255,150,0,0.2);background:rgba(255,150,0,0.06);padding:0.75rem 1rem;font-size:0.8rem;color:rgba(255,180,80,0.85);line-height:1.5}
 
 /* MODAL */
@@ -281,7 +271,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("sharepoint.js?v=homy-final-20260610-1");
+      return loadScript("refeitorio-regras.js?v=base-centralizada-v10-6-20260629")
+        .catch(function(){ console.warn("refeitorio-regras.js não carregou; usando fallback local."); })
+        .then(function(){ return loadScript("sharepoint.js?v=base-centralizada-v10-6-20260629"); });
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
@@ -329,13 +321,13 @@ const NOMES_GENERICOS = [
 
 let FUNCIONARIOS = [];
 let CARDAPIO     = {};
+let AUSENCIAS    = [];
 let SEMANA_ID    = null;
 
 let funcSelecionado = null;
 let stepAtual       = 0;
 // pedidos[diaKey] = {tag, tagClass, nome, dia} OU {_ausencia:true, motivo, observacao, dia}
 let pedidos         = {};
-let ESTADOS_REFEICAO = {};
 
 // ── Utilitários ──────────────────────────────────────────────────────────────
 function esc(v){
@@ -404,36 +396,6 @@ function getSemanaAtual(){
   return d.getFullYear()+"-W"+String(wn).padStart(2,"0");
 }
 
-async function getSemanaAlvoMarcacaoLocal(){
-  // v10.2: a marcação pública deve sempre mirar uma semana futura.
-  // Se existir configuração antiga apontando para semana atual/passada, ignora e usa próxima semana.
-  const atual = getSemanaAtual();
-  const proxima = (window.SP && typeof SP.getNextWeekId === "function")
-    ? SP.getNextWeekId(new Date())
-    : (()=>{ const [ano,w]=atual.split("-W"); return ano+"-W"+String(Number(w||0)+1).padStart(2,"0"); })();
-
-  function semanaNum(s){
-    const m=String(s||"").match(/^(\d{4})-W(\d{1,2})$/);
-    return m ? (Number(m[1])*100+Number(m[2])) : 0;
-  }
-
-  try{
-    if(window.SP && typeof SP.getConfig === "function"){
-      const cfg = await SP.getConfig("marcacao_semana_alvo", "").catch(()=>"");
-      if(cfg && semanaNum(cfg) > semanaNum(atual)) return cfg;
-    }
-  }catch(_){ }
-
-  try{
-    if(window.SP && typeof SP.getSemanaAlvoMarcacao === "function"){
-      const semana = await SP.getSemanaAlvoMarcacao().catch(()=>"");
-      if(semana && semanaNum(semana) > semanaNum(atual)) return semana;
-    }
-  }catch(_){ }
-
-  return proxima;
-}
-
 function getWeekDatesLocal(semanaId){
   if(window.SP && SP.getWeekDates) return SP.getWeekDates(semanaId);
   const [year,week]=semanaId.split("-W").map(Number);
@@ -443,153 +405,110 @@ function getWeekDatesLocal(semanaId){
   return Array.from({length:5},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d;});
 }
 
+function dataISODateLocal(date){
+  const d = new Date(date);
+  if(isNaN(d)) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const dia = String(d.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+dia;
+}
 
-function dateISO(v){
+function dataISOValor(v){
   if(!v) return "";
-  if(v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
-  const s=String(v||"").trim();
-  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-  const d=new Date(s);
-  return d && !isNaN(d) ? d.toISOString().slice(0,10) : "";
+  const s = String(v).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if(m) return m[1];
+  const d = new Date(s);
+  return isNaN(d) ? "" : dataISODateLocal(d);
 }
 
-function pickLocal(obj,...keys){
-  if(window.SP && typeof SP.pick === "function"){
-    const v=SP.pick(obj,...keys);
-    if(v!==undefined && v!==null && String(v).trim()!=="") return v;
+function dataISOParaDiaKey(semanaId, diaKey){
+  const datas = getWeekDatesLocal(semanaId);
+  const idx = DIAS_SEMANA.findIndex(d=>d.key===diaKey);
+  return datas[idx] ? dataISODateLocal(datas[idx]) : "";
+}
+
+function ausenciaAtiva(a){
+  const R = window.HomyRefeitorioRegras;
+  if(R && typeof R.ausenciaAtivaPorCampo === "function") return R.ausenciaAtivaPorCampo(a);
+  const ativo = pick(a,"Ativo","ativo");
+  if(ativo===false || ativo===0) return false;
+  const status = norm(pick(a,"Status","status","Status_Ausencia") || "");
+  return !["cancelado","cancelada","inativo","false","nao","não","0","duplicado inativado","duplicidade inativada"].includes(status);
+}
+
+function ausenciaVigentePara(func, diaKey){
+  const dataRef = dataISOParaDiaKey(SEMANA_ID, diaKey);
+  if(!dataRef || !func) return null;
+  const R = window.HomyRefeitorioRegras;
+  if(R && typeof R.ausenciaVigenteParaColaborador === "function") {
+    const key = R.colaboradorKey({ Colaborador_id: func.id, Colaborador_nome: func.nome });
+    return R.ausenciaVigenteParaColaborador(AUSENCIAS || [], key, dataRef);
   }
-  for(const k of keys){
-    const v=obj && obj[k];
-    if(v!==undefined && v!==null && String(v).trim()!=="") return v;
-  }
-  return "";
-}
-
-function isTrueLocal(v){
-  if(window.SP && typeof SP.isTrue === "function") return SP.isTrue(v);
-  if(v===true || v===1) return true;
-  return ["true","1","sim","yes","x"].includes(norm(v));
-}
-
-function ausenciaAtivaLocal(a){
-  const status=norm(pickLocal(a,"Status","status","Status_Ausencia","statusAusencia"));
-  if(["inativo","cancelado","encerrado","periodo encerrado","período encerrado","duplicado inativado","duplicidade inativada","false","nao","não","0"].includes(status)) return false;
-  const ativo=pickLocal(a,"Ativo","ativo");
-  if(ativo==="") return true;
-  return isTrueLocal(ativo);
-}
-
-function colaboradorMesmoLocal(colab,aOuPedido){
-  const id1=String(pickLocal(colab,"id","ID","Colaborador_id","colaboradorId","ColaboradorId")||"").trim();
-  const id2=String(pickLocal(aOuPedido,"Colaborador_id","colaboradorId","ColaboradorId","id","ID")||"").trim();
-  if(id1 && id2 && id1===id2) return true;
-  const n1=norm(pickLocal(colab,"Nome","Title","Colaborador_nome","colaboradorNome"));
-  const n2=norm(pickLocal(aOuPedido,"Colaborador_nome","colaboradorNome","Colaborador","Nome","Title"));
-  return !!n1 && !!n2 && n1===n2;
-}
-
-function motivoAusenciaLocal(a){
-  const m=pickLocal(a,"Motivo","motivo","Status","status") || "Ausência";
-  const n=norm(m);
-  if(n==="ferias") return "Férias";
-  if(n==="nao_vai_almocar" || n==="nao vai almocar") return "Não vai almoçar";
-  if(n==="afastado") return "Afastado";
-  if(n==="atestado") return "Atestado";
-  if(n==="licenca") return "Licença";
-  return String(m||"Ausência");
-}
-
-function ausenciaDoColaboradorNoDiaLocal(semanaId,colaborador,dia,ausencias){
-  const datas=getWeekDatesLocal(semanaId);
-  const idx=DIAS_SEMANA.findIndex(d=>normDia(d.key)===normDia(dia));
-  const dataRef=datas[idx] ? dateISO(datas[idx]) : "";
-  if(!dataRef) return null;
-  return (ausencias||[]).find(a=>{
-    if(!ausenciaAtivaLocal(a)) return false;
-    if(!colaboradorMesmoLocal(colaborador,a)) return false;
-    const ini=dateISO(pickLocal(a,"Data_Inicio","Inicio","DataInicio","Data"));
-    const fim=dateISO(pickLocal(a,"Data_Fim","Fim","DataFim","Data")) || ini;
+  const id = String(func.id||"").trim();
+  const nome = norm(func.nome||"");
+  return (AUSENCIAS||[]).find(a=>{
+    if(!ausenciaAtiva(a)) return false;
+    const aid = String(pick(a,"Colaborador_id","ColaboradorId","colaboradorId")||"").trim();
+    const anome = norm(pick(a,"Colaborador_nome","Colaborador","Nome","Title")||"");
+    if(id && aid && id!==aid) return false;
+    if(!id && nome && anome!==nome) return false;
+    if(id && !aid && nome && anome!==nome) return false;
+    const ini = dataISOValor(pick(a,"Data_Inicio","Inicio","DataInicio","Data"));
+    const fim = dataISOValor(pick(a,"Data_Fim","Fim","DataFim","Data")) || ini;
     return !!ini && !!fim && ini<=dataRef && fim>=dataRef;
   }) || null;
 }
 
-function pedidoBloqueiaProducaoLocal(p){
-  const s=norm(pickLocal(p,"Status","status"));
-  return ["cancelado","bloqueado","ausente","ferias","férias","afastado","atestado","licenca","licença","nao vai almocar","não vai almoçar","nao_vai_almocar"].includes(s);
+function motivoAusenciaLabel(motivo){
+  const R = window.HomyRefeitorioRegras;
+  if(R && typeof R.formatarMotivoAusencia === "function") return R.formatarMotivoAusencia(motivo);
+  const n = norm(motivo);
+  if(n==="ferias" || n==="férias") return "Férias";
+  if(n==="nao_vai_almocar" || n==="nao vai almocar" || n==="não vai almoçar") return "Não vai almoçar";
+  if(n==="atestado") return "Atestado";
+  if(n==="afastamento" || n==="afastado") return "Afastado";
+  if(n==="licenca" || n==="licença") return "Licença";
+  if(n==="homy_office" || n==="homy office") return "Homy Office";
+  if(n==="banco_horas" || n==="banco horas") return "Banco de Horas";
+  if(n==="falta") return "Falta";
+  return motivoLabel ? motivoLabel(motivo) : "Ausência";
 }
 
-function pedidoProdutivoLocal(p){
-  const status=norm(pickLocal(p,"Status","status"));
-  const origem=norm(pickLocal(p,"Origem","origem","tipo","Tipo"));
+function pedidoRetornoAutomaticoLegado(p){
+  const R = window.HomyRefeitorioRegras;
+  if(R && typeof R.isRetornoAutomaticoAusencia === "function") return R.isRetornoAutomaticoAusencia(p);
+  const origem = norm(pick(p,"Origem","origem","tipo","Tipo")||"");
+  return origem.includes("retorno automatico") && origem.includes("ausencia");
+}
+
+function pedidoEscolhaValida(p){
+  const R = window.HomyRefeitorioRegras;
+  if(R && typeof R.pedidoEscolhaReal === "function") return R.pedidoEscolhaReal(p);
+  if(!p || pedidoRetornoAutomaticoLegado(p)) return false;
+  const status = norm(pick(p,"Status","status")||"");
+  const origem = norm(pick(p,"Origem","origem","tipo","Tipo")||"");
   if(status==="travado" && origem.includes("travamento")) return true;
-  if(pedidoBloqueiaProducaoLocal(p)) return false;
-  return ["confirmado","aprovado","extra"].includes(status) || isTrueLocal(pickLocal(p,"Confirmado","confirmado"));
+  if(status==="travado") return false;
+  if(["cancelado","bloqueado","nao vai almocar","não vai almoçar","ferias","férias","afastado","atestado","licenca","licença","falta"].includes(status)) return false;
+  return status==="confirmado" || status==="aprovado" || SP.isTrue?.(pick(p,"Confirmado","confirmado"));
 }
 
-function pedidosDoColaboradorDiaLocal(semanaId,colaborador,dia,pedidosLista){
-  const diaN=normDia(dia);
-  return (pedidosLista||[]).filter(p=>{
-    if(String(pickLocal(p,"Semana_id","Semana")||"") && String(pickLocal(p,"Semana_id","Semana")||"")!==String(semanaId)) return false;
-    if(normDia(pickLocal(p,"Dia","dia"))!==diaN) return false;
-    return colaboradorMesmoLocal(colaborador,p);
-  }).sort((a,b)=>{
-    const ta=Date.parse(pickLocal(a,"Modified","modified","Data_Hora","Created","created")||"") || Number(pickLocal(a,"id","ID")||0) || 0;
-    const tb=Date.parse(pickLocal(b,"Modified","modified","Data_Hora","Created","created")||"") || Number(pickLocal(b,"id","ID")||0) || 0;
-    return tb-ta;
-  });
-}
-
-function calcularEstadosRefeicaoColaboradorSemanaLocal(semanaId,colaborador,ctx){
-  const pedidosLista=ctx?.pedidos||[];
-  const ausenciasLista=ctx?.ausencias||[];
-  return DIAS_SEMANA.map(dia=>{
-    const aus=ausenciaDoColaboradorNoDiaLocal(semanaId,colaborador,dia.key,ausenciasLista);
-    if(aus){
-      return {
-        dia: dia.key,
-        statusTela: "bloqueado-ausencia",
-        podeMarcar: false,
-        contaProducao: false,
-        motivo: motivoAusenciaLocal(aus),
-        ausencia: aus
-      };
-    }
-
-    const pedidosDia=pedidosDoColaboradorDiaLocal(semanaId,colaborador,dia.key,pedidosLista);
-    const escolhido=pedidosDia.find(p=>pedidoProdutivoLocal(p)) || pedidosDia.find(p=>!pedidoBloqueiaProducaoLocal(p)) || null;
-
-    if(escolhido && pedidoProdutivoLocal(escolhido)){
-      const origem=norm(pickLocal(escolhido,"Origem","origem","tipo","Tipo"));
-      const status=norm(pickLocal(escolhido,"Status","status"));
-      const opcao=norm(pickLocal(escolhido,"Opcao","opcao")) || "principal";
-      return {
-        dia: dia.key,
-        statusTela: (status==="travado" || origem.includes("travamento")) ? "travado-principal" : "confirmado",
-        podeMarcar: false,
-        contaProducao: true,
-        opcao,
-        nomePrato: pickLocal(escolhido,"Nome_Prato","nomePrato") || "",
-        pedido: escolhido,
-        motivo: origem.includes("travamento") ? "Principal automático por travamento" : "Escolha já registrada"
-      };
-    }
-
-    return {
-      dia: dia.key,
-      statusTela: "disponivel",
-      podeMarcar: true,
-      contaProducao: false,
-      motivo: "Disponível para marcação"
-    };
+function colaboradorSemanaResolvida(func, pedidosExistentes){
+  const diasDisponiveis = DIAS_SEMANA.filter(d=>!ausenciaVigentePara(func,d.key));
+  if(!diasDisponiveis.length) return true;
+  return diasDisponiveis.every(d=>{
+    return (pedidosExistentes||[]).some(p=>
+      String(pick(p,"Colaborador_id","colaboradorId")||"")===String(func.id||"") &&
+      normDia(pick(p,"Dia","dia"))===d.key &&
+      pedidoEscolhaValida(p)
+    );
   });
 }
 
 function formatDataCurta(date){
   return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
-}
-
-function formatDataCompleta(date){
-  return date.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
 }
 
 function ehObsVascon(texto){
@@ -785,49 +704,29 @@ async function carregarDadosSharePoint(){
     const podeMarcar = await verificarBloqueioMarcacao();
     if(!podeMarcar) return;
 
-    SEMANA_ID = await getSemanaAlvoMarcacaoLocal();
+    SEMANA_ID = await SP.getSemanaAlvoMarcacao?.(getSemanaAtual()).catch(()=>getSemanaAtual()) || getSemanaAtual();
     const datas = getWeekDatesLocal(SEMANA_ID);
-    DIAS_SEMANA.forEach((d,i)=>{ d.data = datas[i] ? formatDataCompleta(datas[i]) : ""; });
+    DIAS_SEMANA.forEach((d,i)=>{ d.data = formatDataCurta(datas[i]); });
 
     const [colabs, itensCardapio, pedidosExistentes, ausenciasExistentes] = await Promise.all([
       SP.getColaboradores().catch(()=>[]),
       SP.getCardapio(SEMANA_ID).catch(()=>[]),
-      SP.getPedidos(SEMANA_ID, { reparar:false, force:true }).catch(()=>[]),
-      SP.getItems?.("Ausencias do Refeitorio", { force:true }).catch(()=>[]) || Promise.resolve([])
+      SP.getPedidos(SEMANA_ID, {force:true, reparar:false}).catch(()=>[]),
+      SP.getAusencias(false).catch(()=>[])
     ]);
 
     CARDAPIO = mapCardapio(itensCardapio);
-    ESTADOS_REFEICAO = {};
+    AUSENCIAS = ausenciasExistentes || [];
 
     FUNCIONARIOS = colabs.map(c=>{
-      const base = {
-        id:         String(c.id||""),
-        nome:       String(SP.pick(c,"Nome","Title")||"Sem nome"),
-        dept:       String(SP.pick(c,"Departamento","")||""),
-        cc:         String(SP.pick(c,"Centro_Custo")||""),
-        raw:        c
+      const f = {
+        id:   String(c.id||""),
+        nome: String(SP.pick(c,"Nome","Title")||"Sem nome"),
+        dept: String(SP.pick(c,"Departamento","")||""),
+        cc:   String(SP.pick(c,"Centro_Custo")||"")
       };
-      const estados = calcularEstadosRefeicaoColaboradorSemanaLocal(SEMANA_ID, {
-        id: base.id,
-        ID: base.id,
-        Nome: base.nome,
-        Title: base.nome,
-        Colaborador_id: base.id,
-        Colaborador_nome: base.nome,
-        Centro_Custo: base.cc,
-        Departamento: base.dept
-      }, { pedidos: pedidosExistentes, ausencias: ausenciasExistentes });
-      ESTADOS_REFEICAO[base.id] = estados;
-      const bloqueadosAusencia = estados.filter(e => e.statusTela === "bloqueado-ausencia");
-      const diasNaoBloqueados = estados.filter(e => e.statusTela !== "bloqueado-ausencia");
-      const resolvidos = diasNaoBloqueados.filter(e => e.statusTela === "confirmado" || e.statusTela === "travado-principal");
-      const disponiveis = diasNaoBloqueados.filter(e => e.podeMarcar);
-      base.indisponivelSemana = estados.length > 0 && bloqueadosAusencia.length === estados.length;
-      base.motivoIndisponibilidade = base.indisponivelSemana ? (bloqueadosAusencia[0]?.motivo || "Ausência") : "";
-      base.confirmado = !base.indisponivelSemana && diasNaoBloqueados.length > 0 && resolvidos.length === diasNaoBloqueados.length;
-      base.parcial = !base.confirmado && !base.indisponivelSemana && (resolvidos.length > 0 || disponiveis.length > 0 || bloqueadosAusencia.length > 0);
-      base.estados = estados;
-      return base;
+      f.confirmado = colaboradorSemanaResolvida(f, pedidosExistentes);
+      return f;
     }).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
 
     renderFuncs(FUNCIONARIOS);
@@ -853,18 +752,15 @@ function renderFuncs(lista){
   grid.innerHTML="";
   lista.forEach(func=>{
     const card=document.createElement("div");
-    card.className="func-card"+(func.confirmado?" confirmado":(func.parcial?" parcial":""))+(func.indisponivelSemana?" bloqueado":"");
-    const statusTexto = func.indisponivelSemana
-      ? (func.motivoIndisponibilidade || "Ausência") + " na semana"
-      : (func.confirmado ? "Confirmado" : (func.parcial ? "Parcial / disponível" : "Pendente"));
+    card.className="func-card"+(func.confirmado?" confirmado":"");
     card.innerHTML=
       '<div class="func-avatar">'+esc(getInitials(func.nome))+'</div>'+
       '<div class="func-info">'+
         '<div class="func-name">'+esc(func.nome)+'</div>'+
         (func.dept?'<div class="func-dept">'+esc(func.dept)+'</div>':'')+
-        '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+esc(statusTexto)+'</span>'+
+        '<span class="func-status-badge '+(func.confirmado?"badge-confirmado":"badge-pendente")+'">'+(func.confirmado?"Confirmado":"Pendente")+'</span>'+
       '</div>';
-    if(!func.confirmado && !func.indisponivelSemana) card.addEventListener("click",()=>selecionarFunc(func));
+    if(!func.confirmado) card.addEventListener("click",()=>selecionarFunc(func));
     grid.appendChild(card);
   });
 }
@@ -878,7 +774,19 @@ document.getElementById("searchInput").addEventListener("input",function(){
 function selecionarFunc(func){
   funcSelecionado=func;
   pedidos={};
-  ESTADOS_REFEICAO[func.id] = func.estados || ESTADOS_REFEICAO[func.id] || [];
+  DIAS_SEMANA.forEach(d=>{
+    const aus = ausenciaVigentePara(func, d.key);
+    if(aus){
+      pedidos[d.key] = {
+        _ausencia: true,
+        _bloqueadoAusencia: true,
+        ausenciaId: pick(aus,"id","ID"),
+        motivo: pick(aus,"Motivo","motivo") || "ausente",
+        observacao: pick(aus,"Observacao","Observação") || "Ausência já cadastrada no Admin.",
+        dia: d.dia
+      };
+    }
+  });
   stepAtual=0;
   document.getElementById("v2Title").textContent=func.nome.split(" ")[0];
   document.getElementById("v2Sub").textContent="Escolha sua refeição por dia";
@@ -896,32 +804,6 @@ function capturarAusencia(diaKey){
   if(obsEl)    pedidos[diaKey].observacao  = obsEl.value.trim();
 }
 
-
-function estadoDiaAtual(diaKey){
-  const estados = funcSelecionado ? (ESTADOS_REFEICAO[funcSelecionado.id] || funcSelecionado.estados || []) : [];
-  return estados.find(e => normDia(e.dia) === normDia(diaKey)) || null;
-}
-
-function estadoBloqueiaMarcacao(estado){
-  return estado && (estado.statusTela === "bloqueado-ausencia" || estado.statusTela === "confirmado" || estado.statusTela === "travado-principal");
-}
-
-function htmlEstadoBloqueado(estado){
-  const status = estado?.statusTela || "";
-  const titulo = status === "bloqueado-ausencia"
-    ? "🔒 " + (estado.motivo || "Ausência")
-    : status === "travado-principal"
-      ? "🔒 Principal automático"
-      : "✅ Escolha já registrada";
-  const sub = status === "bloqueado-ausencia"
-    ? "Este dia está dentro do período de ausência/férias cadastrado no Admin. Não é possível marcar refeição."
-    : status === "travado-principal"
-      ? "Nenhuma escolha foi registrada até o prazo. O sistema aplicou Principal automaticamente."
-      : "Este dia já possui uma escolha salva. Para alterar, procure a Luana.";
-  const opcao = estado?.opcao ? '<div style="margin-top:.45rem"><span class="opcao-tag tag-'+esc(estado.opcao)+'">'+esc(estado.opcao)+'</span> '+esc(estado.nomePrato||'')+'</div>' : '';
-  return '<div class="dia-bloqueado-card"><div class="lock-title">'+esc(titulo)+'</div><div class="lock-sub">'+esc(sub)+'</div>'+opcao+'</div>';
-}
-
 // ── Steps ─────────────────────────────────────────────────────────────────────
 function buildStepsHeader(){
   const el=document.getElementById("stepsHeader");
@@ -929,15 +811,12 @@ function buildStepsHeader(){
   DIAS_SEMANA.forEach((dia,i)=>{
     if(i>0){ const conn=document.createElement("div"); conn.className="step-connector"; el.appendChild(conn); }
     const p=pedidos[dia.key];
-    const estado=estadoDiaAtual(dia.key);
-    const bloqueado=estadoBloqueiaMarcacao(estado);
-    const done=p!=null || bloqueado;
-    const isAus=(done && p && p._ausencia) || estado?.statusTela==="bloqueado-ausencia";
-    const isTrav=estado?.statusTela==="travado-principal";
+    const done=p!=null;
+    const isAus=done && p._ausencia;
     const active=i===stepAtual;
     const item=document.createElement("div");
-    item.className="step-item"+(active?" active":"")+(done&&!active?" done":"")+(isAus&&!active?" ausencia-step":"")+(bloqueado?" locked":"")+(isTrav?" travado":"");
-    item.innerHTML='<div class="step-dot">'+(done&&!active?(isAus?"🚫":(isTrav?"🔒":"✓")):(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
+    item.className="step-item"+(active?" active":"")+(done&&!active?" done":"")+(isAus&&!active?" ausencia-step":"");
+    item.innerHTML='<div class="step-dot">'+(done&&!active?(isAus?"🚫":"✓"):(i+1))+'</div><div class="step-label">'+dia.key.charAt(0).toUpperCase()+dia.key.slice(1)+'</div>';
     item.addEventListener("click",()=>{ if(done||active){capturarAusencia(DIAS_SEMANA[stepAtual].key);stepAtual=i;renderStep();} });
     el.appendChild(item);
   });
@@ -948,27 +827,31 @@ function renderStep(){
   const dia=DIAS_SEMANA[stepAtual];
   const opcoes=CARDAPIO[dia.key]||[];
   const selecionada=pedidos[dia.key];
-  const estado=estadoDiaAtual(dia.key);
-  const bloqueado=estadoBloqueiaMarcacao(estado);
   const isLast=stepAtual===DIAS_SEMANA.length-1;
 
   const btnNext=document.getElementById("btnNext");
   const btnPrev=document.getElementById("btnPrev");
   btnPrev.style.display=stepAtual===0?"none":"block";
   btnNext.textContent=isLast?"Ver resumo →":"Próximo →";
-  btnNext.disabled=!selecionada && !bloqueado;
+  btnNext.disabled=!selecionada;
   btnNext.className="btn-nav btn-next"+(isLast?" btn-confirm":"");
 
   const content=document.getElementById("dayContent");
   content.innerHTML=
     '<div class="day-title">'+esc(dia.label)+'</div>'+
-    '<div class="day-subtitle">'+(dia.data||"")+' — Escolha uma opção</div>'+
+    '<div class="day-subtitle">'+(dia.data||"")+'/2026 — Escolha uma opção</div>'+
     '<div class="opcoes-grid" id="opcoesGrid"></div>';
 
   const grid=document.getElementById("opcoesGrid");
 
-  if(bloqueado){
-    grid.innerHTML = htmlEstadoBloqueado(estado);
+  if(selecionada && selecionada._bloqueadoAusencia){
+    const motivoTxt = motivoAusenciaLabel(selecionada.motivo);
+    grid.innerHTML =
+      '<div class="ausencia-card selected" style="cursor:default;grid-column:1/-1">'+
+        '<div class="opcao-top"><span class="tag-ausencia">🚫 Ausência cadastrada</span><div class="check">✓</div></div>'+
+        '<div class="ausencia-nome">'+esc(motivoTxt)+'</div>'+
+        '<div style="font-size:.78rem;color:rgba(255,180,100,.75);line-height:1.5">Este dia já está bloqueado pela ausência cadastrada pela Luana/Admin. Ao confirmar a semana, o sistema não cria outra ausência nem pedido para este dia.</div>'+
+      '</div>';
     return;
   }
 
@@ -1083,29 +966,21 @@ function renderResumo(){
   wrap.innerHTML="";
   DIAS_SEMANA.forEach(dia=>{
     const p=pedidos[dia.key];
-    const estado=estadoDiaAtual(dia.key);
     const row=document.createElement("div");
 
-    if(estadoBloqueiaMarcacao(estado)){
-      row.className = estado.statusTela === "bloqueado-ausencia" ? "resumo-dia resumo-ausencia" : "resumo-dia";
-      row.innerHTML=
-        '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+ 
-        '<div class="resumo-dia-opcao" style="flex-direction:column;align-items:flex-start;gap:0.2rem">'+
-          '<span class="resumo-dia-nome">'+esc(estado.statusTela === "bloqueado-ausencia" ? (estado.motivo||"Ausência") : (estado.statusTela === "travado-principal" ? "Principal automático" : "Escolha já registrada"))+'</span>'+ 
-          '<div class="resumo-ausencia-obs">'+esc(estado.motivo||"")+'</div>'+ 
-        '</div>';
-    } else if(p && p._ausencia){
+    if(p && p._ausencia){
       row.className="resumo-dia resumo-ausencia";
+      const motivoTxt = p._bloqueadoAusencia ? motivoAusenciaLabel(p.motivo) : motivoLabel(p.motivo);
       row.innerHTML=
         '<div class="resumo-dia-label">'+esc(dia.label.split("-")[0].trim())+'</div>'+
         '<div class="resumo-dia-opcao" style="flex-direction:column;align-items:flex-start;gap:0.2rem">'+
           '<div style="display:flex;align-items:center;gap:0.5rem">'+
-            '<span class="tag-ausencia" style="font-size:.55rem;padding:2px 7px">🚫 Ausência</span>'+
-            '<span class="resumo-dia-nome" style="color:rgba(255,180,100,.85)">'+esc(motivoLabel(p.motivo))+'</span>'+
+            '<span class="tag-ausencia" style="font-size:.55rem;padding:2px 7px">🚫 '+(p._bloqueadoAusencia?'Bloqueado':'Ausência')+'</span>'+
+            '<span class="resumo-dia-nome" style="color:rgba(255,180,100,.85)">'+esc(motivoTxt)+'</span>'+
           '</div>'+
-          (p.observacao
-            ? '<div class="resumo-ausencia-obs">'+esc(p.observacao)+'</div>'
-            : '')+
+          (p._bloqueadoAusencia
+            ? '<div class="resumo-ausencia-obs">Ausência já cadastrada. Não será duplicada.</div>'
+            : (p.observacao ? '<div class="resumo-ausencia-obs">'+esc(p.observacao)+'</div>' : ''))+
         '</div>';
     } else {
       row.className="resumo-dia";
@@ -1128,10 +1003,8 @@ document.getElementById("btnConfirmar").addEventListener("click",async()=>{
   // Captura campos de ausência do step atual caso ainda esteja na view2
   capturarAusencia(DIAS_SEMANA[stepAtual].key);
 
-  const selecionados=Object.keys(pedidos).filter(key => !estadoBloqueiaMarcacao(estadoDiaAtual(key)));
-  const diasDisponiveis = DIAS_SEMANA.filter(d => !estadoBloqueiaMarcacao(estadoDiaAtual(d.key)));
-  if(!selecionados.length && diasDisponiveis.length){ alert("Selecione pelo menos uma refeição disponível."); return; }
-  if(!selecionados.length && !diasDisponiveis.length){ alert("Todos os dias estão bloqueados ou já confirmados para este colaborador."); return; }
+  const selecionados=Object.keys(pedidos);
+  if(!selecionados.length){ alert("Selecione pelo menos uma refeição."); return; }
 
   const btn=document.getElementById("btnConfirmar");
   btn.disabled=true; btn.textContent="Salvando pedido...";
@@ -1142,6 +1015,12 @@ document.getElementById("btnConfirmar").addEventListener("click",async()=>{
     for(const key of selecionados){
       const diaInfo=DIAS_SEMANA.find(d=>d.key===key);
       const pedido=pedidos[key];
+
+      if(pedido._bloqueadoAusencia){
+        // Ausência já cadastrada no Admin/Luana: apenas respeita o bloqueio.
+        // Não cria nova ausência e não cria pedido para esse dia.
+        continue;
+      }
 
       if(pedido._ausencia){
         // ── Grava na lista Ausencias do Refeitorio ──────────────────────────
