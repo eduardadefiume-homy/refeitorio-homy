@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: regras-operacionais-20260625-fase1
+// v: base-centralizada-v10-6-20260629
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -158,7 +158,6 @@
   Regras.STATUS_BLOQUEIA_PRODUCAO = [
     "cancelado",
     "bloqueado",
-    "travado",
     "nao vai almocar",
     "nao_vai_almocar",
     "não vai almoçar",
@@ -214,10 +213,79 @@
     return Regras.statusAusencia(status) || origem.includes("ausencia") || origem.includes("ausência") || !!pedido?._ausente;
   };
 
+
+  Regras.isRetornoAutomaticoAusencia = function isRetornoAutomaticoAusencia(pedido) {
+    const origem = Regras.norm(Regras.getOrigem(pedido));
+    return origem.includes("retorno automatico de ausencia") ||
+           origem.includes("retorno automático de ausência") ||
+           (origem.includes("retorno automatico") && origem.includes("ausencia")) ||
+           (origem.includes("retorno automático") && origem.includes("ausência"));
+  };
+
+  Regras.isTravamentoAutomatico = function isTravamentoAutomatico(pedido) {
+    const status = Regras.norm(Regras.getStatus(pedido));
+    const origem = Regras.norm(Regras.getOrigem(pedido));
+    return status === "travado" && origem.includes("travamento");
+  };
+
+  Regras.pedidoCanceladoOuBloqueado = function pedidoCanceladoOuBloqueado(pedido) {
+    const status = Regras.norm(Regras.getStatus(pedido));
+    const origem = Regras.norm(Regras.getOrigem(pedido));
+    return ["cancelado", "bloqueado", "duplicado inativado", "duplicidade inativada"].includes(status) ||
+           origem.includes("duplicado inativado") || origem.includes("duplicidade inativada");
+  };
+
+  Regras.pedidoEscolhaReal = function pedidoEscolhaReal(pedido) {
+    if (!pedido) return false;
+
+    // Registro legado gerado pela regra antiga. Ele existe no SharePoint,
+    // mas não é escolha do colaborador nem travamento oficial.
+    if (Regras.isRetornoAutomaticoAusencia(pedido)) return false;
+
+    // Travamento oficial é a única forma de Principal automático após prazo.
+    if (Regras.isTravamentoAutomatico(pedido)) return true;
+
+    const status = Regras.norm(Regras.getStatus(pedido));
+    if (status === "travado") return false;
+    if (Regras.statusBloqueiaProducao(status)) return false;
+
+    return Regras.STATUS_PRODUCAO.includes(status) || Regras.isTrue(Regras.pick(pedido, "Confirmado", "confirmado"));
+  };
+
+  Regras.pedidoPodeAparecerNaOperacao = function pedidoPodeAparecerNaOperacao(pedido) {
+    if (!pedido) return false;
+    if (Regras.isRetornoAutomaticoAusencia(pedido)) return false;
+    if (Regras.pedidoCanceladoOuBloqueado(pedido)) return false;
+    return true;
+  };
+
+  Regras.criarPendenteAusenciaEncerrada = function criarPendenteAusenciaEncerrada(pedidoBase, overrides = {}) {
+    const base = pedidoBase || {};
+    return {
+      ...base,
+      ...overrides,
+      _virtualPendente: true,
+      _ausenciaEncerradaAguardandoMarcacao: true,
+      Status: "Pendente",
+      Confirmado: false,
+      Opcao: Regras.getOpcao(base) || "principal",
+      Nome_Prato: "Sem marcação",
+      Origem: "Ausência encerrada - aguardando marcação",
+      Observacao: "Ausência encerrada ou retorno automático legado. Colaborador liberado para escolher; Principal só será aplicado no travamento oficial se ninguém marcar."
+    };
+  };
+
   Regras.pedidoConfirmadoProducao = function pedidoConfirmadoProducao(pedido) {
     const status = Regras.norm(Regras.getStatus(pedido));
 
-    // Regra principal: status de bloqueio vence Confirmado=true.
+    // Retorno automático de ausência é dado legado e não conta produção.
+    if (Regras.isRetornoAutomaticoAusencia(pedido)) return false;
+
+    // Travado só conta quando é travamento oficial.
+    if (Regras.isTravamentoAutomatico(pedido)) return true;
+    if (status === "travado") return false;
+
+    // Status de ausência/cancelamento vence Confirmado=true.
     if (Regras.statusBloqueiaProducao(status)) return false;
 
     if (Regras.STATUS_PRODUCAO.includes(status)) return true;
@@ -430,10 +498,11 @@
     if (Regras.getPedidoId(pedido)) score += 2;
     if (!origem.includes("travamento")) score += 2;
 
-    if (["cancelado", "bloqueado"].includes(status)) score -= 100;
+    if (Regras.isRetornoAutomaticoAusencia(pedido)) score -= 80;
+    else if (["cancelado", "bloqueado"].includes(status)) score -= 100;
     else if (Regras.pedidoConfirmadoProducao(pedido)) score += 90;
     else if (Regras.pedidoAusente(pedido)) score += 60;
-    else if (status === "travado") score += 40;
+    else if (status === "travado") score += 20;
 
     return score;
   };
