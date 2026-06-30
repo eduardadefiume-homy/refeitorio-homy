@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-12-20260630
+// v: base-centralizada-v10-13-20260630
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -288,13 +288,14 @@
       ...base,
       ...overrides,
       _virtualPendente: true,
-      _ausenciaEncerradaAguardandoMarcacao: true,
+      _legadoAusenciaEncerrada: true,
+      _retornoAutomaticoLegado: Regras.isRetornoAutomaticoAusencia(base),
       Status: "Pendente",
       Confirmado: false,
       Opcao: Regras.getOpcao(base) || "principal",
       Nome_Prato: "Sem marcação",
-      Origem: "Ausência encerrada - aguardando marcação",
-      Observacao: "Ausência encerrada ou retorno automático legado. Colaborador liberado para escolher; Principal só será aplicado no travamento oficial se ninguém marcar."
+      Origem: "Sem pedido",
+      Observacao: "Ausência encerrada ou retorno automático legado ignorado na Operação viva. Colaborador elegível deve aparecer como pendente normal; Principal só será aplicado no travamento oficial."
     };
   };
 
@@ -565,9 +566,9 @@
     if (Regras.isTravamentoAutomatico(item)) score += 900;
     else if (Regras.pedidoEscolhaReal(item)) score += 850;
     else if (Regras.pedidoAusente(item) || item?._virtualAusencia || item?._ausenciaOperacao) score += 700;
-    else if (item?._ausenciaEncerradaAguardandoMarcacao || origem.includes("ausencia encerrada")) score += 450;
+    else if (item?._legadoAusenciaEncerrada || item?._retornoAutomaticoLegado || item?._ausenciaEncerradaAguardandoMarcacao || origem.includes("ausencia encerrada")) score += 250;
+    else if (origem.includes("sem pedido")) score += 350;
     else if (item?._virtualPendente || status === "pendente") score += 300;
-    else if (origem.includes("sem pedido")) score += 100;
     if (Regras.isRetornoAutomaticoAusencia(item)) score -= 50;
     if (Regras.pedidoCanceladoOuBloqueado(item)) score -= 500;
     score += Math.min(Math.floor(Regras.timestampPedido(item) / 100000000000), 99);
