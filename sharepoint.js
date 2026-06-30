@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-9-20260629
+// v: base-centralizada-v10-11-20260630
 // ============================================================
 
 const SP = {
