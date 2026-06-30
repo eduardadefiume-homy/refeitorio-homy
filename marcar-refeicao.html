@@ -9,6 +9,7 @@
 <link rel="shortcut icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="favicon.png">
 <title>Marcar Refeição · Homy</title>
+<!-- v: marcar-refeicao-v10-14-20260630 · usa semana alvo de marcação -->
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -271,9 +272,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("refeitorio-regras.js?v=base-centralizada-v10-9-20260629")
+      return loadScript("refeitorio-regras.js?v=base-centralizada-v10-13-20260630")
         .catch(function(){ console.warn("refeitorio-regras.js não carregou; usando fallback local."); })
-        .then(function(){ return loadScript("sharepoint.js?v=base-centralizada-v10-9-20260629"); });
+        .then(function(){ return loadScript("sharepoint.js?v=base-centralizada-v10-12-20260630"); });
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
@@ -618,10 +619,11 @@ function atualizarBadgesPrazo(txt){
   });
 }
 
-async function verificarBloqueioMarcacao(){
+async function verificarBloqueioMarcacao(semanaId){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
+    const alvo = semanaId || await SP.getSemanaAlvoMarcacao?.(getSemanaAtual()).catch(()=>getSemanaAtual()) || getSemanaAtual();
     const liberado = await SP.isCardapioLiberado().catch(()=>true);
     if(!liberado){
       mostrarBloqueio("🔒 Marcação encerrada",
@@ -629,7 +631,7 @@ async function verificarBloqueioMarcacao(){
         false);
       return false;
     }
-    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
+    const prazo = await SP.getPrazoMarcacao(alvo).catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
     return true;
   } catch(e){
@@ -659,7 +661,7 @@ async function carregarPrazo(){
   try{
     await window.HOMY_SP_READY;
     await SP.init();
-    const prazo = await SP.getPrazoMarcacao().catch(()=>null);
+    const prazo = await SP.getPrazoMarcacao(alvo).catch(()=>null);
     atualizarBadgesPrazo(formatarPrazo(prazo));
   } catch(e){
     console.warn("[prazo]",e);
@@ -701,10 +703,11 @@ async function carregarDadosSharePoint(){
       return;
     }
 
-    const podeMarcar = await verificarBloqueioMarcacao();
+    SEMANA_ID = await SP.getSemanaAlvoMarcacao?.(getSemanaAtual()).catch(()=>getSemanaAtual()) || getSemanaAtual();
+
+    const podeMarcar = await verificarBloqueioMarcacao(SEMANA_ID);
     if(!podeMarcar) return;
 
-    SEMANA_ID = await SP.getSemanaAlvoMarcacao?.(getSemanaAtual()).catch(()=>getSemanaAtual()) || getSemanaAtual();
     const datas = getWeekDatesLocal(SEMANA_ID);
     DIAS_SEMANA.forEach((d,i)=>{ d.data = formatDataCurta(datas[i]); });
 
@@ -730,7 +733,7 @@ async function carregarDadosSharePoint(){
     }).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
 
     renderFuncs(FUNCIONARIOS);
-    carregarPrazo();
+    carregarPrazo(SEMANA_ID);
 
   } catch(e){
     console.error("[carregarDados]",e);
