@@ -279,6 +279,7 @@ const AdminDashboard = window.AdminDashboard = {
   async _carregarResumoTravamento(semanaId) {
     const el = document.getElementById("travamentoPendentesResumo");
     const btn = document.getElementById("btnTravarPendentesSemana");
+    const btnPrevia = document.getElementById("btnPreviaTravamentoPendentes");
     if (!el || !SP.gerarPreviaTravamentoPendentesSemana) return;
     const previa = await SP.gerarPreviaTravamentoPendentesSemana(semanaId);
     this._ultimaPreviaTravamento = previa;
@@ -293,6 +294,11 @@ const AdminDashboard = window.AdminDashboard = {
       ? `⚠️ ${AdminUtils.esc(previa.motivoBloqueio || "Travamento bloqueado.")} · ${partes.join(" · ")}`
       : `✅ Pronto para travar · ${partes.join(" · ")}`;
     if (btn) btn.disabled = !!previa.bloqueado || !Number(t.acoesTravamento || 0);
+    if (btnPrevia) btnPrevia.disabled = false;
+    if (previa.fechamentoSemana?.temFechamento) {
+      el.innerHTML = `🔒 ${AdminUtils.esc(previa.fechamentoSemana.mensagem || previa.motivoBloqueio || "Semana com fechamento oficial.")} · Travamento semanal desabilitado.`;
+      if (btn) btn.disabled = true;
+    }
   },
 
   _ensureTravamentoModal() {
@@ -326,8 +332,8 @@ const AdminDashboard = window.AdminDashboard = {
         <div class="dashboard-mini-card"><div class="dashboard-mini-value">${esc(t.retornosAutomaticosLegados || 0)}</div><div class="dashboard-mini-label">Retornos legados</div></div>
       </div>
       <div class="table-wrap" style="margin-bottom:1rem">
-        <table class="table"><thead><tr><th>Dia</th><th>Confirmados</th><th>Travados</th><th>Ausentes</th><th>Pendentes</th><th>Ações</th></tr></thead>
-        <tbody>${dias.map(d => `<tr><td>${esc(AdminUtils.DIA_LABEL?.[d.dia] || d.dia)}</td><td>${esc(d.confirmados || 0)}</td><td>${esc(d.travados || 0)}</td><td>${esc(d.ausentes || 0)}</td><td>${esc(d.pendentesElegiveis || 0)}</td><td>${esc(d.acoes || 0)}</td></tr>`).join("")}</tbody></table>
+        <table class="table"><thead><tr><th>Dia</th><th>Fonte</th><th>Confirmados</th><th>Travados</th><th>Ausentes</th><th>Pendentes</th><th>Ações</th></tr></thead>
+        <tbody>${dias.map(d => `<tr><td>${esc(AdminUtils.DIA_LABEL?.[d.dia] || d.dia)}</td><td>${d.fechado ? "Fechamento Oficial" : "Pedidos"}</td><td>${esc(d.confirmados || 0)}</td><td>${esc(d.travados || 0)}</td><td>${esc(d.ausentes || 0)}</td><td>${esc(d.pendentesElegiveis || 0)}</td><td>${esc(d.acoes || 0)}</td></tr>`).join("")}</tbody></table>
       </div>
       <div class="table-wrap">
         <table class="table"><thead><tr><th>Ação</th><th>Colaborador</th><th>Dia</th><th>Pedido atual</th><th>Resultado</th></tr></thead>
@@ -387,7 +393,12 @@ const AdminDashboard = window.AdminDashboard = {
     const el = document.getElementById("dashAlertas");
     if (!el) return;
     const itens = [];
-    if (r.pendentesColaboradores > 0)
+    if (r.semanaFechada) {
+      itens.push(`✅ Semana fechada — relatórios usam Fechamento Oficial.`);
+    } else if (r.semanaTemFechamento) {
+      itens.push(`⚠️ Semana parcialmente fechada — travamento semanal bloqueado; use reabertura/auditoria para ajustes.`);
+    }
+    if (!r.semanaFechada && r.pendentesColaboradores > 0)
       itens.push(`⚠️ ${r.pendentesColaboradores} colaboradores ainda não marcaram.`);
     if (r.extrasPendentes > 0)
       itens.push(`⚠️ ${r.extrasPendentes} extras aguardando confirmação.`);
