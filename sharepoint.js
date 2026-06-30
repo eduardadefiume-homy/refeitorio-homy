@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-11-20260630
+// v: base-centralizada-v10-12-20260630
 // ============================================================
 
 const SP = {
@@ -2834,47 +2834,6 @@ const SP = {
     if (!semanaId) throw new Error("Informe a semana para travar pendentes.");
 
     const fechamentoSemana = await this.getStatusFechamentoSemana(semanaId).catch(() => null);
-    const decisaoFechamento = this._R()?.podeTravarSemana?.({ fechamentoSemana, ignorarFechamento: options.ignorarFechamento === true }) || { bloqueadoPorFechamento: !!(fechamentoSemana?.temFechamento && options.ignorarFechamento !== true), motivoBloqueio: this._R()?.motivoBloqueioTravamentoSemana?.(fechamentoSemana) || "Travamento bloqueado por Fechamento Oficial." };
-    if (decisaoFechamento.bloqueadoPorFechamento) {
-      const porDia = {};
-      for (const dia of fechamentoSemana.diasOperacionais || this._diasOperacionaisPadrao()) {
-        const f = fechamentoSemana.porDia?.[dia] || null;
-        porDia[dia] = {
-          dia,
-          data: f?.data || this.getDataRefBySemanaDia?.(semanaId, dia) || "",
-          fechado: !!f,
-          totalOficial: f?.total || 0,
-          confirmados: f?.total || 0,
-          travados: 0,
-          ausentes: f?.ausentes || 0,
-          pendentesElegiveis: 0,
-          retornosAutomaticosLegados: 0,
-          acoes: 0
-        };
-      }
-      return {
-        semanaId,
-        geradoEm: new Date().toISOString(),
-        geradoPor: this.getUserName ? this.getUserName() : "Sistema",
-        prazo: await this._prazoTravamentoSemana(semanaId).catch(() => ({ prazoConfigurado: false, prazoVencido: false })),
-        fechamentoSemana,
-        bloqueado: true,
-        motivoBloqueio: decisaoFechamento.motivoBloqueio,
-        totais: {
-          colaboradoresAtivos: 0,
-          diasAvaliados: Object.keys(porDia).length,
-          confirmados: 0,
-          travadosExistentes: 0,
-          ausentesIgnorados: 0,
-          pendentesElegiveis: 0,
-          retornosAutomaticosLegados: 0,
-          acoesTravamento: 0
-        },
-        porDia,
-        acoes: [],
-        hashPlano: this._hashTexto(this._jsonSeguro({ semanaId, bloqueado: true, fechamento: fechamentoSemana.diasFechados }))
-      };
-    }
 
     const [{ dias }, prazoInfo, colaboradores, pedidos, ausencias] = await Promise.all([
       Promise.resolve(this._semanaInicioFimISO(semanaId)),
@@ -2890,24 +2849,45 @@ const SP = {
 
     for (const p of pedidos || []) {
       if (String(this.pick(p, "Semana_id", "Semana") || "") !== String(semanaId)) continue;
-      const k = this._pedidoNormalKeyTravamento(p);
-      if (!k) continue;
-      if (!pedidosPorKey.has(k)) pedidosPorKey.set(k, []);
-      pedidosPorKey.get(k).push(p);
+      if (!p || this.isExtraPedido?.(p) || this._isPedidoAdicionalColaborador?.(p)) continue;
+      const dia = this.norm(this.pick(p, "Dia", "dia") || "");
+      if (!dia) continue;
+      const chaves = this._R()?.chavesColaboradorOperacional?.(p, "pedido") || [];
+      const fallback = this._pedidoColaboradorNormalKey(p);
+      if (fallback) chaves.push(fallback);
+      for (const colabKey of Array.from(new Set(chaves.filter(Boolean)))) {
+        const k = `${colabKey}|${dia}`;
+        if (!pedidosPorKey.has(k)) pedidosPorKey.set(k, []);
+        pedidosPorKey.get(k).push(p);
+      }
     }
 
     const permitirAntesDoPrazo = options.ignorarPrazo === true;
-    const decisaoTravamento = this._R()?.podeTravarSemana?.({ fechamentoSemana: null, prazoInfo, permitirAntesDoPrazo, ignorarFechamento: true }) || { podeTravar: permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido), bloqueado: !(permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido)), motivoBloqueio: "" };
+    const decisaoTravamento = this._R()?.podeTravarSemana?.({ fechamentoSemana, prazoInfo, permitirAntesDoPrazo, ignorarFechamento: options.ignorarFechamento === true }) || { podeTravar: permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido), bloqueado: !(permitirAntesDoPrazo || (prazoInfo.prazoConfigurado && prazoInfo.prazoVencido)), motivoBloqueio: "" };
     const podeTravar = !!decisaoTravamento.podeTravar;
     const acoes = [];
     const porDia = {};
     for (const d of diasOperacao) {
-      porDia[d.dia] = { dia: d.dia, data: d.data, confirmados: 0, travados: 0, ausentes: 0, pendentesElegiveis: 0, retornosAutomaticosLegados: 0, acoes: 0 };
+      const f = fechamentoSemana?.porDia?.[this.norm(d.dia)] || null;
+      porDia[d.dia] = {
+        dia: d.dia,
+        data: d.data,
+        fechado: !!f,
+        fonte: f ? "Fechamento Oficial" : "Pedidos",
+        totalOficial: f?.total || 0,
+        confirmados: f ? Number(f.total || 0) : 0,
+        travados: 0,
+        ausentes: f ? Number(f.ausentes || 0) : 0,
+        pendentesElegiveis: 0,
+        retornosAutomaticosLegados: 0,
+        acoes: 0
+      };
     }
 
     const totais = {
       colaboradoresAtivos: colabsAtivos.length,
       diasAvaliados: diasOperacao.length,
+      diasFechadosIgnorados: Number(fechamentoSemana?.totalDiasFechados || 0),
       confirmados: 0,
       travadosExistentes: 0,
       ausentesIgnorados: 0,
@@ -2926,7 +2906,19 @@ const SP = {
       for (const diaInfo of diasOperacao) {
         const diaNorm = this.norm(diaInfo.dia);
         const resumoDia = porDia[diaInfo.dia];
-        const grupo = pedidosPorKey.get(`${colabKey}|${diaNorm}`) || [];
+        if (resumoDia?.fechado) continue;
+        const chavesColab = this._R()?.chavesColaboradorOperacional?.(c, "colaborador") || [];
+        if (colabKey) chavesColab.push(colabKey);
+        const vistosGrupo = new Set();
+        const grupo = [];
+        for (const keyColab of Array.from(new Set(chavesColab.filter(Boolean)))) {
+          for (const item of pedidosPorKey.get(`${keyColab}|${diaNorm}`) || []) {
+            const idItem = String(this.pick(item, "id", "ID") || `${this.pick(item, "Colaborador_id", "Colaborador_nome")}-${this.pick(item, "Modified", "Created")}`);
+            if (vistosGrupo.has(idItem)) continue;
+            vistosGrupo.add(idItem);
+            grupo.push(item);
+          }
+        }
         const retornosLegados = grupo.filter(p => this._isRetornoAutomaticoAusenciaPedido(p) && !this._pedidoCanceladoOuBloqueado(p));
         const ausencia = this._ausenciaVigenteParaKeyData(ausencias, colabKey, diaInfo.data);
 
@@ -2998,19 +2990,22 @@ const SP = {
     }
 
     const bloqueado = !podeTravar;
-    const motivoBloqueio = bloqueado ? decisaoTravamento.motivoBloqueio : "";
+    const motivoBloqueio = bloqueado
+      ? decisaoTravamento.motivoBloqueio
+      : (fechamentoSemana?.temFechamento ? (this._R()?.motivoBloqueioTravamentoSemana?.(fechamentoSemana) || "Dias fechados serão ignorados no travamento.") : "");
 
     return {
       semanaId,
       geradoEm: new Date().toISOString(),
       geradoPor: this.getUserName ? this.getUserName() : "Sistema",
       prazo: prazoInfo,
+      fechamentoSemana,
       bloqueado,
       motivoBloqueio,
       totais,
       porDia,
       acoes,
-      hashPlano: this._hashTexto(this._jsonSeguro({ semanaId, totais, acoes: acoes.map(a => [a.acao, a.pedidoId, a.colaboradorId, a.dia]) }))
+      hashPlano: this._hashTexto(this._jsonSeguro({ semanaId, totais, diasFechados: fechamentoSemana?.diasFechados || [], acoes: acoes.map(a => [a.acao, a.pedidoId, a.colaboradorId, a.dia]) }))
     };
   },
 
@@ -3021,9 +3016,9 @@ const SP = {
     }
 
     const fechamentoSemana = await this.getStatusFechamentoSemana(semanaId).catch(() => null);
-    const decisaoFechamento = this._R()?.podeTravarSemana?.({ fechamentoSemana, ignorarFechamento: options.ignorarFechamento === true }) || { bloqueadoPorFechamento: !!(fechamentoSemana?.temFechamento && options.ignorarFechamento !== true), motivoBloqueio: "Travamento bloqueado por Fechamento Oficial." };
+    const decisaoFechamento = this._R()?.podeTravarSemana?.({ fechamentoSemana, ignorarFechamento: options.ignorarFechamento === true, permitirAntesDoPrazo: true, prazoInfo: { prazoConfigurado: true, prazoVencido: true } }) || { bloqueadoPorFechamento: !!(fechamentoSemana?.semanaFechada && options.ignorarFechamento !== true), motivoBloqueio: "Travamento bloqueado por Fechamento Oficial." };
     if (decisaoFechamento.bloqueadoPorFechamento) {
-      throw new Error(decisaoFechamento.motivoBloqueio || "Travamento bloqueado por Fechamento Oficial.");
+      throw new Error(decisaoFechamento.motivoBloqueio || "Travamento bloqueado: todos os dias da semana já possuem Fechamento Oficial.");
     }
 
     const previa = options.previa || await this.gerarPreviaTravamentoPendentesSemana(semanaId, options);
@@ -3075,11 +3070,11 @@ const SP = {
       modulo: "Dashboard",
       listaOrigem: "Pedidos",
       itemId: "",
-      acao: "Travar pendentes da semana",
+      acao: "Travar pendentes dos dias abertos",
       antes: previa,
       depois: { criados, atualizados, erros },
       usuario,
-      observacao: `Travamento oficial de pendentes da semana ${semanaId}.`
+      observacao: `Travamento oficial de pendentes dos dias abertos da semana ${semanaId}.`
     }).catch(() => null);
 
     return { semanaId, criados, atualizados, erros, total: criados + atualizados, detalhes };
