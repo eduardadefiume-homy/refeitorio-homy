@@ -1,4 +1,4 @@
-// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.11
+// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.12
 // Regra: carregar Operação do Dia é somente leitura. Regras vêm de refeitorio-regras.js.
 
 const AdminOperacao = window.AdminOperacao = {
@@ -344,6 +344,9 @@ const AdminOperacao = window.AdminOperacao = {
   },
 
   _deduplicarPedidosOperacao(lista) {
+    const R = this._R?.();
+    if (R?.deduplicarListaOperacao) return R.deduplicarListaOperacao(lista || []);
+
     const mapa = new Map();
     for (const p of lista || []) {
       const key = this._pedidoKeyOperacao(p);
@@ -638,7 +641,7 @@ const AdminOperacao = window.AdminOperacao = {
   _incluirColaboradoresSemPedido(lista, colaboradores, ausencias, semanaId, dia) {
     const resultado = [...(lista || [])];
 
-    // v10.11 — A Operação precisa reconciliar por ID E por nome normalizado.
+    // v10.12 — A Operação precisa reconciliar por ID E por nome normalizado.
     // Alguns pedidos legados de "Retorno automático de ausência" não trazem Colaborador_id,
     // mas trazem o nome. Antes, isso deixava entrar também a linha virtual "Sem pedido",
     // duplicando o colaborador inteiro na Operação do Dia.
@@ -652,6 +655,7 @@ const AdminOperacao = window.AdminOperacao = {
       const keys = this._colabKeysFromColaborador(c);
       if (!keys.length) continue;
       if (keys.some(k => existentes.has(k))) continue;
+      if (this._R?.()?.existeColaboradorNaListaOperacao?.(resultado, c)) continue;
       if (this._colabAusenteNoDia(c, ausencias, semanaId, dia)) continue;
 
       const id = String(this._pick(c, "id", "ID", "Matricula", "Matrícula") || "").trim();
@@ -732,7 +736,7 @@ const AdminOperacao = window.AdminOperacao = {
       const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
       const R = this._R?.();
 
-      // v10.11 — dia com Fechamento Oficial ativo é congelado.
+      // v10.12 — dia com Fechamento Oficial ativo é congelado.
       // A Operação não pode recriar pendentes, “sem pedido” ou retorno automático
       // em um dia que já foi conferido e fechado pela Luana.
       const fechamentoDia = await SP.getFechamentoDia?.(semanaId, dia).catch(() => null);
