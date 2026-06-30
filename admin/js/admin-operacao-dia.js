@@ -1,4 +1,4 @@
-// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.7
+// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.11
 // Regra: carregar Operação do Dia é somente leitura. Regras vêm de refeitorio-regras.js.
 
 const AdminOperacao = window.AdminOperacao = {
@@ -608,16 +608,50 @@ const AdminOperacao = window.AdminOperacao = {
     });
   },
 
+  _colabKeysFromColaborador(c) {
+    const R = this._R?.();
+    if (R?.chavesColaboradorOperacional) return R.chavesColaboradorOperacional(c, "colaborador");
+    const keys = [];
+    const id = String(this._pick(c, "id", "ID", "Colaborador_id", "Matricula", "Matrícula") || "").trim();
+    const nome = this._norm(this._pick(c, "Nome", "Title", "Colaborador_nome"));
+    if (id) keys.push(`id:${id}`);
+    if (nome) keys.push(`nome:${nome}`);
+    return Array.from(new Set(keys));
+  },
+
+  _colabKeysFromPedido(p) {
+    const R = this._R?.();
+    if (R?.chavesColaboradorOperacional) return R.chavesColaboradorOperacional(p, "pedido");
+    const keys = [];
+    const id = String(this._pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId", "Matricula", "Matrícula") || "").trim();
+    const nome = this._norm(this._pick(p, "Colaborador_nome", "Colaborador", "Nome", "Title"));
+    if (id) keys.push(`id:${id}`);
+    if (nome) keys.push(`nome:${nome}`);
+    return Array.from(new Set(keys));
+  },
+
+  _adicionarChavesExistentes(set, obj, tipo) {
+    const keys = tipo === "pedido" ? this._colabKeysFromPedido(obj) : this._colabKeysFromColaborador(obj);
+    for (const k of keys) if (k) set.add(k);
+  },
+
   _incluirColaboradoresSemPedido(lista, colaboradores, ausencias, semanaId, dia) {
     const resultado = [...(lista || [])];
-    const existentes = new Set(resultado
-      .filter(p => !this._isExtraPedido(p) && !p._virtualExtra)
-      .map(p => this._colabKeyFromPedido(p)));
+
+    // v10.11 — A Operação precisa reconciliar por ID E por nome normalizado.
+    // Alguns pedidos legados de "Retorno automático de ausência" não trazem Colaborador_id,
+    // mas trazem o nome. Antes, isso deixava entrar também a linha virtual "Sem pedido",
+    // duplicando o colaborador inteiro na Operação do Dia.
+    const existentes = new Set();
+    for (const p of resultado) {
+      if (this._isExtraPedido(p) || p._virtualExtra) continue;
+      this._adicionarChavesExistentes(existentes, p, "pedido");
+    }
 
     for (const c of (colaboradores || [])) {
-      const key = this._colabKeyFromColaborador(c);
-      if (!key || key === "nome:") continue;
-      if (existentes.has(key)) continue;
+      const keys = this._colabKeysFromColaborador(c);
+      if (!keys.length) continue;
+      if (keys.some(k => existentes.has(k))) continue;
       if (this._colabAusenteNoDia(c, ausencias, semanaId, dia)) continue;
 
       const id = String(this._pick(c, "id", "ID", "Matricula", "Matrícula") || "").trim();
@@ -638,7 +672,7 @@ const AdminOperacao = window.AdminOperacao = {
         Origem: "Sem pedido",
         Observacao: "Colaborador ativo sem pedido para este dia. Ausências encerradas não bloqueiam a exibição."
       });
-      existentes.add(key);
+      for (const k of keys) existentes.add(k);
     }
 
     return resultado;
@@ -696,7 +730,20 @@ const AdminOperacao = window.AdminOperacao = {
     try {
       await SP.init();
       const dia = AdminUtils.getVal("operacaoDia") || AdminUtils.DIA_HOJE();
-      // v10.4 — somente leitura ao abrir a tela.
+      const R = this._R?.();
+
+      // v10.11 — dia com Fechamento Oficial ativo é congelado.
+      // A Operação não pode recriar pendentes, “sem pedido” ou retorno automático
+      // em um dia que já foi conferido e fechado pela Luana.
+      const fechamentoDia = await SP.getFechamentoDia?.(semanaId, dia).catch(() => null);
+      if (R?.operacaoDiaUsaFechamento?.(fechamentoDia)) {
+        this._lista = R.listaOperacaoPorFechamento?.(fechamentoDia) || [];
+        this._renderTotais(dia);
+        this._renderTabela();
+        return;
+      }
+
+      // v10.4+ — somente leitura ao abrir a tela.
       // Não chamar SP.repararIntegridadeSemana() aqui. Essa função pode gravar/cancelar
       // pedidos e só deve rodar por ação explícita da Luana/TI, com confirmação.
       let [pedidos, ausencias, colaboradoresAtivos] = await Promise.all([
@@ -729,6 +776,10 @@ const AdminOperacao = window.AdminOperacao = {
       // Colaborador ativo sem pedido precisa aparecer como Pendente.
       // Caso a ausência tenha encerrado ontem, ele volta a aparecer hoje.
       lista = this._incluirColaboradoresSemPedido(lista, colaboradoresAtivos, ausencias, semanaId, dia);
+
+      // Segurança final: uma única linha operacional por colaborador/dia.
+      // Extras e adicionais continuam independentes.
+      lista = this._deduplicarPedidosOperacao(lista);
 
       this._lista = lista;
 
@@ -798,7 +849,9 @@ const AdminOperacao = window.AdminOperacao = {
       const origem = this._esc(this._pick(p, "Origem", "tipo", "Tipo") || "Refeitório");
       const isEx = this._isExtraPedido(p);
       const isAus = this._isAusenteOperacao(p);
-      const disabled = p._virtualExtra ? "disabled title='Extra sem pedido espelho no SharePoint'" : "";
+      const disabled = p._snapshotFechamento
+        ? "disabled title='Dia fechado: reabra o fechamento para alterar'"
+        : (p._virtualExtra ? "disabled title='Extra sem pedido espelho no SharePoint'" : "");
       const nomeStyle = isAus ? ' style="color:#ff9a90;font-weight:700"' : (isEx ? ' style="color:#ffd36d;font-weight:700"' : "");
 
       return `<tr${isAus ? ' style="background:rgba(192,40,28,.055)"' : ""}>
