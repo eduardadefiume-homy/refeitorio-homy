@@ -1,5 +1,6 @@
 // admin-dashboard.js — Dashboard do Admin Homy
-// v: base-limpa-dashboard-v10-7-20260629
+// v: base-centralizada-dashboard-v10-14-20260630
+// Correção: liberação/prazo da marcação sempre usam a semana visualizada no Admin.
 
 const AdminDashboard = window.AdminDashboard = {
 
@@ -8,7 +9,7 @@ const AdminDashboard = window.AdminDashboard = {
       await SP.init();
       const resumo = await SP.getDashboardResumo(semanaId);
       this._renderCards(resumo);
-      this._renderToggleStatus(resumo);
+      this._renderToggleStatus(resumo, semanaId);
       this._renderExtrasHoje(resumo, semanaId);
       this._renderSemanaTable(resumo);
       this._renderAusencias(resumo, semanaId);
@@ -17,7 +18,7 @@ const AdminDashboard = window.AdminDashboard = {
       this._renderSetores(resumo);
       this._renderProximosDias(resumo);
       this._renderAlertas(resumo);
-      this._carregarPrazo();
+      this._carregarPrazo(semanaId);
       this._ensureTravamentoUI(semanaId);
       this._carregarResumoTravamento(semanaId).catch(e => console.warn("[Travamento] resumo ignorado:", e));
       AdminUtils.setTxt("semanaLabel", AdminState.getSemanaLabel());
@@ -42,7 +43,7 @@ const AdminDashboard = window.AdminDashboard = {
     AdminUtils.setTxt("dashSetoresHoje",   r.setoresHoje?.length ?? "—");
   },
 
-  async _renderToggleStatus() {
+  async _renderToggleStatus(r, semanaId) {
     const liberado  = await SP.isCardapioLiberado().catch(() => false);
     const cardapio  = await SP.getConfig("cardapio_visivel").catch(() => null);
     const cardapioV = SP.isTrue(cardapio);
@@ -53,8 +54,10 @@ const AdminDashboard = window.AdminDashboard = {
       tMarcacao.checked = liberado;
       tMarcacao.dataset.bound = "1";
       tMarcacao.addEventListener("change", async function () {
-        await SP.setMarcacaoLiberada(this.checked);
-        AdminUtils.toast(this.checked ? "Marcação liberada." : "Marcação bloqueada.", "success");
+        const semanaAtualAdmin = AdminState.getSemanaId();
+        await SP.setMarcacaoLiberada(this.checked, semanaAtualAdmin);
+        if (this.checked && typeof SP.setSemanaVisivelCardapio === "function") await SP.setSemanaVisivelCardapio(semanaAtualAdmin);
+        AdminUtils.toast(this.checked ? `Marcação liberada para ${semanaAtualAdmin}.` : "Marcação bloqueada.", "success");
         AdminUtils.setTxt("dashMarcacaoStatus", this.checked ? "Aberta" : "Fechada");
       });
     }
@@ -62,8 +65,9 @@ const AdminDashboard = window.AdminDashboard = {
       tCardapio.checked = cardapioV;
       tCardapio.dataset.bound = "1";
       tCardapio.addEventListener("change", async function () {
-        await SP.setCardapioVisivel(this.checked);
-        AdminUtils.toast(this.checked ? "Cardápio visível." : "Cardápio ocultado.", "success");
+        const semanaAtualAdmin = AdminState.getSemanaId();
+        await SP.setCardapioVisivel(this.checked, semanaAtualAdmin);
+        AdminUtils.toast(this.checked ? `Cardápio visível para ${semanaAtualAdmin}.` : "Cardápio ocultado.", "success");
         AdminUtils.setTxt("dashCardapioStatus", this.checked ? "Liberado" : "Bloqueado");
       });
     }
@@ -78,14 +82,18 @@ const AdminDashboard = window.AdminDashboard = {
         const data = AdminUtils.getVal("prazoData");
         const hora = AdminUtils.getVal("prazoHora") || "18:00";
         if (!data) { AdminUtils.toast("Informe a data limite.", "error"); return; }
-        await SP.setPrazoMarcacao(`${data}T${hora}:00`);
-        AdminUtils.toast("Prazo salvo.", "success");
+        const semanaAtualAdmin = AdminState.getSemanaId();
+        await SP.setPrazoMarcacao(`${data}T${hora}:00`, semanaAtualAdmin);
+        await SP.setSemanaAlvoMarcacao?.(semanaAtualAdmin);
+        await SP.setSemanaVisivelCardapio?.(semanaAtualAdmin);
+        AdminUtils.toast(`Prazo salvo para ${semanaAtualAdmin}.`, "success");
       });
     }
   },
 
-  async _carregarPrazo() {
-    const prazo = await SP.getPrazoMarcacao().catch(() => null);
+  async _carregarPrazo(semanaId = null) {
+    const alvo = semanaId || AdminState.getSemanaId();
+    const prazo = await SP.getPrazoMarcacao(alvo).catch(() => null);
     if (!prazo) return;
     const dt = new Date(prazo);
     AdminUtils.setVal("prazoData", dt.toISOString().slice(0, 10));
