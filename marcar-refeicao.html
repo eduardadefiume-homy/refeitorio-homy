@@ -271,9 +271,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("refeitorio-regras.js?v=base-centralizada-v10-7-20260629")
+      return loadScript("refeitorio-regras.js?v=base-centralizada-v10-9-20260629")
         .catch(function(){ console.warn("refeitorio-regras.js não carregou; usando fallback local."); })
-        .then(function(){ return loadScript("sharepoint.js?v=base-centralizada-v10-7-20260629"); });
+        .then(function(){ return loadScript("sharepoint.js?v=base-centralizada-v10-9-20260629"); });
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
