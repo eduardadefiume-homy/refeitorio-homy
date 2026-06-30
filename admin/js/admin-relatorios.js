@@ -1,6 +1,6 @@
 // ============================================================
 // admin-relatorios.js — Relatórios oficiais do Admin Homy
-// v: base-centralizada-v10-9-20260629
+// v: base-centralizada-v10-11-20260630
 //
 // Regra:
 // - Se houver Fechamento Diario Refeitorio no período, o relatório usa o fechamento.
