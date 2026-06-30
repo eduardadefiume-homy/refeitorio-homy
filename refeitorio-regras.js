@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-9-20260629
+// v: base-centralizada-v10-11-20260630
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -144,6 +144,29 @@
     if (id) return `id:${id}`;
     const nome = Regras.norm(Regras.getNome(obj));
     return nome ? `nome:${nome}` : "";
+  };
+
+  // Chaves equivalentes para reconciliar colaboradores entre listas diferentes.
+  // Importante: em Pedido, o campo id/ID é o ID do item do SharePoint, não o ID do colaborador.
+  // Por isso pedido usa Colaborador_id; colaborador cadastrado usa id/ID e também nome.
+  Regras.chavesColaboradorOperacional = function chavesColaboradorOperacional(obj, tipo = "auto") {
+    const chaves = [];
+    const isPedido = tipo === "pedido" || Regras.pick(obj, "Semana_id", "Dia", "Opcao", "Nome_Prato") !== "";
+
+    const id = isPedido
+      ? String(Regras.pick(obj, "Colaborador_id", "colaborador_id", "ColaboradorId", "colaboradorId", "Matricula", "Matrícula") || "").trim()
+      : String(Regras.pick(obj, "id", "ID", "Colaborador_id", "colaborador_id", "ColaboradorId", "colaboradorId", "Matricula", "Matrícula") || "").trim();
+
+    const nome = Regras.norm(Regras.getNome(obj));
+    if (id) chaves.push(`id:${id}`);
+    if (nome) chaves.push(`nome:${nome}`);
+    return Array.from(new Set(chaves));
+  };
+
+  Regras.mesmoColaboradorOperacional = function mesmoColaboradorOperacional(a, b, tipoA = "auto", tipoB = "auto") {
+    const ka = Regras.chavesColaboradorOperacional(a, tipoA);
+    const kb = new Set(Regras.chavesColaboradorOperacional(b, tipoB));
+    return ka.some(k => kb.has(k));
   };
 
   // ============================================================
@@ -815,6 +838,82 @@
     if (ab !== bb) return ab - bb;
     return Regras.timestampPedido(b) - Regras.timestampPedido(a);
   };
+
+
+
+  // ============================================================
+  // OPERAÇÃO DO DIA CONGELADA POR FECHAMENTO OFICIAL
+  // ============================================================
+  Regras.operacaoDiaUsaFechamento = function operacaoDiaUsaFechamento(fechamento) {
+    return !!fechamento && Regras.statusFechamentoAtivo(fechamento);
+  };
+
+  Regras.parseSnapshotFechamento = function parseSnapshotFechamento(fechamento) {
+    const raw = Regras.pick(fechamento, "Snapshot_JSON", "Snapshot", "Resumo_JSON") || "";
+    if (!raw) return null;
+    if (typeof raw === "object") return raw;
+    try {
+      return JSON.parse(String(raw));
+    } catch (_) {
+      return null;
+    }
+  };
+
+  Regras.itemSnapshotParaPedidoOperacao = function itemSnapshotParaPedidoOperacao(item, tipo, fechamento) {
+    const raw = item?.raw || item?.pedido || item || {};
+    const statusInformado = Regras.pick(item, "status", "Status") || Regras.pick(raw, "Status", "status");
+    const origemInformada = Regras.pick(item, "origem", "Origem") || Regras.pick(raw, "Origem", "origem") || (tipo === "incluido" ? "Fechamento Oficial" : "Fechamento Oficial - não produção");
+    const opcaoInformada = Regras.pick(item, "opcao", "Opcao") || Regras.pick(raw, "Opcao", "opcao") || "principal";
+
+    let status = statusInformado || (tipo === "incluido" ? "Confirmado" : "Não conta produção");
+    let nomePrato = Regras.pick(raw, "Nome_Prato", "NomePrato") || Regras.pick(item, "prato", "nomePrato") || "";
+
+    // Se o item estava fora da produção e veio de retorno automático legado,
+    // ele não deve aparecer como pendente em dia fechado. É histórico excluído.
+    if (tipo === "excluido" && Regras.isRetornoAutomaticoAusencia(raw)) {
+      status = "Retorno legado ignorado";
+      nomePrato = nomePrato || "Sem produção";
+    }
+
+    if (tipo === "excluido" && !nomePrato) nomePrato = status || "Não conta produção";
+    if (tipo === "incluido" && !nomePrato) nomePrato = "Prato Principal";
+
+    return {
+      ...raw,
+      id: String(Regras.pick(raw, "id", "ID") || Regras.pick(item, "pedidoId", "id", "ID") || ""),
+      Title: Regras.pick(raw, "Title") || Regras.pick(item, "title") || `${Regras.pick(fechamento, "Semana_id") || ""}-${Regras.pick(fechamento, "Dia") || ""}`,
+      Semana_id: Regras.pick(raw, "Semana_id") || Regras.pick(item, "semanaId") || Regras.pick(fechamento, "Semana_id"),
+      Dia: Regras.pick(raw, "Dia") || Regras.pick(item, "dia") || Regras.pick(fechamento, "Dia"),
+      Colaborador_id: Regras.pick(raw, "Colaborador_id", "ColaboradorId", "colaboradorId") || Regras.pick(item, "colaboradorId"),
+      Colaborador_nome: Regras.pick(raw, "Colaborador_nome", "Colaborador", "Nome", "Title") || Regras.pick(item, "colaboradorNome", "nome") || "Colaborador",
+      Centro_Custo: Regras.pick(raw, "Centro_Custo", "CentroCusto", "Setor", "Departamento") || Regras.pick(item, "centroCusto"),
+      Opcao: opcaoInformada || "principal",
+      Nome_Prato: nomePrato,
+      Status: status,
+      Confirmado: tipo === "incluido" ? true : false,
+      Origem: origemInformada,
+      Modified: Regras.pick(raw, "Modified", "modified") || Regras.pick(item, "modified") || Regras.pick(fechamento, "Fechado_Em", "Modified", "Created"),
+      _snapshotFechamento: true,
+      _snapshotTipo: tipo,
+      _fechamentoId: String(Regras.pick(fechamento, "id", "ID") || ""),
+      _contaProducaoSnapshot: tipo === "incluido"
+    };
+  };
+
+  Regras.listaOperacaoPorFechamento = function listaOperacaoPorFechamento(fechamento) {
+    if (!Regras.operacaoDiaUsaFechamento(fechamento)) return [];
+    const snapshot = Regras.parseSnapshotFechamento(fechamento);
+    if (!snapshot) return [];
+
+    const incluidos = Array.isArray(snapshot.incluidos) ? snapshot.incluidos : [];
+    const excluidos = Array.isArray(snapshot.excluidos) ? snapshot.excluidos : [];
+
+    return [
+      ...incluidos.map(item => Regras.itemSnapshotParaPedidoOperacao(item, "incluido", fechamento)),
+      ...excluidos.map(item => Regras.itemSnapshotParaPedidoOperacao(item, "excluido", fechamento))
+    ];
+  };
+
 
   // Exporta para browser e para testes em Node, sem dependências.
   global.HomyRefeitorioRegras = Regras;
