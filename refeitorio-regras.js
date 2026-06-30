@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-11-20260630
+// v: base-centralizada-v10-12-20260630
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -550,6 +550,83 @@
   };
 
   // ============================================================
+  // OPERAÇÃO DO DIA — RECONCILIAÇÃO DE LISTA VIVA
+  // ============================================================
+  Regras.isItemOperacaoEspecial = function isItemOperacaoEspecial(item) {
+    return Regras.isExtra(item) || Regras.isPedidoAdicionalColaborador(item) || !!item?._virtualExtra || !!item?._refeicaoAdicional;
+  };
+
+  Regras.scoreItemOperacao = function scoreItemOperacao(item) {
+    let score = 0;
+    const status = Regras.norm(Regras.getStatus(item));
+    const origem = Regras.norm(Regras.getOrigem(item));
+
+    if (Regras.getPedidoId(item)) score += 5;
+    if (Regras.isTravamentoAutomatico(item)) score += 900;
+    else if (Regras.pedidoEscolhaReal(item)) score += 850;
+    else if (Regras.pedidoAusente(item) || item?._virtualAusencia || item?._ausenciaOperacao) score += 700;
+    else if (item?._ausenciaEncerradaAguardandoMarcacao || origem.includes("ausencia encerrada")) score += 450;
+    else if (item?._virtualPendente || status === "pendente") score += 300;
+    else if (origem.includes("sem pedido")) score += 100;
+    if (Regras.isRetornoAutomaticoAusencia(item)) score -= 50;
+    if (Regras.pedidoCanceladoOuBloqueado(item)) score -= 500;
+    score += Math.min(Math.floor(Regras.timestampPedido(item) / 100000000000), 99);
+    return score;
+  };
+
+  Regras.preferirItemOperacao = function preferirItemOperacao(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    const sa = Regras.scoreItemOperacao(a);
+    const sb = Regras.scoreItemOperacao(b);
+    if (sa !== sb) return sa > sb ? a : b;
+    return Regras.timestampPedido(a) >= Regras.timestampPedido(b) ? a : b;
+  };
+
+  Regras.deduplicarListaOperacao = function deduplicarListaOperacao(lista = []) {
+    const especiais = [];
+    const grupos = [];
+
+    for (const item of lista || []) {
+      if (Regras.isItemOperacaoEspecial(item)) {
+        especiais.push(item);
+        continue;
+      }
+
+      const dia = Regras.norm(Regras.getDia(item));
+      const keys = Regras.chavesColaboradorOperacional(item, "pedido");
+      if (!keys.length) {
+        especiais.push(item);
+        continue;
+      }
+
+      let grupo = null;
+      for (const g of grupos) {
+        if (g.dia !== dia) continue;
+        if (keys.some(k => g.keys.has(k))) {
+          grupo = g;
+          break;
+        }
+      }
+      if (!grupo) {
+        grupo = { dia, keys: new Set(), item: null };
+        grupos.push(grupo);
+      }
+      for (const k of keys) grupo.keys.add(k);
+      grupo.item = Regras.preferirItemOperacao(grupo.item, item);
+    }
+
+    return [...especiais, ...grupos.map(g => g.item).filter(Boolean)];
+  };
+
+  Regras.existeColaboradorNaListaOperacao = function existeColaboradorNaListaOperacao(lista = [], colaborador) {
+    return (lista || []).some(item => {
+      if (Regras.isItemOperacaoEspecial(item)) return false;
+      return Regras.mesmoColaboradorOperacional(item, colaborador, "pedido", "colaborador");
+    });
+  };
+
+  // ============================================================
   // RESUMOS
   // ============================================================
   Regras.calcularResumoProducao = function calcularResumoProducao(pedidos, options = {}) {
@@ -743,19 +820,25 @@
       porDia,
       mensagem: semanaFechada
         ? "Semana fechada: relatório usa Fechamento Oficial."
-        : (temFechamento ? "Semana parcialmente fechada: travamento semanal bloqueado." : "Semana sem fechamento oficial.")
+        : (temFechamento ? "Semana parcialmente fechada: travamento será aplicado somente nos dias ainda abertos." : "Semana sem fechamento oficial.")
     };
+  };
+
+  Regras.diaFechadoNoTravamento = function diaFechadoNoTravamento(fechamentoSemana, dia) {
+    const d = Regras.norm(dia || "");
+    return !!(d && fechamentoSemana?.porDia && fechamentoSemana.porDia[d]);
   };
 
   Regras.motivoBloqueioTravamentoSemana = function motivoBloqueioTravamentoSemana(fechamentoSemana) {
     if (!fechamentoSemana?.temFechamento) return "";
-    return fechamentoSemana.semanaFechada
-      ? "Travamento bloqueado: semana já possui Fechamento Oficial. Use reabertura/auditoria, não travamento."
-      : "Travamento bloqueado: a semana já possui dia fechado. O travamento semanal só pode ocorrer antes do primeiro fechamento.";
+    if (fechamentoSemana.semanaFechada) {
+      return "Travamento bloqueado: todos os dias da semana já possuem Fechamento Oficial. Use reabertura/auditoria, não travamento.";
+    }
+    return "A semana possui dia(s) fechado(s). O travamento será aplicado somente nos dias ainda abertos.";
   };
 
   Regras.podeTravarSemana = function podeTravarSemana({ fechamentoSemana = null, prazoInfo = null, permitirAntesDoPrazo = false, ignorarFechamento = false } = {}) {
-    if (!ignorarFechamento && fechamentoSemana?.temFechamento) {
+    if (!ignorarFechamento && fechamentoSemana?.semanaFechada) {
       return { podeTravar: false, bloqueado: true, bloqueadoPorFechamento: true, bloqueadoPorPrazo: false, motivoBloqueio: Regras.motivoBloqueioTravamentoSemana(fechamentoSemana) };
     }
     const prazoConfigurado = !!prazoInfo?.prazoConfigurado;
