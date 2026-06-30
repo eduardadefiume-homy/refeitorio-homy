@@ -1,4 +1,4 @@
-// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.12
+// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.13
 // Regra: carregar Operação do Dia é somente leitura. Regras vêm de refeitorio-regras.js.
 
 const AdminOperacao = window.AdminOperacao = {
@@ -246,24 +246,12 @@ const AdminOperacao = window.AdminOperacao = {
         continue;
       }
 
-      // v10.6 — se só restou pedido antigo de ausência/retorno automático e
-      // a ausência não cobre mais o dia, a Operação mostra pendente.
-      // Principal só nasce pelo botão oficial de Travar pendentes.
-      const stale = grupo.sort((a,b)=>this._compararPedidoOperacao(b,a))[0];
-      saida.push(R?.criarPendenteAusenciaEncerrada
-        ? R.criarPendenteAusenciaEncerrada(stale)
-        : {
-            ...stale,
-            _virtualPendente: true,
-            _ausenciaEncerradaAguardandoMarcacao: true,
-            Status: "Pendente",
-            Confirmado: false,
-            Opcao: this._pick(stale,"Opcao","opcao") || "principal",
-            Nome_Prato: "Sem marcação",
-            Origem: "Ausência encerrada - aguardando marcação",
-            Observacao: "Ausência encerrada ou retorno automático legado. Colaborador liberado para escolher; Principal só será aplicado no travamento oficial se ninguém marcar."
-          }
-      );
+      // v10.13 — se só restou pedido antigo de ausência/retorno automático e
+      // a ausência não cobre mais o dia, a Operação NÃO exibe esse legado.
+      // O colaborador ativo será incluído depois como uma única linha "Sem pedido".
+      // O legado continua auditável em Pedidos/Integridade e pode ser regularizado
+      // pelo travamento oficial dos dias abertos, mas não pode gerar segunda linha.
+      continue;
     }
 
     return this._deduplicarPedidosOperacao(saida);
@@ -824,7 +812,11 @@ const AdminOperacao = window.AdminOperacao = {
     const statusFiltro = this._norm(AdminUtils.getVal("operacaoFiltroStatus"));
     const busca = this._norm(AdminUtils.getVal("operacaoBusca"));
 
-    let lista = this._lista;
+    // Segurança visual v10.13: a renderização também aplica a deduplicação central.
+    // Assim, mesmo se alguma ação alterar this._lista entre o carregamento e a renderização,
+    // a tabela nunca exibe duas linhas para o mesmo colaborador/dia.
+    let lista = this._deduplicarPedidosOperacao(this._lista || []);
+    this._lista = lista;
     if (statusFiltro) lista = lista.filter(p => this._norm(this._statusDisplay(p) || this._pick(p, "Status") || "") === statusFiltro);
     if (busca) lista = lista.filter(p => this._norm([
       this._pick(p, "Colaborador_nome", "Title", "Nome"),
