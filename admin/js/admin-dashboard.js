@@ -290,15 +290,12 @@ const AdminDashboard = window.AdminDashboard = {
       `${t.retornosAutomaticosLegados || 0} retorno(s) automático(s) legado(s)`,
       `${t.acoesTravamento || 0} ação(ões) de travamento`
     ];
+    const parcial = previa.fechamentoSemana?.temFechamento && !previa.fechamentoSemana?.semanaFechada;
     el.innerHTML = previa.bloqueado
       ? `⚠️ ${AdminUtils.esc(previa.motivoBloqueio || "Travamento bloqueado.")} · ${partes.join(" · ")}`
-      : `✅ Pronto para travar · ${partes.join(" · ")}`;
+      : `${parcial ? "ℹ️ Dias fechados serão ignorados · " : "✅ Pronto para travar · "}${partes.join(" · ")}`;
     if (btn) btn.disabled = !!previa.bloqueado || !Number(t.acoesTravamento || 0);
     if (btnPrevia) btnPrevia.disabled = false;
-    if (previa.fechamentoSemana?.temFechamento) {
-      el.innerHTML = `🔒 ${AdminUtils.esc(previa.fechamentoSemana.mensagem || previa.motivoBloqueio || "Semana com fechamento oficial.")} · Travamento semanal desabilitado.`;
-      if (btn) btn.disabled = true;
-    }
   },
 
   _ensureTravamentoModal() {
@@ -324,7 +321,7 @@ const AdminDashboard = window.AdminDashboard = {
     const dias = Object.values(previa.porDia || {});
     const acoes = previa.acoes || [];
     return `
-      ${previa.bloqueado ? `<div class="alert alert-warning">⚠️ ${esc(previa.motivoBloqueio || "Travamento bloqueado.")}</div>` : `<div class="alert alert-success">✅ Prévia pronta para travamento oficial.</div>`}
+      ${previa.bloqueado ? `<div class="alert alert-warning">⚠️ ${esc(previa.motivoBloqueio || "Travamento bloqueado.")}</div>` : `<div class="alert alert-success">✅ Prévia pronta para travamento oficial. ${previa.fechamentoSemana?.temFechamento && !previa.fechamentoSemana?.semanaFechada ? "Dias já fechados serão ignorados." : ""}</div>`}
       <div class="dashboard-mini-grid" style="margin-bottom:1rem">
         <div class="dashboard-mini-card"><div class="dashboard-mini-value">${esc(t.pendentesElegiveis || 0)}</div><div class="dashboard-mini-label">Pendentes elegíveis</div></div>
         <div class="dashboard-mini-card"><div class="dashboard-mini-value">${esc(t.acoesTravamento || 0)}</div><div class="dashboard-mini-label">Ações</div></div>
@@ -377,7 +374,7 @@ const AdminDashboard = window.AdminDashboard = {
         await this.abrirPreviaTravamento();
         return;
       }
-      const msg = `Travar pendentes da semana ${semanaId}?\n\nAções: ${total}\nAusentes ignorados: ${previa.totais?.ausentesIgnorados || 0}\nRetornos automáticos legados convertidos: ${previa.totais?.retornosAutomaticosLegados || 0}\n\nO sistema aplicará Principal/Travado apenas para colaboradores disponíveis que perderam o prazo.`;
+      const msg = `Travar pendentes dos dias abertos da semana ${semanaId}?\n\nAções: ${total}\nAusentes ignorados: ${previa.totais?.ausentesIgnorados || 0}\nRetornos automáticos legados convertidos: ${previa.totais?.retornosAutomaticosLegados || 0}\n\nO sistema aplicará Principal/Travado apenas para colaboradores disponíveis que perderam o prazo e somente em dias ainda abertos.`;
       if (!confirm(msg)) return;
       const r = await SP.aplicarTravamentoPendentesSemana(semanaId, { previa, confirmacaoExplicita: true });
       AdminUtils.toast(`Travamento concluído: ${r.total || 0} registro(s).`, "success");
@@ -396,7 +393,7 @@ const AdminDashboard = window.AdminDashboard = {
     if (r.semanaFechada) {
       itens.push(`✅ Semana fechada — relatórios usam Fechamento Oficial.`);
     } else if (r.semanaTemFechamento) {
-      itens.push(`⚠️ Semana parcialmente fechada — travamento semanal bloqueado; use reabertura/auditoria para ajustes.`);
+      itens.push(`ℹ️ Semana parcialmente fechada — dias fechados ficam congelados; travamento atua só nos dias abertos.`);
     }
     if (!r.semanaFechada && r.pendentesColaboradores > 0)
       itens.push(`⚠️ ${r.pendentesColaboradores} colaboradores ainda não marcaram.`);
