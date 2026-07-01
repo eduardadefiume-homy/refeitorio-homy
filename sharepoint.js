@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-12-20260630
+// v: base-centralizada-v10-17-20260701
 // ============================================================
 
 const SP = {
@@ -3573,12 +3573,16 @@ const SP = {
   },
 
   _normalizarResumoCorrecao(resumo = {}) {
+    const R = this._R?.();
+    if (R?.normalizarResumoCorrecao) return R.normalizarResumoCorrecao(resumo);
     const out = this._resumoCorrecaoVazio();
     for (const k of Object.keys(out)) out[k] = Number(resumo?.[k] || 0);
     return out;
   },
 
   _deltaResumoCorrecao(atual = {}, alvo = {}) {
+    const R = this._R?.();
+    if (R?.deltaResumoCorrecao) return R.deltaResumoCorrecao(atual, alvo);
     const a = this._normalizarResumoCorrecao(atual);
     const b = this._normalizarResumoCorrecao(alvo);
     return {
@@ -3592,11 +3596,15 @@ const SP = {
   },
 
   _resumoBateCorrecao(atual = {}, alvo = {}) {
+    const R = this._R?.();
+    if (R?.resumoBateCorrecao) return R.resumoBateCorrecao(atual, alvo);
     const d = this._deltaResumoCorrecao(atual, alvo);
     return ["total", "principal", "light", "carne", "massa", "lanche"].every(k => Number(d[k] || 0) === 0);
   },
 
   _aplicarDeltaResumoCorrecao(resumo, delta = {}) {
+    const R = this._R?.();
+    if (R?.aplicarDeltaResumoCorrecao) return R.aplicarDeltaResumoCorrecao(resumo, delta);
     const r = this._normalizarResumoCorrecao(resumo);
     for (const k of ["total", "principal", "light", "carne", "massa", "lanche", "outros", "semOpcao"]) {
       if (delta[k]) r[k] = Number(r[k] || 0) + Number(delta[k] || 0);
@@ -3605,6 +3613,8 @@ const SP = {
   },
 
   _opcaoDeltaCorrecao(opcao) {
+    const R = this._R?.();
+    if (R?.opcaoCorrecao) return R.opcaoCorrecao(opcao);
     const op = this._opcaoResumoFechamento ? this._opcaoResumoFechamento(opcao) : this.norm(opcao || "principal");
     return ["principal", "light", "carne", "massa", "lanche"].includes(op) ? op : "outros";
   },
@@ -3619,6 +3629,8 @@ const SP = {
   },
 
   _acaoCancelarPedidoCorrecao(item, motivo, justificativa, manterId = "") {
+    const R = this._R?.();
+    if (R?.criarAcaoCancelarPedidoCorrecao) return R.criarAcaoCancelarPedidoCorrecao(item, motivo, justificativa, manterId);
     const opcao = this._opcaoDeltaCorrecao(item.opcao || "principal");
     const delta = { total: -1 };
     delta[opcao] = -1;
@@ -3640,20 +3652,22 @@ const SP = {
       camposSugeridos: {
         Status: "Cancelado",
         Confirmado: false,
-        Origem: "Correção de integridade",
-        Observacao: `Correção de integridade: ${justificativa}`
+        Origem: "Duplicidade inativada",
+        Observacao: `Correção assistida: ${justificativa}`
       },
       pedido: item
     };
   },
 
   _acaoReativarPedidoCorrecao(item, motivo, justificativa) {
+    const R = this._R?.();
+    if (R?.criarAcaoReativarPedidoCorrecao) return R.criarAcaoReativarPedidoCorrecao(item, motivo, justificativa);
     const opcao = this._opcaoDeltaCorrecao(item.opcao || "principal");
     const delta = { total: 1 };
     delta[opcao] = 1;
     return {
       acao: "reativar",
-      autoAplicavel: true,
+      autoAplicavel: false,
       motivo,
       pedidoId: String(item.pedidoId || ""),
       nome: item.colaboradorNome || item.nome || "",
@@ -3670,13 +3684,15 @@ const SP = {
         Confirmado: true,
         Opcao: opcao === "outros" ? (item.opcao || "principal") : opcao,
         Origem: "Correção de integridade",
-        Observacao: `Correção de integridade: ${justificativa}`
+        Observacao: `Correção assistida: ${justificativa}`
       },
       pedido: item
     };
   },
 
   _acaoRevisarCorrecao(dia, opcao, quantidade, justificativa, candidatos = []) {
+    const R = this._R?.();
+    if (R?.criarAcaoRevisarCorrecao) return R.criarAcaoRevisarCorrecao(dia, opcao, quantidade, justificativa, candidatos);
     return {
       acao: "revisar",
       autoAplicavel: false,
@@ -3691,6 +3707,8 @@ const SP = {
   },
 
   _selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas = []) {
+    const R = this._R?.();
+    if (R?.selecionarAcoesQueAproximamCorrecao) return R.selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
     let simulado = this._normalizarResumoCorrecao(atual);
     const selecionadas = [];
 
@@ -3790,6 +3808,8 @@ const SP = {
   },
 
   _candidatasCorrecaoDia(calc, alvo, dia) {
+    const R = this._R?.();
+    if (R?.gerarCandidatasCorrecaoDia) return R.gerarCandidatasCorrecaoDia(calc, alvo, dia);
     const incluidos = calc?.incluidos || [];
     const excluidos = calc?.excluidos || [];
     const candidatas = [];
@@ -3861,53 +3881,34 @@ const SP = {
       if (!ref) continue;
 
       const calc = this._calcularFechamentoPorPedidos(semanaId, dia, pedidos || []);
-      const atual = this._normalizarResumoCorrecao(calc.resumo);
-      const alvo = this._normalizarResumoCorrecao(ref.valores);
-      const deltaInicial = this._deltaResumoCorrecao(atual, alvo);
-      const candidatas = this._candidatasCorrecaoDia(calc, alvo, dia);
-      const { selecionadas, simulado } = this._selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
-      const deltaFinal = this._deltaResumoCorrecao(simulado, alvo);
-      const fechaExato = this._resumoBateCorrecao(simulado, alvo);
-      const jaBate = this._resumoBateCorrecao(atual, alvo);
+      const R = this._R?.();
+      const diaPlano = R?.gerarPlanoCorrecaoDia
+        ? R.gerarPlanoCorrecaoDia({
+            semanaId,
+            dia,
+            dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "",
+            calc,
+            referencia: ref
+          })
+        : (() => {
+            const atual = this._normalizarResumoCorrecao(calc.resumo);
+            const alvo = this._normalizarResumoCorrecao(ref.valores);
+            const deltaInicial = this._deltaResumoCorrecao(atual, alvo);
+            const candidatas = this._candidatasCorrecaoDia(calc, alvo, dia);
+            const { selecionadas, simulado } = this._selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
+            const deltaFinal = this._deltaResumoCorrecao(simulado, alvo);
+            const fechaExato = this._resumoBateCorrecao(simulado, alvo);
+            const jaBate = this._resumoBateCorrecao(atual, alvo);
+            return { semanaId, dia, dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "", referencia: ref, atual, alvo, deltaInicial, candidatas, acoesSeguras: selecionadas, revisoes: [], simulado, deltaFinal, jaBate, fechaExato, status: jaBate ? "ok" : (fechaExato ? "corrigivel" : (selecionadas.length ? "parcial" : "revisao")), mensagem: jaBate ? "Base atual já bate com a referência." : (fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.") };
+          })();
 
-      const revisoes = [];
-      for (const op of ["principal", "light", "carne", "massa", "lanche"]) {
-        const sobra = Number(deltaFinal[op] || 0);
-        if (sobra > 0) {
-          const candidatos = (calc.incluidos || []).filter(i => this._opcaoDeltaCorrecao(i.opcao || "principal") === op);
-          revisoes.push(this._acaoRevisarCorrecao(dia, op, sobra, `Ainda sobram ${sobra} ${op} após aplicar as ações seguras.`, candidatos));
-        }
-        if (sobra < 0) {
-          revisoes.push(this._acaoRevisarCorrecao(dia, op, Math.abs(sobra), `Ainda faltam ${Math.abs(sobra)} ${op} após aplicar as ações seguras.`, []));
-        }
-      }
-
-      dias.push({
-        semanaId,
-        dia,
-        dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "",
-        referencia: ref,
-        atual,
-        alvo,
-        deltaInicial,
-        candidatas,
-        acoesSeguras: selecionadas,
-        revisoes,
-        simulado,
-        deltaFinal,
-        jaBate,
-        fechaExato,
-        status: jaBate ? "ok" : (fechaExato ? "corrigivel" : (selecionadas.length ? "parcial" : "revisao")),
-        mensagem: jaBate
-          ? "Base atual já bate com a referência."
-          : (fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.")
-      });
+      dias.push(diaPlano);
     }
 
     const plano = {
       semanaId,
       geradoEm: new Date().toISOString(),
-      status: "somente-leitura",
+      status: "previa-correcao-assistida",
       dias,
       totais: {
         dias: dias.length,
@@ -3940,11 +3941,14 @@ const SP = {
       }
 
       for (const acao of (diaPlano.acoesSeguras || [])) {
+        const R = this._R?.();
+        if (R?.podeAplicarAcaoCorrecao && !R.podeAplicarAcaoCorrecao(acao)) continue;
         if (!acao.autoAplicavel || !acao.pedidoId) continue;
         const pedidoAntes = (await this.getItems("Pedidos", { force: true }).catch(() => []))
           .find(p => String(this.pick(p, "id", "ID") || "") === String(acao.pedidoId));
 
         const fields = { ...(acao.camposSugeridos || {}) };
+        fields.Alterado_Por = this.getUserName ? this.getUserName() : "Correção Assistida";
         const atualizado = await this.updateItem("Pedidos", acao.pedidoId, fields);
 
         await this.registrarAuditoriaRefeitorio({
