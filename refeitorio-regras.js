@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-18-20260701
+// v: base-centralizada-v10-19-20260701
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -1172,18 +1172,47 @@
       gruposExtras.get(key).push(item);
     }
 
+    const idsCandidatos = new Set();
+    const addCandidata = (acao) => {
+      const id = String(acao?.pedidoId || "").trim();
+      if (!id || idsCandidatos.has(id)) return;
+      idsCandidatos.add(id);
+      candidatas.push(acao);
+    };
+
     for (const grupo of gruposExtras.values()) {
       if (grupo.length <= 1) continue;
       const ordenado = [...grupo].sort(Regras.compararPedidoManterCorrecao);
       const manter = ordenado[0];
       for (const dup of ordenado.slice(1)) {
-        candidatas.push(Regras.criarAcaoCancelarPedidoCorrecao(
+        addCandidata(Regras.criarAcaoCancelarPedidoCorrecao(
           dup,
           "extra-duplicado",
           `Duplicidade de ${dup.categoria || "pedido especial"}: manter ID ${manter.pedidoId} e cancelar este registro.`,
           manter.pedidoId
         ));
       }
+    }
+
+    // 1.1) Duplicidades especiais que o fechamento já ignorou.
+    // Elas não aparecem em "incluidos" porque já foram excluídas da produção,
+    // mas continuam sujando Pedidos/Integridade/Relatórios brutos. Podem ser
+    // canceladas com segurança sem alterar o total simulado do dia.
+    for (const item of excluidos) {
+      if (!Regras.pedidoEspecialLimpezaCorrecao(item)) continue;
+      const motivoItem = Regras.norm(item?.motivo || item?.justificativa || "");
+      if (!motivoItem.includes("duplicado") && !motivoItem.includes("duplicidade")) continue;
+      const manterMatch = String(item?.motivo || "").match(/Mantido:\s*([0-9]+)/i);
+      const manterId = manterMatch?.[1] || item?.manterId || "";
+      const acao = Regras.criarAcaoCancelarPedidoCorrecao(
+        item,
+        "extra-duplicado",
+        `Duplicidade de ${item.categoria || "pedido especial"}: registro já ignorado no fechamento; cancelar para limpar a base.`,
+        manterId
+      );
+      acao.delta = { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, outros: 0, semOpcao: 0 };
+      acao.naoAlteraResumo = true;
+      addCandidata(acao);
     }
 
     // 2) Retorno automático legado ainda contado em produção: cancelar.
