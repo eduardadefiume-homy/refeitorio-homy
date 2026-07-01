@@ -1,6 +1,6 @@
 // ============================================================
 // admin-correcao-integridade.js — Correção Assistida · Admin Homy
-// v: base-limpa-correcao-v10-4-20260629
+// v: base-centralizada-correcao-v10-17-20260701
 //
 // Carregar depois de admin-fechamento.js e admin-operacao-dia.js.
 // Não executa correção automática. Só aplica após confirmação explícita.
@@ -117,7 +117,7 @@
         await SP.init();
         const semanaId = options.semanaId || this._semanaAtual();
         const dia = options.dia || this._diaAtual();
-        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { dia: options.todos ? null : dia });
+        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { dia: options.todos ? null : dia, force: true });
         this._ultimoPlano = plano;
         this._abrirModal(this._renderPlano(plano));
       } catch (e) {
@@ -130,7 +130,7 @@
       try {
         await SP.init();
         const semanaId = this._semanaAtual();
-        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId);
+        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { force: true });
         this._ultimoPlano = plano;
         this._abrirModal(this._renderPlano(plano));
       } catch (e) {
@@ -167,7 +167,9 @@
       const plano = this._ultimoPlano;
       const total = Number(plano?.totais?.acoesSeguras || 0);
       if (!total) return this._toast("Não há ações seguras para aplicar.", "warning");
-      if (!confirm(`Aplicar todas as ações seguras da semana?\n\nTotal de ações: ${total}\n\nAs pendências de revisão não serão aplicadas.`)) return;
+      if (!confirm(`Aplicar todas as ações seguras da semana?
+
+Somente cancelamentos seguros serão executados. Reativações e revisões não serão aplicadas automaticamente.\n\nTotal de ações: ${total}\n\nAs pendências de revisão não serão aplicadas.`)) return;
 
       try {
         await SP.init();
@@ -225,7 +227,7 @@
           <div class="correcao-modal-head">
             <div>
               <div class="correcao-modal-title">Correção Assistida</div>
-              <div class="correcao-modal-sub">Ações em lote com simulação e auditoria. Nada é aplicado sem confirmação.</div>
+              <div class="correcao-modal-sub">Limpeza assistida com regra central, simulação e auditoria. Nada é aplicado sem confirmação.</div>
             </div>
             <button class="correcao-modal-x" onclick="AdminCorrecaoIntegridade.fecharModal()">×</button>
           </div>
