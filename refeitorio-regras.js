@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-17-20260701
+// v: base-centralizada-v10-18-20260701
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -1249,31 +1249,72 @@
 
   Regras.gerarPlanoCorrecaoDia = function gerarPlanoCorrecaoDia({ semanaId, dia, dataOperacao, calc, referencia }) {
     const atual = Regras.normalizarResumoCorrecao(calc?.resumo || {});
-    const alvo = Regras.normalizarResumoCorrecao(referencia?.valores || referencia || {});
+    const temReferencia = !!(referencia && !referencia.semReferencia && !referencia.semReferenciaOperacional);
+    const candidatas = Regras.gerarCandidatasCorrecaoDia(calc, temReferencia ? (referencia?.valores || referencia || {}) : atual, dia);
+
+    let alvo = temReferencia
+      ? Regras.normalizarResumoCorrecao(referencia?.valores || referencia || {})
+      : Regras.normalizarResumoCorrecao(atual);
+    let selecionadas = [];
+    let simulado = Regras.normalizarResumoCorrecao(atual);
+    let revisoes = [];
+
+    if (temReferencia) {
+      const r = Regras.selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
+      selecionadas = r.selecionadas || [];
+      simulado = r.simulado || Regras.normalizarResumoCorrecao(atual);
+      revisoes = [...(r.revisoes || [])];
+
+      for (const op of ["principal", "light", "carne", "massa", "lanche"]) {
+        const sobra = Number(Regras.deltaResumoCorrecao(simulado, alvo)?.[op] || 0);
+        if (sobra > 0) {
+          const candidatos = (calc?.incluidos || []).filter(i => Regras.opcaoCorrecao(i.opcao || "principal") === op);
+          revisoes.push(Regras.criarAcaoRevisarCorrecao(dia, op, sobra, `Ainda sobram ${sobra} ${op} após aplicar as ações seguras.`, candidatos));
+        }
+        if (sobra < 0) {
+          revisoes.push(Regras.criarAcaoRevisarCorrecao(dia, op, Math.abs(sobra), `Ainda faltam ${Math.abs(sobra)} ${op} após aplicar as ações seguras.`, []));
+        }
+      }
+    } else {
+      // Sem fechamento oficial/referência histórica: só é autoaplicável o que a regra
+      // identifica como duplicidade objetiva de pedido especial. Não se mexe em
+      // colaboradores, férias, não-vai-almoçar, travamento, retorno automático ou check-in.
+      selecionadas = (candidatas || []).filter(a =>
+        a?.acao === "cancelar" &&
+        a?.autoAplicavel === true &&
+        a?.motivo === "extra-duplicado" &&
+        a?.pedidoId
+      );
+
+      simulado = Regras.normalizarResumoCorrecao(atual);
+      for (const acao of selecionadas) {
+        simulado = Regras.aplicarDeltaResumoCorrecao(simulado, acao.delta || {});
+      }
+
+      // Para limpeza sem referência, o alvo é o próprio resultado limpo simulado.
+      // Assim o painel mostra exatamente o impacto da limpeza, sem inventar referência.
+      alvo = Regras.normalizarResumoCorrecao(simulado);
+      revisoes = [];
+    }
+
     const deltaInicial = Regras.deltaResumoCorrecao(atual, alvo);
-    const candidatas = Regras.gerarCandidatasCorrecaoDia(calc, alvo, dia);
-    const { selecionadas, simulado, revisoes: revisoesCandidatas } = Regras.selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
     const deltaFinal = Regras.deltaResumoCorrecao(simulado, alvo);
     const fechaExato = Regras.resumoBateCorrecao(simulado, alvo);
-    const jaBate = Regras.resumoBateCorrecao(atual, alvo);
-
-    const revisoes = [...(revisoesCandidatas || [])];
-    for (const op of ["principal", "light", "carne", "massa", "lanche"]) {
-      const sobra = Number(deltaFinal[op] || 0);
-      if (sobra > 0) {
-        const candidatos = (calc?.incluidos || []).filter(i => Regras.opcaoCorrecao(i.opcao || "principal") === op);
-        revisoes.push(Regras.criarAcaoRevisarCorrecao(dia, op, sobra, `Ainda sobram ${sobra} ${op} após aplicar as ações seguras.`, candidatos));
-      }
-      if (sobra < 0) {
-        revisoes.push(Regras.criarAcaoRevisarCorrecao(dia, op, Math.abs(sobra), `Ainda faltam ${Math.abs(sobra)} ${op} após aplicar as ações seguras.`, []));
-      }
-    }
+    const jaBate = Regras.resumoBateCorrecao(atual, alvo) && !selecionadas.length;
+    const refFinal = temReferencia
+      ? referencia
+      : {
+          tipo: "limpeza-segura-sem-referencia",
+          fonte: "Limpeza segura por regra central",
+          semReferencia: true,
+          valores: alvo
+        };
 
     return {
       semanaId,
       dia,
       dataOperacao: dataOperacao || "",
-      referencia,
+      referencia: refFinal,
       atual,
       alvo,
       deltaInicial,
@@ -1284,12 +1325,20 @@
       deltaFinal,
       jaBate,
       fechaExato,
-      status: jaBate ? "ok" : (fechaExato ? "corrigivel" : (selecionadas.length ? "parcial" : "revisao")),
+      semReferencia: !temReferencia,
+      status: jaBate
+        ? "ok"
+        : (temReferencia
+            ? (fechaExato ? "corrigivel" : (selecionadas.length ? "parcial" : "revisao"))
+            : (selecionadas.length ? "corrigivel-sem-referencia" : "ok")),
       mensagem: jaBate
-        ? "Base atual já bate com a referência."
-        : (fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.")
+        ? "Base atual já está limpa para este dia."
+        : (temReferencia
+            ? (fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.")
+            : "Duplicidade objetiva encontrada. A limpeza é segura mesmo sem fechamento oficial como referência.")
     };
   };
+
 
   Regras.podeAplicarAcaoCorrecao = function podeAplicarAcaoCorrecao(acao) {
     if (!acao || !acao.autoAplicavel || !acao.pedidoId) return false;
