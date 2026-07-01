@@ -1,6 +1,6 @@
 // ============================================================
 // admin-correcao-integridade.js — Correção Assistida · Admin Homy
-// v: base-centralizada-correcao-v10-17-20260701
+// v: base-centralizada-correcao-v10-18-20260701
 //
 // Carregar depois de admin-fechamento.js e admin-operacao-dia.js.
 // Não executa correção automática. Só aplica após confirmação explícita.
@@ -45,8 +45,15 @@
       }
     },
 
-    _semanaAtual() {
-      return this._semanaId || global.AdminFechamento?._semanaAtual?.() || global.AdminState?.semanaId || global.AdminCore?.semanaId || global.SP?.getCurrentWeekId?.() || "";
+    _semanaAtual(preferida = "") {
+      return preferida ||
+        this._ultimoPlano?.semanaId ||
+        global.AdminIntegridade?._ultimoResultado?.semanaId ||
+        this._semanaId ||
+        global.AdminFechamento?._semanaAtual?.() ||
+        global.AdminState?.semanaId ||
+        global.AdminCore?.semanaId ||
+        global.SP?.getCurrentWeekId?.() || "";
     },
 
     _diaAtual() {
@@ -126,11 +133,13 @@
       }
     },
 
-    async abrirSemana() {
+    async abrirSemana(semanaIdForcado = "") {
       try {
         await SP.init();
-        const semanaId = this._semanaAtual();
-        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { force: true });
+        const semanaId = this._semanaAtual(semanaIdForcado);
+        if (!semanaId) throw new Error("Semana não identificada para correção assistida.");
+        this._semanaId = semanaId;
+        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { dia: null, force: true, incluirSemReferencia: true });
         this._ultimoPlano = plano;
         this._abrirModal(this._renderPlano(plano));
       } catch (e) {
@@ -156,7 +165,7 @@
         const r = await SP.aplicarPlanoCorrecaoAssistida(diaPlano, { aplicarParcial: true });
         this._toast(`Correção aplicada: ${r.total || 0} ação(ões).`, "success");
         await this._recarregarTelas();
-        await this.abrir({ dia });
+        await this.abrirSemana(plano?.semanaId || "");
       } catch (e) {
         console.error("[Correção Assistida]", e);
         this._toast("Erro ao aplicar correção: " + (e.message || e), "error");
@@ -278,7 +287,7 @@ Somente cancelamentos seguros serão executados. Reativações e revisões não 
       const dias = plano?.dias || [];
       const header = `
         <div class="correcao-toolbar">
-          <button class="btn-secondary" onclick="AdminCorrecaoIntegridade.abrirSemana()">Ver semana inteira</button>
+          <button class="btn-secondary" onclick="AdminCorrecaoIntegridade.abrirSemana('${esc(plano?.semanaId || "")}')">Ver semana inteira</button>
           <button class="btn-secondary" onclick="AdminCorrecaoIntegridade.baixarPlano()">Baixar plano JSON</button>
           <button class="btn-danger" onclick="AdminCorrecaoIntegridade.aplicarSemanaSegura()" ${Number(plano?.totais?.acoesSeguras || 0) ? "" : "disabled"}>Aplicar ações seguras da semana</button>
         </div>
