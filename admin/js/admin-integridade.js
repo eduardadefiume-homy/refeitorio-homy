@@ -1,6 +1,6 @@
 // ============================================================
 // admin-integridade.js — Integridade dos Dados · Admin Homy
-// v: base-centralizada-integridade-v10-17-20260701
+// v: base-centralizada-integridade-v10-18-20260701
 //
 // Objetivo:
 // - Ler dados reais do SharePoint via SP/sharepoint.js.
@@ -320,7 +320,7 @@
     async abrirCorrecaoAssistida() {
       try {
         if (global.AdminCorrecaoIntegridade?.abrirSemana) {
-          await global.AdminCorrecaoIntegridade.abrirSemana();
+          await global.AdminCorrecaoIntegridade.abrirSemana(this._ultimoResultado?.semanaId || "");
           return;
         }
         this._toast("Módulo de Correção Assistida ainda não carregado. Recarregue o Admin e tente novamente.", "warning");
