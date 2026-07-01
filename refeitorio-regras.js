@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-13-20260630
+// v: base-centralizada-v10-17-20260701
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -996,6 +996,305 @@
       ...incluidos.map(item => Regras.itemSnapshotParaPedidoOperacao(item, "incluido", fechamento)),
       ...excluidos.map(item => Regras.itemSnapshotParaPedidoOperacao(item, "excluido", fechamento))
     ];
+  };
+
+
+  // ============================================================
+  // INTEGRIDADE / LIMPEZA ASSISTIDA — REGRAS CENTRAIS
+  // ============================================================
+  // Estas funções NÃO acessam SharePoint e NÃO gravam dados.
+  // Elas só decidem: o que é sujeira, o que pode ser aplicado com segurança,
+  // qual registro manter, qual cancelar e o que deve ficar para revisão.
+
+  Regras.resumoCorrecaoVazio = function resumoCorrecaoVazio() {
+    return { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, outros: 0, semOpcao: 0 };
+  };
+
+  Regras.normalizarResumoCorrecao = function normalizarResumoCorrecao(resumo = {}) {
+    const out = Regras.resumoCorrecaoVazio();
+    for (const k of Object.keys(out)) out[k] = Number(resumo?.[k] || 0);
+    return out;
+  };
+
+  Regras.deltaResumoCorrecao = function deltaResumoCorrecao(atual = {}, alvo = {}) {
+    const a = Regras.normalizarResumoCorrecao(atual);
+    const b = Regras.normalizarResumoCorrecao(alvo);
+    return {
+      total: a.total - b.total,
+      principal: a.principal - b.principal,
+      light: a.light - b.light,
+      carne: a.carne - b.carne,
+      massa: a.massa - b.massa,
+      lanche: a.lanche - b.lanche
+    };
+  };
+
+  Regras.resumoBateCorrecao = function resumoBateCorrecao(atual = {}, alvo = {}) {
+    const d = Regras.deltaResumoCorrecao(atual, alvo);
+    return ["total", "principal", "light", "carne", "massa", "lanche"].every(k => Number(d[k] || 0) === 0);
+  };
+
+  Regras.aplicarDeltaResumoCorrecao = function aplicarDeltaResumoCorrecao(resumo = {}, delta = {}) {
+    const r = Regras.normalizarResumoCorrecao(resumo);
+    for (const k of ["total", "principal", "light", "carne", "massa", "lanche", "outros", "semOpcao"]) {
+      if (delta[k]) r[k] = Number(r[k] || 0) + Number(delta[k] || 0);
+    }
+    return r;
+  };
+
+  Regras.opcaoCorrecao = function opcaoCorrecao(opcao) {
+    const op = Regras.norm(opcao || "principal");
+    if (op.includes("carne")) return "carne";
+    if (op.includes("light") || op.includes("salada")) return "light";
+    if (op.includes("massa")) return "massa";
+    if (op.includes("lanche")) return "lanche";
+    if (op.includes("principal")) return "principal";
+    return ["principal", "light", "carne", "massa", "lanche"].includes(op) ? op : "outros";
+  };
+
+  Regras._observacaoCorrecao = function _observacaoCorrecao(item, texto) {
+    const raw = item?.raw || item?.pedido || {};
+    const anterior = Regras.pick(raw, "Observacao", "Observação", "observacao", "Obs") || item?.observacao || "";
+    const complemento = `Correção assistida: ${texto}`;
+    if (!anterior) return complemento;
+    if (Regras.norm(anterior).includes(Regras.norm(complemento))) return anterior;
+    return `${anterior} | ${complemento}`;
+  };
+
+  Regras.criarAcaoCancelarPedidoCorrecao = function criarAcaoCancelarPedidoCorrecao(item, motivo, justificativa, manterId = "") {
+    const opcao = Regras.opcaoCorrecao(item?.opcao || Regras.getOpcao(item) || "principal");
+    const delta = { total: -1 };
+    delta[opcao] = -1;
+    const textoObs = manterId
+      ? `${justificativa} Mantido o registro ${manterId}.`
+      : justificativa;
+    return {
+      acao: "cancelar",
+      autoAplicavel: true,
+      motivo,
+      pedidoId: String(item?.pedidoId || Regras.getPedidoId(item?.raw || item?.pedido || item) || ""),
+      nome: item?.colaboradorNome || item?.nome || Regras.getNome(item?.raw || item?.pedido || item) || "",
+      dia: item?.dia || Regras.getDia(item?.raw || item?.pedido || item) || "",
+      opcao,
+      statusAtual: item?.status || Regras.getStatus(item?.raw || item?.pedido || item) || "",
+      confirmadoAtual: !!item?.confirmado,
+      origemAtual: item?.origem || Regras.getOrigem(item?.raw || item?.pedido || item) || "",
+      categoria: item?.categoria || "outro",
+      manterId: manterId || "",
+      delta,
+      justificativa,
+      camposSugeridos: {
+        Status: "Cancelado",
+        Confirmado: false,
+        Origem: motivo === "retorno-automatico-legado-regularizado" ? "Retorno automático legado inativado" : "Duplicidade inativada",
+        Observacao: Regras._observacaoCorrecao(item, textoObs)
+      },
+      pedido: item
+    };
+  };
+
+  Regras.criarAcaoReativarPedidoCorrecao = function criarAcaoReativarPedidoCorrecao(item, motivo, justificativa) {
+    const opcao = Regras.opcaoCorrecao(item?.opcao || Regras.getOpcao(item) || "principal");
+    const delta = { total: 1 };
+    delta[opcao] = 1;
+    return {
+      acao: "reativar",
+      autoAplicavel: false,
+      motivo,
+      pedidoId: String(item?.pedidoId || Regras.getPedidoId(item?.raw || item?.pedido || item) || ""),
+      nome: item?.colaboradorNome || item?.nome || Regras.getNome(item?.raw || item?.pedido || item) || "",
+      dia: item?.dia || Regras.getDia(item?.raw || item?.pedido || item) || "",
+      opcao,
+      statusAtual: item?.status || Regras.getStatus(item?.raw || item?.pedido || item) || "",
+      confirmadoAtual: !!item?.confirmado,
+      origemAtual: item?.origem || Regras.getOrigem(item?.raw || item?.pedido || item) || "",
+      categoria: item?.categoria || "outro",
+      delta,
+      justificativa,
+      camposSugeridos: {
+        Status: "Confirmado",
+        Confirmado: true,
+        Opcao: opcao === "outros" ? (item?.opcao || "principal") : opcao,
+        Origem: "Correção de integridade",
+        Observacao: Regras._observacaoCorrecao(item, justificativa)
+      },
+      pedido: item
+    };
+  };
+
+  Regras.criarAcaoRevisarCorrecao = function criarAcaoRevisarCorrecao(dia, opcao, quantidade, justificativa, candidatos = []) {
+    return {
+      acao: "revisar",
+      autoAplicavel: false,
+      motivo: "revisao-manual",
+      dia,
+      opcao,
+      quantidade: Number(quantidade || 0),
+      delta: {},
+      justificativa,
+      candidatos: (candidatos || []).slice(0, 20)
+    };
+  };
+
+  Regras.chaveDuplicidadeEspecialCorrecao = function chaveDuplicidadeEspecialCorrecao(item, dia) {
+    const cat = Regras.norm(item?.categoria || "");
+    const nome = Regras.norm(item?.colaboradorNome || item?.nome || Regras.getNome(item?.raw || item?.pedido || item) || "");
+    const colabId = Regras.norm(item?.colaboradorId || Regras.getColaboradorId(item?.raw || item?.pedido || item) || "");
+    const opcao = Regras.opcaoCorrecao(item?.opcao || Regras.getOpcao(item?.raw || item?.pedido || item) || "principal");
+    // Para Guarda/Investigador, o nome sequencial é essencial: Investigador 1 não é Investigador 2.
+    return [Regras.norm(dia), cat, colabId, nome, opcao].join("|");
+  };
+
+  Regras.pedidoEspecialLimpezaCorrecao = function pedidoEspecialLimpezaCorrecao(item) {
+    const cat = Regras.norm(item?.categoria || "");
+    return ["guarda", "investigador", "extra", "prestador", "visitante", "terceiro"].includes(cat);
+  };
+
+  Regras.compararPedidoManterCorrecao = function compararPedidoManterCorrecao(a, b) {
+    // Mantém o registro mais antigo/menor ID para preservar o vínculo original.
+    const ia = Number(a?.pedidoId || Regras.getPedidoId(a?.raw || a?.pedido || a) || 0);
+    const ib = Number(b?.pedidoId || Regras.getPedidoId(b?.raw || b?.pedido || b) || 0);
+    if (Number.isFinite(ia) && Number.isFinite(ib) && ia !== ib) return ia - ib;
+    return Regras.timestampPedido(a?.raw || a?.pedido || a) - Regras.timestampPedido(b?.raw || b?.pedido || b);
+  };
+
+  Regras.gerarCandidatasCorrecaoDia = function gerarCandidatasCorrecaoDia(calc = {}, alvo = {}, dia = "") {
+    const incluidos = calc?.incluidos || [];
+    const excluidos = calc?.excluidos || [];
+    const candidatas = [];
+
+    // 1) Extras/pedidos especiais duplicados: cancelar todos menos o preferido.
+    const gruposExtras = new Map();
+    for (const item of incluidos) {
+      if (!Regras.pedidoEspecialLimpezaCorrecao(item)) continue;
+      const key = Regras.chaveDuplicidadeEspecialCorrecao(item, dia);
+      if (!gruposExtras.has(key)) gruposExtras.set(key, []);
+      gruposExtras.get(key).push(item);
+    }
+
+    for (const grupo of gruposExtras.values()) {
+      if (grupo.length <= 1) continue;
+      const ordenado = [...grupo].sort(Regras.compararPedidoManterCorrecao);
+      const manter = ordenado[0];
+      for (const dup of ordenado.slice(1)) {
+        candidatas.push(Regras.criarAcaoCancelarPedidoCorrecao(
+          dup,
+          "extra-duplicado",
+          `Duplicidade de ${dup.categoria || "pedido especial"}: manter ID ${manter.pedidoId} e cancelar este registro.`,
+          manter.pedidoId
+        ));
+      }
+    }
+
+    // 2) Retorno automático legado ainda contado em produção: cancelar.
+    for (const item of incluidos) {
+      const origem = Regras.norm(item?.origem || Regras.getOrigem(item?.raw || item?.pedido || item) || "");
+      if (!origem.includes("retorno automatico") && !origem.includes("retorno automático")) continue;
+      candidatas.push(Regras.criarAcaoCancelarPedidoCorrecao(
+        item,
+        "retorno-automatico-legado-regularizado",
+        "Retorno automático legado não é escolha real nem travamento oficial; inativar para não contaminar relatórios."
+      ));
+    }
+
+    // 3) Reativação é sempre revisão manual por segurança.
+    const deltaInicial = Regras.deltaResumoCorrecao(calc?.resumo || {}, alvo || {});
+    for (const item of excluidos) {
+      const status = Regras.norm(item?.status || Regras.getStatus(item?.raw || item?.pedido || item) || "");
+      const origem = Regras.norm(item?.origem || Regras.getOrigem(item?.raw || item?.pedido || item) || "");
+      const op = Regras.opcaoCorrecao(item?.opcao || Regras.getOpcao(item?.raw || item?.pedido || item) || "principal");
+      if (Number(deltaInicial[op] || 0) >= 0) continue;
+      if (status !== "cancelado" && !origem.includes("duplicado inativado") && !origem.includes("duplicidade inativada")) continue;
+      candidatas.push(Regras.criarAcaoReativarPedidoCorrecao(
+        item,
+        "pedido-correto-cancelado-revisar",
+        `Possível pedido ${op} cancelado/inativado necessário para fechar a referência. Reativação exige revisão manual.`
+      ));
+    }
+
+    return candidatas;
+  };
+
+  Regras.selecionarAcoesQueAproximamCorrecao = function selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas = []) {
+    let simulado = Regras.normalizarResumoCorrecao(atual);
+    const selecionadas = [];
+    const revisoes = [];
+
+    const aindaSobra = (opcao) => {
+      const d = Regras.deltaResumoCorrecao(simulado, alvo);
+      return Number(d.total || 0) > 0 && Number(d[opcao] || 0) > 0;
+    };
+
+    // Só aplica automaticamente cancelamentos seguros.
+    const cancelamentos = (candidatas || [])
+      .filter(a => a.acao === "cancelar" && a.autoAplicavel)
+      .sort((a, b) => {
+        const ordem = { "extra-duplicado": 1, "retorno-automatico-legado-regularizado": 2, "retorno-automatico-retroativo": 2 };
+        return (ordem[a.motivo] || 9) - (ordem[b.motivo] || 9);
+      });
+
+    for (const acao of cancelamentos) {
+      const op = Regras.opcaoCorrecao(acao.opcao || "principal");
+      if (!aindaSobra(op)) continue;
+      selecionadas.push(acao);
+      simulado = Regras.aplicarDeltaResumoCorrecao(simulado, acao.delta);
+    }
+
+    for (const acao of (candidatas || []).filter(a => a.acao !== "cancelar" || !a.autoAplicavel)) {
+      revisoes.push(acao);
+    }
+
+    return { selecionadas, simulado, revisoes };
+  };
+
+  Regras.gerarPlanoCorrecaoDia = function gerarPlanoCorrecaoDia({ semanaId, dia, dataOperacao, calc, referencia }) {
+    const atual = Regras.normalizarResumoCorrecao(calc?.resumo || {});
+    const alvo = Regras.normalizarResumoCorrecao(referencia?.valores || referencia || {});
+    const deltaInicial = Regras.deltaResumoCorrecao(atual, alvo);
+    const candidatas = Regras.gerarCandidatasCorrecaoDia(calc, alvo, dia);
+    const { selecionadas, simulado, revisoes: revisoesCandidatas } = Regras.selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
+    const deltaFinal = Regras.deltaResumoCorrecao(simulado, alvo);
+    const fechaExato = Regras.resumoBateCorrecao(simulado, alvo);
+    const jaBate = Regras.resumoBateCorrecao(atual, alvo);
+
+    const revisoes = [...(revisoesCandidatas || [])];
+    for (const op of ["principal", "light", "carne", "massa", "lanche"]) {
+      const sobra = Number(deltaFinal[op] || 0);
+      if (sobra > 0) {
+        const candidatos = (calc?.incluidos || []).filter(i => Regras.opcaoCorrecao(i.opcao || "principal") === op);
+        revisoes.push(Regras.criarAcaoRevisarCorrecao(dia, op, sobra, `Ainda sobram ${sobra} ${op} após aplicar as ações seguras.`, candidatos));
+      }
+      if (sobra < 0) {
+        revisoes.push(Regras.criarAcaoRevisarCorrecao(dia, op, Math.abs(sobra), `Ainda faltam ${Math.abs(sobra)} ${op} após aplicar as ações seguras.`, []));
+      }
+    }
+
+    return {
+      semanaId,
+      dia,
+      dataOperacao: dataOperacao || "",
+      referencia,
+      atual,
+      alvo,
+      deltaInicial,
+      candidatas,
+      acoesSeguras: selecionadas,
+      revisoes,
+      simulado,
+      deltaFinal,
+      jaBate,
+      fechaExato,
+      status: jaBate ? "ok" : (fechaExato ? "corrigivel" : (selecionadas.length ? "parcial" : "revisao")),
+      mensagem: jaBate
+        ? "Base atual já bate com a referência."
+        : (fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.")
+    };
+  };
+
+  Regras.podeAplicarAcaoCorrecao = function podeAplicarAcaoCorrecao(acao) {
+    if (!acao || !acao.autoAplicavel || !acao.pedidoId) return false;
+    if (acao.acao !== "cancelar") return false;
+    return ["extra-duplicado", "retorno-automatico-legado-regularizado", "retorno-automatico-retroativo"].includes(acao.motivo);
   };
 
 
