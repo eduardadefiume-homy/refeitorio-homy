@@ -1,6 +1,6 @@
 // ============================================================
 // admin-integridade.js — Integridade dos Dados · Admin Homy
-// v: integridade-dashboard-readonly-20260625-fase7
+// v: base-centralizada-integridade-v10-17-20260701
 //
 // Objetivo:
 // - Ler dados reais do SharePoint via SP/sharepoint.js.
@@ -166,7 +166,7 @@
       return {
         semanaId,
         geradoEm: new Date().toISOString(),
-        observacao: "Somente leitura. Nenhuma correção automática foi executada.",
+        observacao: "Prévia de integridade. Nenhuma correção é aplicada sem confirmação explícita.",
         referenciaOperacional,
         diasVerificados: dias,
         dadosResumo: {
@@ -233,6 +233,7 @@
             </div>
             <div class="admin-integridade-head-actions">
               <button class="btn-secondary admin-integridade-btn" onclick="AdminIntegridade.abrirDetalhes()">Abrir detalhes</button>
+              <button class="btn-secondary admin-integridade-btn" onclick="AdminIntegridade.abrirCorrecaoAssistida()">Aplicar correção assistida</button>
               <button class="btn-secondary admin-integridade-btn" onclick="AdminIntegridade.baixarDiagnostico()">Baixar JSON</button>
             </div>
           </div>
@@ -313,6 +314,20 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 800);
+    },
+
+
+    async abrirCorrecaoAssistida() {
+      try {
+        if (global.AdminCorrecaoIntegridade?.abrirSemana) {
+          await global.AdminCorrecaoIntegridade.abrirSemana();
+          return;
+        }
+        this._toast("Módulo de Correção Assistida ainda não carregado. Recarregue o Admin e tente novamente.", "warning");
+      } catch (e) {
+        console.error("[AdminIntegridade] Correção Assistida", e);
+        this._toast("Erro ao abrir correção assistida: " + (e.message || e), "error");
+      }
     },
 
     baixarPlanoCorrecao() {
@@ -858,6 +873,7 @@
           <button class="btn-secondary" onclick="AdminIntegridade.copiarDiagnostico()">Copiar JSON</button>
           <button class="btn-secondary" onclick="AdminIntegridade.baixarDiagnostico()">Baixar JSON completo</button>
           <button class="btn-secondary" onclick="AdminIntegridade.baixarPlanoCorrecao()">Baixar plano</button>
+          <button class="btn-danger" onclick="AdminIntegridade.abrirCorrecaoAssistida()">Aplicar correção assistida</button>
         </div>
         ${this._htmlComparativo(r)}
         ${this._htmlPlano(r)}
@@ -897,7 +913,7 @@
         </details>`).join("");
       return `<section class="integridade-section integridade-plano">
         <h3>🛠 Plano de Correção sugerido</h3>
-        <p>Somente leitura. Use este plano para revisar antes de qualquer gravação no SharePoint.</p>
+        <p>Prévia segura. A gravação só ocorre pelo botão de Correção Assistida, com confirmação e auditoria.</p>
         <div class="integridade-plano-totais">
           <span>Cancelar: <b>${this._num(plano.totais?.cancelar)}</b></span>
           <span>Reativar: <b>${this._num(plano.totais?.reativar)}</b></span>
