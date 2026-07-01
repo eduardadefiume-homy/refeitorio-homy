@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-19-20260701
+// v: base-centralizada-v10-21-20260701
 // ============================================================
 
 const SP = {
@@ -3909,6 +3909,14 @@ const SP = {
             const jaBate = this._resumoBateCorrecao(atual, alvo) && !selecionadas.length;
             return { semanaId, dia, dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "", referencia: referenciaParaRegra, atual, alvo, deltaInicial, candidatas, acoesSeguras: selecionadas, revisoes: [], simulado, deltaFinal, jaBate, fechaExato, semReferencia: !ref, status: jaBate ? "ok" : "corrigivel", mensagem: jaBate ? "Base atual já está limpa para este dia." : "Duplicidade objetiva encontrada." };
           })();
+
+
+      if (R?.gerarAcoesDuplicidadesEspeciaisProdutivas && R?.recalcularPlanoDiaComAcoesSeguras) {
+        const acoesDuplicidadeEspecial = R.gerarAcoesDuplicidadesEspeciaisProdutivas(pedidos || [], semanaId, [dia]);
+        if (acoesDuplicidadeEspecial?.length) {
+          R.recalcularPlanoDiaComAcoesSeguras(diaPlano, acoesDuplicidadeEspecial, !!ref);
+        }
+      }
 
       const temAcao = Number(diaPlano?.acoesSeguras?.length || 0) > 0;
       const temRevisao = Number(diaPlano?.revisoes?.length || 0) > 0;
