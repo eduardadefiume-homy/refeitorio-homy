@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-17-20260701
+// v: base-centralizada-v10-18-20260701
 // ============================================================
 
 const SP = {
@@ -3869,39 +3869,51 @@ const SP = {
 
   async gerarPlanoCorrecaoAssistida(semanaId, options = {}) {
     await this.ensureLogin?.();
-    const diasBase = options.dia
-      ? [this.norm(options.dia)]
+    const diaSolicitado = options.dia ? this.norm(options.dia) : "";
+    const diasBase = diaSolicitado
+      ? [diaSolicitado]
       : ["segunda", "terca", "quarta", "quinta", "sexta"];
 
     const pedidos = options.pedidosBase || await this.getPedidos(semanaId, { reparar: false, force: true });
+    const R = this._R?.();
     const dias = [];
 
     for (const dia of diasBase) {
-      const ref = await this._referenciaComparacaoCorrecao(semanaId, dia, options);
-      if (!ref) continue;
-
       const calc = this._calcularFechamentoPorPedidos(semanaId, dia, pedidos || []);
-      const R = this._R?.();
+      const ref = await this._referenciaComparacaoCorrecao(semanaId, dia, options).catch(() => null);
+      const referenciaParaRegra = ref || {
+        tipo: "limpeza-segura-sem-referencia",
+        fonte: "Limpeza segura por regra central",
+        semReferencia: true,
+        valores: this._normalizarResumoCorrecao(calc.resumo || {})
+      };
+
       const diaPlano = R?.gerarPlanoCorrecaoDia
         ? R.gerarPlanoCorrecaoDia({
             semanaId,
             dia,
             dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "",
             calc,
-            referencia: ref
+            referencia: referenciaParaRegra
           })
         : (() => {
             const atual = this._normalizarResumoCorrecao(calc.resumo);
-            const alvo = this._normalizarResumoCorrecao(ref.valores);
+            const alvo = ref ? this._normalizarResumoCorrecao(ref.valores) : this._normalizarResumoCorrecao(atual);
             const deltaInicial = this._deltaResumoCorrecao(atual, alvo);
             const candidatas = this._candidatasCorrecaoDia(calc, alvo, dia);
-            const { selecionadas, simulado } = this._selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas);
+            const { selecionadas, simulado } = ref
+              ? this._selecionarAcoesQueAproximamCorrecao(atual, alvo, candidatas)
+              : { selecionadas: candidatas.filter(a => a.acao === "cancelar" && a.motivo === "extra-duplicado"), simulado: atual };
             const deltaFinal = this._deltaResumoCorrecao(simulado, alvo);
             const fechaExato = this._resumoBateCorrecao(simulado, alvo);
-            const jaBate = this._resumoBateCorrecao(atual, alvo);
-            return { semanaId, dia, dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "", referencia: ref, atual, alvo, deltaInicial, candidatas, acoesSeguras: selecionadas, revisoes: [], simulado, deltaFinal, jaBate, fechaExato, status: jaBate ? "ok" : (fechaExato ? "corrigivel" : (selecionadas.length ? "parcial" : "revisao")), mensagem: jaBate ? "Base atual já bate com a referência." : (fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.") };
+            const jaBate = this._resumoBateCorrecao(atual, alvo) && !selecionadas.length;
+            return { semanaId, dia, dataOperacao: this.getDataRefBySemanaDia?.(semanaId, dia) || "", referencia: referenciaParaRegra, atual, alvo, deltaInicial, candidatas, acoesSeguras: selecionadas, revisoes: [], simulado, deltaFinal, jaBate, fechaExato, semReferencia: !ref, status: jaBate ? "ok" : "corrigivel", mensagem: jaBate ? "Base atual já está limpa para este dia." : "Duplicidade objetiva encontrada." };
           })();
 
+      const temAcao = Number(diaPlano?.acoesSeguras?.length || 0) > 0;
+      const temRevisao = Number(diaPlano?.revisoes?.length || 0) > 0;
+      const deveMostrar = !!ref || temAcao || temRevisao || !!diaSolicitado;
+      if (!deveMostrar) continue;
       dias.push(diaPlano);
     }
 
@@ -3909,16 +3921,21 @@ const SP = {
       semanaId,
       geradoEm: new Date().toISOString(),
       status: "previa-correcao-assistida",
+      escopo: diaSolicitado ? "dia" : "semana",
       dias,
       totais: {
         dias: dias.length,
         acoesSeguras: dias.reduce((n, d) => n + (d.acoesSeguras?.length || 0), 0),
         revisoes: dias.reduce((n, d) => n + (d.revisoes?.length || 0), 0),
-        corrigiveis: dias.filter(d => d.fechaExato && !d.jaBate).length,
-        parciais: dias.filter(d => d.status === "parcial").length
+        corrigiveis: dias.filter(d => d.fechaExato && !d.jaBate && (d.acoesSeguras?.length || 0)).length,
+        parciais: dias.filter(d => d.status === "parcial").length,
+        semReferencia: dias.filter(d => d.semReferencia).length
       }
     };
-    plano.hashPlano = this._hashTexto(this._jsonSeguro({ semanaId, dias: dias.map(d => ({ dia: d.dia, acoes: d.acoesSeguras.map(a => [a.acao, a.pedidoId]), simulado: d.simulado })) }));
+    plano.hashPlano = this._hashTexto(this._jsonSeguro({
+      semanaId,
+      dias: dias.map(d => ({ dia: d.dia, semReferencia: !!d.semReferencia, acoes: (d.acoesSeguras || []).map(a => [a.acao, a.pedidoId, a.motivo]), simulado: d.simulado }))
+    }));
     return plano;
   },
 
