@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-20-20260701
+// v: base-centralizada-v10-21-20260701
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -1180,6 +1180,180 @@
     if (Number.isFinite(ia) && Number.isFinite(ib) && ia !== ib) return ia - ib;
     return Regras.timestampPedido(a?.raw || a?.pedido || a) - Regras.timestampPedido(b?.raw || b?.pedido || b);
   };
+
+
+  // v10.21 — Duplicidades produtivas especiais por NOME, não por Colaborador_id.
+  // Motivo:
+  // - Investigador/Guarda podem ser recriados com Colaborador_id diferente (extra-127, extra-128...),
+  //   mas representam o mesmo posto no mesmo dia/opção.
+  // - A limpeza automática continua restrita a registros produtivos Confirmado/Travado.
+  // - "Refeição Extra" genérica NÃO entra aqui, porque pode representar múltiplas refeições reais.
+  Regras.extraEspecialProdutivoSeguroParaLimpeza = function extraEspecialProdutivoSeguroParaLimpeza(pedido) {
+    const base = pedido?.raw || pedido?.pedido || pedido;
+    const categoria = Regras.categoriaPedidoFechamento(base);
+    if (!["guarda", "investigador"].includes(categoria)) return false;
+
+    const status = Regras.norm(Regras.getStatus(base));
+    const origem = Regras.norm(Regras.getOrigem(base));
+    if (Regras.statusBloqueiaProducao(status)) return false;
+    if (["cancelado", "bloqueado", "duplicado inativado", "duplicidade inativada"].includes(status)) return false;
+    if (origem.includes("ausencia") || origem.includes("ausência")) return false;
+
+    return Regras.pedidoConfirmadoProducao(base);
+  };
+
+  Regras.chaveDuplicidadeEspecialProdutiva = function chaveDuplicidadeEspecialProdutiva(pedido, semanaId = "") {
+    const base = pedido?.raw || pedido?.pedido || pedido;
+    const semana = String(Regras.pick(base, "Semana_id", "Semana", "semanaId") || semanaId || "").trim();
+    const dia = Regras.norm(Regras.getDia(base));
+    const categoria = Regras.categoriaPedidoFechamento(base);
+    const nome = Regras.norm(Regras.getNome(base));
+    const opcao = Regras.opcaoCorrecao(Regras.getOpcao(base) || "principal");
+    return [semana, dia, categoria, nome, opcao].join("|");
+  };
+
+  Regras.gerarAcoesDuplicidadesEspeciaisProdutivas = function gerarAcoesDuplicidadesEspeciaisProdutivas(pedidos = [], semanaId = "", dias = []) {
+    const diasSet = new Set((dias || []).map(d => Regras.norm(d)).filter(Boolean));
+    const grupos = new Map();
+
+    for (const p of pedidos || []) {
+      const semana = String(Regras.pick(p, "Semana_id", "Semana", "semanaId") || "").trim();
+      if (semanaId && semana !== String(semanaId)) continue;
+      const dia = Regras.norm(Regras.getDia(p));
+      if (diasSet.size && !diasSet.has(dia)) continue;
+      if (!Regras.extraEspecialProdutivoSeguroParaLimpeza(p)) continue;
+
+      const key = Regras.chaveDuplicidadeEspecialProdutiva(p, semanaId);
+      if (!grupos.has(key)) grupos.set(key, []);
+      grupos.get(key).push(p);
+    }
+
+    const acoes = [];
+    const usados = new Set();
+
+    for (const grupo of grupos.values()) {
+      if (grupo.length <= 1) continue;
+
+      const ordenado = [...grupo].sort((a, b) => {
+        const ia = Number(Regras.getPedidoId(a) || 0);
+        const ib = Number(Regras.getPedidoId(b) || 0);
+        if (Number.isFinite(ia) && Number.isFinite(ib) && ia !== ib) return ia - ib;
+        return Regras.timestampPedido(a) - Regras.timestampPedido(b);
+      });
+
+      const manter = ordenado[0];
+      const manterId = Regras.getPedidoId(manter);
+      for (const dup of ordenado.slice(1)) {
+        const id = Regras.getPedidoId(dup);
+        if (!id || usados.has(id)) continue;
+        usados.add(id);
+
+        const categoria = Regras.categoriaPedidoFechamento(dup);
+        const item = {
+          pedidoId: id,
+          colaboradorId: Regras.getColaboradorId(dup),
+          colaboradorNome: Regras.getNome(dup),
+          nome: Regras.getNome(dup),
+          dia: Regras.getDia(dup),
+          opcao: Regras.getOpcao(dup) || "principal",
+          status: Regras.getStatus(dup),
+          confirmado: Regras.isTrue(Regras.pick(dup, "Confirmado", "confirmado")),
+          origem: Regras.getOrigem(dup),
+          categoria,
+          raw: dup
+        };
+
+        acoes.push(Regras.criarAcaoCancelarPedidoCorrecao(
+          item,
+          "extra-duplicado",
+          `Duplicidade de ${categoria}: manter ID ${manterId} e cancelar este registro.`,
+          manterId
+        ));
+      }
+    }
+
+    return acoes;
+  };
+
+  Regras.fundirAcoesCorrecaoPorPedido = function fundirAcoesCorrecaoPorPedido(atuais = [], novas = []) {
+    const out = [];
+    const ids = new Set();
+    for (const acao of [...(atuais || []), ...(novas || [])]) {
+      const id = String(acao?.pedidoId || "").trim();
+      if (!id || ids.has(id)) continue;
+      ids.add(id);
+      out.push(acao);
+    }
+    return out;
+  };
+
+  Regras.recalcularPlanoDiaComAcoesSeguras = function recalcularPlanoDiaComAcoesSeguras(diaPlano, acoesExtras = [], temReferencia = false) {
+    if (!diaPlano) return diaPlano;
+
+    const extras = (acoesExtras || []).filter(a =>
+      a?.acao === "cancelar" &&
+      a?.autoAplicavel === true &&
+      a?.pedidoId &&
+      a?.motivo === "extra-duplicado"
+    );
+    if (!extras.length) return diaPlano;
+
+    const atuais = diaPlano.acoesSeguras || [];
+    const todas = Regras.fundirAcoesCorrecaoPorPedido(atuais, extras);
+    let selecionadas = [];
+
+    if (temReferencia) {
+      let sim = Regras.normalizarResumoCorrecao(diaPlano.simulado || diaPlano.atual || {});
+      const alvo = Regras.normalizarResumoCorrecao(diaPlano.alvo || {});
+      for (const acao of todas) {
+        const ja = (atuais || []).some(a => String(a?.pedidoId || "") === String(acao?.pedidoId || ""));
+        if (ja) {
+          selecionadas.push(acao);
+          continue;
+        }
+        const op = Regras.opcaoCorrecao(acao.opcao || "principal");
+        const d = Regras.deltaResumoCorrecao(sim, alvo);
+        if (Number(d.total || 0) > 0 && Number(d[op] || 0) > 0) {
+          selecionadas.push(acao);
+          sim = Regras.aplicarDeltaResumoCorrecao(sim, acao.delta || {});
+        }
+      }
+      diaPlano.simulado = sim;
+    } else {
+      selecionadas = todas;
+      let sim = Regras.normalizarResumoCorrecao(diaPlano.atual || {});
+      for (const acao of selecionadas) {
+        sim = Regras.aplicarDeltaResumoCorrecao(sim, acao.delta || {});
+      }
+      diaPlano.simulado = sim;
+      diaPlano.alvo = Regras.normalizarResumoCorrecao(sim);
+      diaPlano.referencia = {
+        tipo: "limpeza-segura-sem-referencia",
+        fonte: "Limpeza segura por regra central",
+        semReferencia: true,
+        valores: diaPlano.alvo
+      };
+      diaPlano.semReferencia = true;
+    }
+
+    diaPlano.acoesSeguras = selecionadas;
+    diaPlano.candidatas = Regras.fundirAcoesCorrecaoPorPedido(diaPlano.candidatas || [], extras);
+    diaPlano.deltaInicial = Regras.deltaResumoCorrecao(diaPlano.atual || {}, diaPlano.alvo || {});
+    diaPlano.deltaFinal = Regras.deltaResumoCorrecao(diaPlano.simulado || {}, diaPlano.alvo || {});
+    diaPlano.fechaExato = Regras.resumoBateCorrecao(diaPlano.simulado || {}, diaPlano.alvo || {});
+    diaPlano.jaBate = Regras.resumoBateCorrecao(diaPlano.atual || {}, diaPlano.alvo || {}) && !selecionadas.length;
+    diaPlano.status = selecionadas.length
+      ? (temReferencia ? (diaPlano.fechaExato ? "corrigivel" : "parcial") : "corrigivel-sem-referencia")
+      : (diaPlano.jaBate ? "ok" : "revisao");
+    diaPlano.mensagem = selecionadas.length
+      ? (temReferencia
+          ? (diaPlano.fechaExato ? "Ações seguras fecham exatamente com a referência." : "Há ações seguras, mas ainda fica pendência para revisão.")
+          : "Duplicidade objetiva encontrada. A limpeza é segura mesmo sem fechamento oficial como referência.")
+      : (diaPlano.mensagem || "Base atual já está limpa para este dia.");
+
+    return diaPlano;
+  };
+
 
   Regras.gerarCandidatasCorrecaoDia = function gerarCandidatasCorrecaoDia(calc = {}, alvo = {}, dia = "") {
     const incluidos = calc?.incluidos || [];
