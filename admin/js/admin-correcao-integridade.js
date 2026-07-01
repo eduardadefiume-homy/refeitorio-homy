@@ -1,6 +1,6 @@
 // ============================================================
 // admin-correcao-integridade.js — Correção Assistida · Admin Homy
-// v: base-centralizada-correcao-v10-20-20260701
+// v: base-centralizada-correcao-v10-21-20260701
 //
 // Carregar depois de admin-fechamento.js e admin-operacao-dia.js.
 // Não executa correção automática. Só aplica após confirmação explícita.
@@ -124,7 +124,8 @@
         await SP.init();
         const semanaId = options.semanaId || this._semanaAtual();
         const dia = options.dia || this._diaAtual();
-        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { dia: options.todos ? null : dia, force: true });
+        let plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { dia: options.todos ? null : dia, force: true });
+        plano = this._melhorPlano(plano, semanaId, options.todos ? "" : dia);
         this._ultimoPlano = plano;
         this._abrirModal(this._renderPlano(plano));
       } catch (e) {
@@ -139,7 +140,8 @@
         const semanaId = this._semanaAtual(semanaIdForcado);
         if (!semanaId) throw new Error("Semana não identificada para correção assistida.");
         this._semanaId = semanaId;
-        const plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { dia: null, force: true, incluirSemReferencia: true });
+        let plano = await SP.gerarPlanoCorrecaoAssistida(semanaId, { dia: null, force: true, incluirSemReferencia: true });
+        plano = this._melhorPlano(plano, semanaId, "");
         this._ultimoPlano = plano;
         this._abrirModal(this._renderPlano(plano));
       } catch (e) {
@@ -282,6 +284,143 @@ Somente cancelamentos seguros serão executados. Reativações e revisões não 
       `).join("")}</div>`;
     },
 
+
+    _normalizarAcaoDiagnostico(acao = {}) {
+      const opcao = this._norm(acao.opcao || "principal");
+      const op = ["principal", "light", "carne", "massa", "lanche"].includes(opcao) ? opcao : "principal";
+      const delta = { total: -1 };
+      delta[op] = -1;
+
+      return {
+        acao: "cancelar",
+        autoAplicavel: true,
+        motivo: acao.motivo || "extra-duplicado",
+        pedidoId: String(acao.pedidoId || ""),
+        nome: acao.nome || acao.pedido?.nome || "Pedido especial",
+        dia: acao.dia || acao.pedido?.dia || "",
+        opcao: op,
+        statusAtual: acao.statusAtual || acao.pedido?.status || "",
+        confirmadoAtual: acao.confirmadoAtual === true || acao.pedido?.confirmado === true,
+        origemAtual: acao.origemAtual || acao.pedido?.origem || "",
+        categoria: acao.pedido?.origem || acao.origemAtual || "especial",
+        delta,
+        justificativa: acao.justificativa || "Duplicidade produtiva especial.",
+        camposSugeridos: acao.camposSugeridos || {
+          Status: "Cancelado",
+          Confirmado: false,
+          Origem: "Duplicidade inativada",
+          Observacao: "Correção assistida: duplicidade produtiva especial."
+        },
+        pedido: acao.pedido || acao
+      };
+    },
+
+    _resumoAposAcoes(resumo = {}, acoes = []) {
+      const r = {
+        total: Number(resumo.total || 0),
+        principal: Number(resumo.principal || 0),
+        light: Number(resumo.light || 0),
+        carne: Number(resumo.carne || 0),
+        massa: Number(resumo.massa || 0),
+        lanche: Number(resumo.lanche || 0),
+        outros: Number(resumo.outros || 0),
+        semOpcao: Number(resumo.semOpcao || 0)
+      };
+      for (const a of acoes || []) {
+        const op = this._norm(a.opcao || "principal");
+        r.total += Number(a.delta?.total ?? -1);
+        if (Object.prototype.hasOwnProperty.call(r, op)) r[op] += Number(a.delta?.[op] ?? -1);
+      }
+      return r;
+    },
+
+    _deltaResumo(atual = {}, alvo = {}) {
+      const out = {};
+      for (const k of ["total", "principal", "light", "carne", "massa", "lanche"]) {
+        out[k] = Number(atual?.[k] || 0) - Number(alvo?.[k] || 0);
+      }
+      return out;
+    },
+
+    _converterPlanoDiagnosticoParaAssistido(semanaId, diaFiltro = "") {
+      const resultado = global.AdminIntegridade?._ultimoResultado;
+      const planoDiag = resultado?.planoCorrecao;
+      if (!resultado || !planoDiag?.acoes?.length) return null;
+      if (String(resultado.semanaId || "") !== String(semanaId || "")) return null;
+
+      const filtro = this._norm(diaFiltro || "");
+      const acoes = (planoDiag.acoes || [])
+        .filter(a => a?.acao === "cancelar" && a?.motivo === "extra-duplicado" && a?.pedidoId)
+        .filter(a => !filtro || this._norm(a.dia) === filtro)
+        .map(a => this._normalizarAcaoDiagnostico(a));
+
+      if (!acoes.length) return null;
+
+      const porDia = new Map();
+      for (const acao of acoes) {
+        const dia = this._norm(acao.dia || "segunda");
+        if (!porDia.has(dia)) porDia.set(dia, []);
+        porDia.get(dia).push(acao);
+      }
+
+      const dias = [];
+      for (const [dia, acoesDia] of porDia.entries()) {
+        const atual = resultado.resumoProducaoPorDia?.[dia] || {};
+        const simulado = this._resumoAposAcoes(atual, acoesDia);
+        const alvo = { ...simulado };
+        dias.push({
+          semanaId,
+          dia,
+          dataOperacao: (resultado.diasVerificados || []).find(d => this._norm(d.dia) === dia)?.data || "",
+          referencia: {
+            tipo: "limpeza-segura-sem-referencia",
+            fonte: "Diagnóstico de Integridade",
+            semReferencia: true,
+            valores: alvo
+          },
+          atual,
+          alvo,
+          deltaInicial: this._deltaResumo(atual, alvo),
+          candidatas: acoesDia,
+          acoesSeguras: acoesDia,
+          revisoes: [],
+          simulado,
+          deltaFinal: this._deltaResumo(simulado, alvo),
+          jaBate: false,
+          fechaExato: true,
+          semReferencia: true,
+          status: "corrigivel-sem-referencia",
+          mensagem: "Duplicidade objetiva encontrada pelo Diagnóstico de Integridade. A limpeza é segura e limitada aos pedidos especiais produtivos."
+        });
+      }
+
+      return {
+        semanaId,
+        geradoEm: new Date().toISOString(),
+        status: "previa-correcao-assistida",
+        escopo: filtro ? "dia" : "semana",
+        origem: "diagnostico-integridade",
+        dias,
+        totais: {
+          dias: dias.length,
+          acoesSeguras: acoes.length,
+          revisoes: 0,
+          corrigiveis: dias.length,
+          parciais: 0,
+          semReferencia: dias.length
+        },
+        hashPlano: `diag-${String(planoDiag?.totais?.total || acoes.length)}-${String(resultado.geradoEm || "").replace(/\D/g, "").slice(-8)}`
+      };
+    },
+
+    _melhorPlano(planoSP, semanaId, diaFiltro = "") {
+      const totalSP = Number(planoSP?.totais?.acoesSeguras || 0);
+      if (totalSP > 0) return planoSP;
+      const diag = this._converterPlanoDiagnosticoParaAssistido(semanaId, diaFiltro);
+      return diag || planoSP;
+    },
+
+
     _renderPlano(plano) {
       const esc = this._esc.bind(this);
       const dias = plano?.dias || [];
@@ -295,7 +434,7 @@ Somente cancelamentos seguros serão executados. Reativações e revisões não 
           <b>Semana:</b> ${esc(plano?.semanaId || "—")} ·
           <b>Ações seguras:</b> ${esc(plano?.totais?.acoesSeguras || 0)} ·
           <b>Pendências:</b> ${esc(plano?.totais?.revisoes || 0)} ·
-          <b>Hash:</b> ${esc(plano?.hashPlano || "—")}
+          <b>Hash:</b> ${esc(plano?.hashPlano || "—")} ${plano?.origem ? "· <b>Origem:</b> " + esc(plano.origem) : ""}
         </div>`;
 
       if (!dias.length) {
