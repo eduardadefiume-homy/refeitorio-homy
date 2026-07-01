@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-19-20260701
+// v: base-centralizada-v10-20-20260701
 //
 // Objetivo:
 // - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
@@ -1150,6 +1150,29 @@
     return ["guarda", "investigador", "extra", "prestador", "visitante", "terceiro"].includes(cat);
   };
 
+
+  Regras.duplicidadeEspecialIgnoradaPodeCancelar = function duplicidadeEspecialIgnoradaPodeCancelar(item) {
+    if (!Regras.pedidoEspecialLimpezaCorrecao(item)) return false;
+
+    const motivoItem = Regras.norm(item?.motivo || item?.justificativa || "");
+    if (!motivoItem.includes("duplicado") && !motivoItem.includes("duplicidade")) return false;
+    if (!motivoItem.includes("ignorado") && !motivoItem.includes("mantido")) return false;
+
+    const base = item?.raw || item?.pedido || item;
+    const status = Regras.norm(item?.status || Regras.getStatus(base) || "");
+    const origem = Regras.norm(item?.origem || Regras.getOrigem(base) || "");
+
+    // Duplicidade não produtiva não suja produção nem relatório oficial; fica para
+    // revisão/limpeza histórica separada, nunca para ação segura automática.
+    if (Regras.statusBloqueiaProducao(status)) return false;
+    if (["cancelado", "bloqueado", "duplicado inativado", "duplicidade inativada"].includes(status)) return false;
+    if (origem.includes("ausencia") || origem.includes("ausência")) return false;
+
+    const confirmado = Regras.isTrue(item?.confirmado) || Regras.isTrue(Regras.pick(base, "Confirmado", "confirmado"));
+    const produtivoPorStatus = Regras.STATUS_PRODUCAO.includes(status) || status === "travado";
+    return confirmado || produtivoPorStatus;
+  };
+
   Regras.compararPedidoManterCorrecao = function compararPedidoManterCorrecao(a, b) {
     // Mantém o registro mais antigo/menor ID para preservar o vínculo original.
     const ia = Number(a?.pedidoId || Regras.getPedidoId(a?.raw || a?.pedido || a) || 0);
@@ -1195,19 +1218,18 @@
     }
 
     // 1.1) Duplicidades especiais que o fechamento já ignorou.
-    // Elas não aparecem em "incluidos" porque já foram excluídas da produção,
-    // mas continuam sujando Pedidos/Integridade/Relatórios brutos. Podem ser
-    // canceladas com segurança sem alterar o total simulado do dia.
+    // Importante: só é seguro cancelar aqui quando o duplicado ignorado é um
+    // registro PRODUTIVO (Confirmado/Travado) de extra/guarda/investigador.
+    // Registros de ausência, férias, "não vai almoçar" ou cancelados podem ter
+    // centenas de repetições históricas e NÃO devem virar ação automática.
     for (const item of excluidos) {
-      if (!Regras.pedidoEspecialLimpezaCorrecao(item)) continue;
-      const motivoItem = Regras.norm(item?.motivo || item?.justificativa || "");
-      if (!motivoItem.includes("duplicado") && !motivoItem.includes("duplicidade")) continue;
+      if (!Regras.duplicidadeEspecialIgnoradaPodeCancelar(item)) continue;
       const manterMatch = String(item?.motivo || "").match(/Mantido:\s*([0-9]+)/i);
       const manterId = manterMatch?.[1] || item?.manterId || "";
       const acao = Regras.criarAcaoCancelarPedidoCorrecao(
         item,
         "extra-duplicado",
-        `Duplicidade de ${item.categoria || "pedido especial"}: registro já ignorado no fechamento; cancelar para limpar a base.`,
+        `Duplicidade de ${item.categoria || "pedido especial"}: registro produtivo já ignorado no fechamento; cancelar para limpar a base.`,
         manterId
       );
       acao.delta = { total: 0, principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, outros: 0, semOpcao: 0 };
