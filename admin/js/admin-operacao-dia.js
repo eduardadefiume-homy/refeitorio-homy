@@ -1,5 +1,5 @@
-// admin-operacao-dia.js — Operação do Dia do Admin Homy · base centralizada v10.13
-// Regra: carregar Operação do Dia é somente leitura. Regras vêm de refeitorio-regras.js.
+// admin-operacao-dia.js — Operação do Dia do Admin Homy · base operacional v11.1
+// Regra: carregar Operação do Dia é somente leitura. Fixos operacionais não duplicam e regras vêm de refeitorio-regras.js.
 
 const AdminOperacao = window.AdminOperacao = {
   _lista: [],
@@ -90,7 +90,7 @@ const AdminOperacao = window.AdminOperacao = {
     const obs = this._pick(p, "Observacao", "Observação");
 
     // Extras sem CC, guarda e refeições extras entram na Portaria.
-    const extraPortaria = origem.includes("guarda") || origem.includes("extra") || nome.includes("guarda") || nome.includes("refeicao extra");
+    const extraPortaria = origem.includes("guarda") || origem.includes("investigador") || origem.includes("extra") || nome.includes("guarda") || nome.includes("investigador") || nome.includes("refeicao extra");
     if (extraPortaria && (!raw || this._norm(raw).includes("sem setor") || raw === "—")) return this.PORTARIA_CC;
 
     // Se a observação trouxe um CC explícito, usa ele.
@@ -523,6 +523,9 @@ const AdminOperacao = window.AdminOperacao = {
       const tipo = this._pick(extra, "tipo", "Tipo") || "extra";
       const nome = this._pick(extra, "Nome", "Title") || "Refeição Extra";
       const opcao = this._pick(extra, "Opcao", "Opção") || "principal";
+      const statusExtra = this._pick(extra, "Status", "status") || "Confirmado";
+      const statusNorm = this._norm(statusExtra);
+      const bloqueia = ["nao vai almocar", "não vai almoçar", "ferias", "férias", "ausente", "cancelado", "bloqueado", "inativo"].includes(statusNorm);
       resultado.push({
         id: `extra-virtual-${this._pick(extra, "id", "ID") || nome}-${this._norm(dia)}`,
         _virtualExtra: true,
@@ -532,11 +535,11 @@ const AdminOperacao = window.AdminOperacao = {
         Colaborador_nome: nome,
         Dia: dia,
         Opcao: opcao,
-        Nome_Prato: this._nomePratoPorOpcao(dia, opcao) || "Prato Principal",
-        Confirmado: true,
+        Nome_Prato: bloqueia ? statusExtra : (this._nomePratoPorOpcao(dia, opcao) || "Prato Principal"),
+        Confirmado: !bloqueia,
         Data_Hora: new Date().toISOString(),
         Centro_Custo: this._pick(extra, "Centro_Custo", "Centro Custo") || (this._norm(tipo).includes("guarda") || this._norm(tipo).includes("investigador") ? "120602 - PORTARIA" : ""),
-        Status: "Confirmado",
+        Status: bloqueia ? statusExtra : "Confirmado",
         Observacao: this._pick(extra, "Observacao", "Observação", "Obs") || "Extra cadastrado no SharePoint.",
         Origem: tipo
       });
