@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Testes Regras Homy v11</title>
+<style>body{font-family:Arial,sans-serif;background:#07111f;color:#e8f0ff;padding:24px}pre{background:#101b2d;padding:16px;border-radius:8px}.ok{color:#65d98b}.fail{color:#ff7777}</style></head>
+<body>
+<h1>Testes Regras Homy v11</h1>
+<pre id="out">Rodando...</pre>
+<script src="../refeitorio-regras.js?v=base-operacional-v11-0-20260702"></script>
+<script>
+(function(){
+  const R = window.HomyRefeitorioRegras;
+  const tests = [];
+  const assert = (nome, cond) => tests.push({nome, ok: !!cond});
+
+  assert("Pedido confirmado conta produção", R.pedidoConfirmadoProducao({Status:"Confirmado", Confirmado:true, Origem:"Refeitório"}) === true);
+  assert("Não vai almoçar não conta produção", R.pedidoConfirmadoProducao({Status:"Não vai almoçar", Confirmado:false, Origem:"Ausência"}) === false);
+  assert("Retorno automático legado não conta produção", R.pedidoConfirmadoProducao({Status:"Confirmado", Confirmado:true, Origem:"Retorno automático de ausência"}) === false);
+  assert("Travamento oficial conta produção", R.pedidoConfirmadoProducao({Status:"Travado", Confirmado:true, Origem:"Travamento automático"}) === true);
+  assert("Pedido confirmado conta desconto", R.contaParaDesconto({Status:"Confirmado", Confirmado:true, Origem:"Refeitório"}) === true);
+  assert("Não vai almoçar não conta desconto", R.contaParaDesconto({Status:"Não vai almoçar", Confirmado:false, Origem:"Ausência"}) === false);
+  assert("Não retirada não cancela desconto", R.classificarRetiradaCozinha({Colaborador_id:"1", Status:"Confirmado", Confirmado:true}, [{Colaborador_id:"1", Retirou:false}]).desconta === true);
+  assert("Fonte fechada usa snapshot", R.fonteVerdadeOperacionalDia({fechamento:{Status_Fechamento:"Fechado"}}).usaSnapshot === true);
+  assert("Reabertura exige motivo", R.podeReabrirFechamento({Status_Fechamento:"Fechado"}, "curto").ok === false);
+
+  const ok = tests.every(t=>t.ok);
+  document.getElementById('out').innerHTML = tests.map(t => `${t.ok?'✅':'❌'} ${t.nome}`).join('\n') + `\n\nResultado: ${ok ? 'OK' : 'FALHOU'}`;
+})();
+</script>
+</body></html>
