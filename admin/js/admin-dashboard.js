@@ -1,5 +1,5 @@
 // admin-dashboard.js — Dashboard do Admin Homy
-// v: base-centralizada-dashboard-v10-14-20260630
+// v: base-operacional-dashboard-v11-0-20260702
 // Correção: liberação/prazo da marcação sempre usam a semana visualizada no Admin.
 
 const AdminDashboard = window.AdminDashboard = {
