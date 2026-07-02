@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-centralizada-v10-21-20260701
+// v: base-operacional-v11-0-20260702
 // ============================================================
 
 const SP = {
@@ -2765,6 +2765,38 @@ const SP = {
     });
   },
 
+
+  async registrarNaoRetirouCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor, motivo = "") {
+    const existing = await this.getCheckIn(semanaId, dia);
+    const found    = existing.find(i =>
+      String(this.pick(i, "Colaborador_id")) === String(colaboradorId)
+    );
+
+    const fields = {
+      Retirou: false,
+      Data_Hora_Retirada: new Date().toISOString(),
+      Confirmado_Por: confirmadoPor,
+      Status_Retirada: "Não retirou",
+      Motivo_Nao_Retirada: motivo || "Não retirou a refeição.",
+      Observacao: motivo || "Não retirou a refeição. Regra Homy: se havia pedido válido após o prazo, permanece no desconto."
+    };
+
+    if (found) return this.updateItem("CheckIn", found.id, fields);
+
+    return this.createItem("CheckIn", {
+      Title: `${semanaId}-${colaboradorId}-${dia}`,
+      Semana_id: semanaId,
+      Colaborador_id: String(colaboradorId),
+      Colaborador_nome: colaboradorNome,
+      Dia: dia,
+      ...fields
+    });
+  },
+
+  async registrarNaoRetirou(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor, motivo = "") {
+    return this.registrarNaoRetirouCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor, motivo);
+  },
+
   async saveCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor) {
     return this.registrarCheckIn(semanaId, colaboradorId, colaboradorNome, dia, confirmadoPor);
   },
@@ -4048,7 +4080,9 @@ const SP = {
         Status: pick(i, "Status_Pedido", "Status") || "Confirmado",
         Confirmado: true,
         Origem: pick(i, "Origem") || "Fechamento Oficial",
-        Categoria: pick(i, "Categoria") || "colaborador"
+        Categoria: pick(i, "Categoria") || "colaborador",
+        Conta_Desconto: true,
+        Regra_Desconto: "Fechamento oficial: item conta produção e desconto conforme regra Homy."
       }));
 
     const resumoPorData = new Map();
@@ -4086,7 +4120,7 @@ const SP = {
       r.total++;
     }
 
-    const itensAbertos = pedidosAbertos.map(p => ({ ...p, fonte: "Pedidos calculados", Data_Operacao: this._dataISOOperacional(pick(p, "Data_Hora", "Data", "Created")) }));
+    const itensAbertos = pedidosAbertos.map(p => ({ ...p, fonte: "Pedidos calculados", Data_Operacao: this._dataISOOperacional(pick(p, "Data_Hora", "Data", "Created")), Conta_Desconto: R?.contaParaDesconto ? R.contaParaDesconto(p) : true, Regra_Desconto: "Pedido válido após prazo: desconta mesmo se não retirar." }));
     const itens = [...itensFechamento, ...itensAbertos];
     const dias = [...resumoPorData.values()].sort((a, b) => String(a.data).localeCompare(String(b.data)));
     const totais = dias.reduce((acc, d) => {
@@ -4104,6 +4138,23 @@ const SP = {
       itens,
       totais
     };
+  },
+
+  async getRelatorioDescontoPeriodo(ini, fim, options = {}) {
+    const dados = await this.getRelatorioOficialPeriodo(ini, fim, options);
+    const itens = (dados.itens || []).filter(i => {
+      if (i.Conta_Desconto === false) return false;
+      const R = this._R?.();
+      return R?.contaParaDesconto ? R.contaParaDesconto(i) : this.isTrue(this.pick(i, "Conta_Producao", "Confirmado"));
+    });
+    const totais = itens.reduce((acc, p) => {
+      const op = this.norm(this.pick(p, "Opcao", "opcao") || "principal");
+      if (Object.prototype.hasOwnProperty.call(acc, op)) acc[op] += 1;
+      else acc.principal += 1;
+      acc.total += 1;
+      return acc;
+    }, { principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, total: 0 });
+    return { ...dados, tipo: "desconto", itens, totais, regra: "Desconto Homy: pedido válido após o prazo desconta mesmo sem retirada na Cozinha." };
   },
 
   async getDashboardResumo(semanaId, options = {}) {
