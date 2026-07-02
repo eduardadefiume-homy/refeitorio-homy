@@ -1,6 +1,6 @@
 // ============================================================
 // admin-correcao-integridade.js — Correção Assistida · Admin Homy
-// v: base-centralizada-correcao-v10-21-20260701
+// v: base-operacional-correcao-v11-0-20260702
 //
 // Carregar depois de admin-fechamento.js e admin-operacao-dia.js.
 // Não executa correção automática. Só aplica após confirmação explícita.
