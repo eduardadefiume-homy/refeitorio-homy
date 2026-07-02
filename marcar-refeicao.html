@@ -9,7 +9,7 @@
 <link rel="shortcut icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="favicon.png">
 <title>Marcar Refeição · Homy</title>
-<!-- v: marcar-refeicao-v10-15-20260630 · corrige badge de prazo por semana-alvo -->
+<!-- v: marcar-refeicao-v11-0-20260630 · corrige badge de prazo por semana-alvo -->
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -272,9 +272,9 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível.");
-      return loadScript("refeitorio-regras.js?v=base-centralizada-v10-13-20260630")
+      return loadScript("refeitorio-regras.js?v=base-operacional-v11-0-20260702")
         .catch(function(){ console.warn("refeitorio-regras.js não carregou; usando fallback local."); })
-        .then(function(){ return loadScript("sharepoint.js?v=base-centralizada-v10-12-20260630"); });
+        .then(function(){ return loadScript("sharepoint.js?v=base-operacional-v11-0-20260702"); });
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível.");
