@@ -3,9 +3,9 @@
 <head><meta charset="utf-8"><title>Testes Regras Homy v11</title>
 <style>body{font-family:Arial,sans-serif;background:#07111f;color:#e8f0ff;padding:24px}pre{background:#101b2d;padding:16px;border-radius:8px}.ok{color:#65d98b}.fail{color:#ff7777}</style></head>
 <body>
-<h1>Testes Regras Homy v11</h1>
+<h1>Testes Regras Homy v11.1</h1>
 <pre id="out">Rodando...</pre>
-<script src="../refeitorio-regras.js?v=base-operacional-v11-0-20260702"></script>
+<script src="../refeitorio-regras.js?v=base-operacional-v11-1-20260702"></script>
 <script>
 (function(){
   const R = window.HomyRefeitorioRegras;
@@ -18,6 +18,10 @@
   assert("Travamento oficial conta produção", R.pedidoConfirmadoProducao({Status:"Travado", Confirmado:true, Origem:"Travamento automático"}) === true);
   assert("Pedido confirmado conta desconto", R.contaParaDesconto({Status:"Confirmado", Confirmado:true, Origem:"Refeitório"}) === true);
   assert("Não vai almoçar não conta desconto", R.contaParaDesconto({Status:"Não vai almoçar", Confirmado:false, Origem:"Ausência"}) === false);
+  assert("Guarda fixo conta produção quando confirmado", R.extraFixoContaProducao({Colaborador_nome:"Guarda", Status:"Confirmado", Confirmado:true, Origem:"guarda", Observacao:"FixoOperacional:guarda"}) === true);
+  assert("Guarda fixo não conta desconto", R.contaParaDesconto({Colaborador_nome:"Guarda", Status:"Confirmado", Confirmado:true, Origem:"guarda", Observacao:"FixoOperacional:guarda"}) === false);
+  assert("Investigador fixo marcado não vai almoçar não conta produção", R.extraFixoContaProducao({Colaborador_nome:"Investigador 2", Status:"Não vai almoçar", Confirmado:false, Origem:"investigador", Observacao:"FixoOperacional:investigador-2"}) === false);
+  assert("Chave de extra fixo é única por semana/dia/slug", R.chaveExtraFixo("2026-W28", "quinta", "guarda") === "2026-W28|quinta|fixo|guarda");
   assert("Não retirada não cancela desconto", R.classificarRetiradaCozinha({Colaborador_id:"1", Status:"Confirmado", Confirmado:true}, [{Colaborador_id:"1", Retirou:false}]).desconta === true);
   assert("Fonte fechada usa snapshot", R.fonteVerdadeOperacionalDia({fechamento:{Status_Fechamento:"Fechado"}}).usaSnapshot === true);
   assert("Reabertura exige motivo", R.podeReabrirFechamento({Status_Fechamento:"Fechado"}, "curto").ok === false);
