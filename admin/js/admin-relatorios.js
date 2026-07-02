@@ -1,6 +1,6 @@
 // ============================================================
 // admin-relatorios.js — Relatórios oficiais do Admin Homy
-// v: base-operacional-relatorios-v11-0-20260702
+// v: base-operacional-relatorios-v11-1-20260702
 //
 // Layout restaurado do relatório funcional antigo:
 // - Por dia
@@ -46,6 +46,10 @@ const AdminRelatorios = window.AdminRelatorios = {
   _norm(v) { return AdminUtils.norm ? AdminUtils.norm(v) : String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim(); },
   _pick(obj, ...keys) { return SP.pick ? SP.pick(obj, ...keys) : keys.map(k => obj?.[k]).find(v => v !== undefined && v !== null) ?? ""; },
   _itens() { return this._dados?.itens || []; },
+  _itensDesconto() {
+    const R = window.HomyRefeitorioRegras;
+    return this._itens().filter(i => i.Conta_Desconto !== false && (!R?.contaParaDesconto || R.contaParaDesconto(i)));
+  },
   _totais() { return this._dados?.totais || { principal: 0, light: 0, carne: 0, massa: 0, lanche: 0, total: 0 }; },
 
   _op(p) { return this._norm(this._pick(p, "Opcao", "opcao") || "principal") || "principal"; },
@@ -157,7 +161,7 @@ const AdminRelatorios = window.AdminRelatorios = {
 
   _renderPorCCFunc(wrap) {
     const mapa = {};
-    for (const p of this._itens()) {
+    for (const p of this._itensDesconto()) {
       const cc = this._cc(p);
       const nome = this._nome(p);
       const key = `${cc}||${nome}`;
@@ -198,7 +202,7 @@ const AdminRelatorios = window.AdminRelatorios = {
     wrap.innerHTML = `
       ${this._fonteInfoHtml()}
       <div class="section-title" style="font-size:.95rem;margin-bottom:.7rem">👤 Por CC e funcionário — período ${this._periodo.ini} a ${this._periodo.fim}</div>
-      <div class="alert alert-info" style="margin-bottom:.8rem">Rateio completo para desconto em folha. Fonte fechada: Operação do Dia/Fechamento Oficial.</div>
+      <div class="alert alert-info" style="margin-bottom:.8rem">Rateio completo para desconto em folha. Extras fixos/visitantes entram na produção, mas não entram no desconto de colaborador.</div>
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Colaborador</th><th>Centro de Custo</th><th>Principal</th><th>Light</th><th>Carne</th><th>Massa</th><th>Lanche</th><th>Total refeições</th><th>Datas</th></tr></thead>
@@ -245,7 +249,7 @@ const AdminRelatorios = window.AdminRelatorios = {
     } else if (tipo === "ccfunc") {
       nomeAba = "Por CC e Funcionario";
       const mapa = {};
-      for (const p of this._itens()) {
+      for (const p of this._itensDesconto()) {
         const cc = this._cc(p);
         const nome = this._nome(p);
         const key = `${cc}||${nome}`;
