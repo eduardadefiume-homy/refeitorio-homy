@@ -1,6 +1,6 @@
 // ============================================================
 // sharepoint.js — Refeitório Homy · Microsoft Graph API
-// v: base-operacional-v11-0-20260702
+// v: base-operacional-v11-1-20260702
 // ============================================================
 
 const SP = {
@@ -875,7 +875,11 @@ const SP = {
         const centroCusto = this._extraCentroCustoValor(extra);
         const obsBase = this._extraValor(extra, "Observacao", "Observação", "observacao") || "Criado a partir da lista Extras";
         const observacao = [obsBase, extraId ? `ExtraID:${extraId}` : ""].filter(Boolean).join(" | ");
-        const nomePrato = await this._nomePratoCardapioPorOpcao(semanaId, dia, opcao).catch(() => "") || this._pratoPadraoPorOpcao(opcao);
+        const statusExtra = this._statusExtraOperacional(extra);
+        const bloqueiaExtra = this._statusExtraBloqueiaProducao(statusExtra);
+        const nomePrato = bloqueiaExtra
+          ? statusExtra
+          : (await this._nomePratoCardapioPorOpcao(semanaId, dia, opcao).catch(() => "") || this._pratoPadraoPorOpcao(opcao));
         const dataHora = `${this.getDataRefBySemanaDia(semanaId, dia)}T12:00:00`;
         const existente = pedidos.find(p => this._pedidoEspelhoDoExtra(p, extra, semanaId));
 
@@ -887,10 +891,10 @@ const SP = {
           Dia:              dia,
           Opcao:            opcao || "principal",
           Nome_Prato:       nomePrato,
-          Confirmado:       true,
+          Confirmado:       !bloqueiaExtra,
           Data_Hora:        dataHora,
           Centro_Custo:     centroCusto || "",
-          Status:           "Confirmado",
+          Status:           bloqueiaExtra ? statusExtra : "Confirmado",
           Observacao:       observacao,
           Origem:           tipo || "extra",
           Alterado_Por:     this.getUserName ? this.getUserName() : "Sistema"
@@ -1349,6 +1353,286 @@ const SP = {
 
   async deleteExtra(id) {
     return this.deleteItem("Extras", id);
+  },
+
+  // ============================================================
+  // EXTRAS FIXOS OPERACIONAIS v11.1
+  // ============================================================
+  _extraFixoDefs() {
+    const R = this._R?.();
+    if (R?.extrasFixosOperacionais) return R.extrasFixosOperacionais();
+    return [
+      { slug: "refeicao-extra", nome: "Refeição Extra", tipo: "extra automatica", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Refeição extra automática do dia" },
+      { slug: "guarda", nome: "Guarda", tipo: "guarda", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Guarda — Centro de custo 120602 - PORTARIA" },
+      { slug: "investigador-1", nome: "Investigador 1", tipo: "investigador", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Investigador — Centro de custo 120602 - PORTARIA" },
+      { slug: "investigador-2", nome: "Investigador 2", tipo: "investigador", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Investigador — Centro de custo 120602 - PORTARIA" },
+      { slug: "investigador-3", nome: "Investigador 3", tipo: "investigador", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Investigador — Centro de custo 120602 - PORTARIA" }
+    ];
+  },
+
+  _extraFixoDef(slugOuDef) {
+    if (slugOuDef && typeof slugOuDef === "object") return slugOuDef;
+    const alvo = this.norm(slugOuDef || "");
+    return this._extraFixoDefs().find(d => this.norm(d.slug) === alvo) || null;
+  },
+
+  _marcadorExtraFixo(slug) {
+    return `FixoOperacional:${slug}`;
+  },
+
+  _extraFixoBateRegistro(extra, semanaId, dia, defOuSlug) {
+    const def = this._extraFixoDef(defOuSlug);
+    if (!extra || !def) return false;
+    if (String(this.pick(extra, "Semana_id", "Semana") || "") !== String(semanaId)) return false;
+    if (this.norm(this.pick(extra, "Dia", "dia") || "") !== this.norm(dia)) return false;
+
+    const obs = this.norm(this.pick(extra, "Observacao", "Observação", "observacao") || "");
+    if (obs.includes(this.norm(this._marcadorExtraFixo(def.slug)))) return true;
+
+    const nome = this.norm(this.pick(extra, "Nome", "Title", "Colaborador_nome") || "");
+    const tipo = this.norm(this.pick(extra, "tipo", "Tipo", "Origem") || "");
+    return nome === this.norm(def.nome) && (!def.tipo || tipo.includes(this.norm(def.tipo)) || this.norm(def.tipo).includes(tipo));
+  },
+
+  _statusExtraOperacional(extra) {
+    const st = this.pick(extra, "Status", "status");
+    return st ? String(st) : "Confirmado";
+  },
+
+  _statusExtraBloqueiaProducao(status) {
+    const n = this.norm(status || "");
+    return ["nao vai almocar", "não vai almoçar", "nao_vai_almocar", "ferias", "férias", "ausente", "cancelado", "bloqueado", "inativo"].includes(n);
+  },
+
+  _pedidoEspelhoExtraFixoBate(p, semanaId, dia, def, extraId = "") {
+    if (!p || !def) return false;
+    if (String(this.pick(p, "Semana_id", "Semana") || "") !== String(semanaId)) return false;
+    if (this.norm(this.pick(p, "Dia", "dia") || "") !== this.norm(dia)) return false;
+
+    const obs = this.norm(this.pick(p, "Observacao", "Observação", "observacao") || "");
+    const colabId = String(this.pick(p, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    if (obs.includes(this.norm(this._marcadorExtraFixo(def.slug)))) return true;
+    if (extraId && (obs.includes(`extraid:${this.norm(extraId)}`) || colabId === `extra-${extraId}`)) return true;
+
+    const nome = this.norm(this.pick(p, "Colaborador_nome", "Nome", "Title") || "");
+    const origem = this.norm(this.pick(p, "Origem", "tipo", "Tipo") || "");
+    const opcao = this.norm(this.pick(p, "Opcao", "opcao") || "principal");
+    return nome === this.norm(def.nome) && origem.includes(this.norm(def.tipo)) && opcao === this.norm(def.opcao || "principal");
+  },
+
+  async _salvarPedidoEspelhoExtraFixo(extra, def, options = {}) {
+    const semanaId = this.pick(extra, "Semana_id", "Semana") || options.semanaId;
+    const dia = this.pick(extra, "Dia", "dia") || options.dia;
+    if (!semanaId || !dia || !def) return null;
+
+    const extraId = String(this.pick(extra, "id", "ID") || "").trim();
+    const statusExtra = this._statusExtraOperacional(extra);
+    const bloqueia = this._statusExtraBloqueiaProducao(statusExtra);
+    const opcao = this.pick(extra, "Opcao", "Opção", "opcao") || def.opcao || "principal";
+    const nomePrato = bloqueia ? statusExtra : (await this._nomePratoCardapioPorOpcao(semanaId, dia, opcao).catch(() => "") || this._pratoPadraoPorOpcao(opcao));
+    const marcador = this._marcadorExtraFixo(def.slug);
+    const obsBase = this.pick(extra, "Observacao", "Observação", "observacao") || def.observacao || "Extra fixo operacional";
+    const obs = [obsBase, marcador, extraId ? `ExtraID:${extraId}` : ""].filter(Boolean).join(" | ");
+    const colabId = extraId ? `extra-${extraId}` : `extra-fixo-${def.slug}`;
+    const centroCusto = this.pick(extra, "Centro_Custo", "CentroCusto") || def.centroCusto || this._centroCustoPadraoExtra(def.nome, def.tipo);
+    const dataHora = `${this.getDataRefBySemanaDia(semanaId, dia)}T12:00:00`;
+
+    const pedidos = (await this.getItems("Pedidos", { force: true }).catch(() => []))
+      .filter(p => String(this.pick(p, "Semana_id", "Semana") || "") === String(semanaId));
+    const existente = pedidos.find(p => this._pedidoEspelhoExtraFixoBate(p, semanaId, dia, def, extraId));
+
+    const fields = {
+      Title: `${semanaId}-${colabId}-${dia}`,
+      Semana_id: semanaId,
+      Colaborador_id: colabId,
+      Colaborador_nome: def.nome,
+      Dia: dia,
+      Opcao: opcao,
+      Nome_Prato: nomePrato,
+      Confirmado: !bloqueia,
+      Data_Hora: dataHora,
+      Centro_Custo: centroCusto,
+      Status: bloqueia ? statusExtra : "Confirmado",
+      Observacao: obs,
+      Origem: def.tipo,
+      Alterado_Por: options.usuario || this.getUserName()
+    };
+
+    if (existente?.id) {
+      return this.updateItem("Pedidos", existente.id, fields);
+    }
+    return this.createItem("Pedidos", fields);
+  },
+
+  async garantirExtraFixoDia(semanaId, dia, defOuSlug, options = {}) {
+    const def = this._extraFixoDef(defOuSlug);
+    if (!semanaId || !dia || !def) throw new Error("Extra fixo inválido.");
+
+    const lockKey = `fixo|${semanaId}|${this.norm(dia)}|${this.norm(def.slug)}`;
+    if (!this._extraFixoLocks) this._extraFixoLocks = {};
+    if (this._extraFixoLocks[lockKey]) return this._extraFixoLocks[lockKey];
+
+    const run = (async () => {
+      const marcador = this._marcadorExtraFixo(def.slug);
+      const extras = (await this.getItems("Extras", { force: true }).catch(() => []))
+        .filter(e => String(this.pick(e, "Semana_id", "Semana") || "") === String(semanaId));
+      let extra = extras.find(e => !this._extraInativo(e) && this._extraFixoBateRegistro(e, semanaId, dia, def));
+      let criado = false, atualizado = false, ignorado = false;
+
+      if (!extra) {
+        const criadoExtra = await this.createItem("Extras", {
+          Title: `${semanaId}-${dia}-${def.nome}`,
+          Semana_id: semanaId,
+          Dia: dia,
+          Nome: def.nome,
+          tipo: def.tipo,
+          Opcao: def.opcao || "principal",
+          Observacao: [def.observacao || "Extra fixo operacional", marcador].filter(Boolean).join(" | "),
+          Adicionado_Por: options.usuario || this.getUserName(),
+          Centro_Custo: def.centroCusto || this._centroCustoPadraoExtra(def.nome, def.tipo),
+          Status: "Confirmado"
+        });
+        extra = { id: criadoExtra?.id || criadoExtra?.ID, Semana_id: semanaId, Dia: dia, Nome: def.nome, tipo: def.tipo, Opcao: def.opcao || "principal", Observacao: [def.observacao || "Extra fixo operacional", marcador].join(" | "), Centro_Custo: def.centroCusto || "", Status: "Confirmado" };
+        criado = true;
+      } else {
+        const obs = String(this.pick(extra, "Observacao", "Observação", "observacao") || "");
+        const statusAtual = this._statusExtraOperacional(extra);
+        const fields = {};
+        if (!this.norm(obs).includes(this.norm(marcador))) fields.Observacao = [obs || def.observacao || "Extra fixo operacional", marcador].filter(Boolean).join(" | ");
+        if (!this.pick(extra, "Centro_Custo", "CentroCusto") && def.centroCusto) fields.Centro_Custo = def.centroCusto;
+        if (!this.pick(extra, "Opcao", "Opção") && def.opcao) fields.Opcao = def.opcao;
+        // Não sobrescrever "Não vai almoçar"/cancelamentos por Principal ao garantir fixo.
+        if (!statusAtual) fields.Status = "Confirmado";
+        if (Object.keys(fields).length && this.pick(extra, "id", "ID")) {
+          await this.updateItem("Extras", this.pick(extra, "id", "ID"), fields);
+          extra = { ...extra, ...fields };
+          atualizado = true;
+        } else {
+          ignorado = true;
+        }
+      }
+
+      await this._salvarPedidoEspelhoExtraFixo(extra, def, { ...options, semanaId, dia });
+      this.clearListCache?.("Extras");
+      this.clearListCache?.("Pedidos");
+      return { def, extra, criado, atualizado, ignorado };
+    })();
+
+    this._extraFixoLocks[lockKey] = run;
+    try { return await run; }
+    finally { delete this._extraFixoLocks[lockKey]; }
+  },
+
+  async garantirExtrasFixosDia(semanaId, dia, options = {}) {
+    let criados = 0, atualizados = 0, ignorados = 0;
+    const resultados = [];
+    for (const def of this._extraFixoDefs()) {
+      const r = await this.garantirExtraFixoDia(semanaId, dia, def, options);
+      if (r.criado) criados++;
+      else if (r.atualizado) atualizados++;
+      else ignorados++;
+      resultados.push(r);
+    }
+    return { semanaId, dia, criados, atualizados, ignorados, resultados };
+  },
+
+  async garantirExtrasFixosSemana(semanaId, options = {}) {
+    const dias = ["segunda", "terca", "quarta", "quinta", "sexta"];
+    let criados = 0, atualizados = 0, ignorados = 0;
+    const porDia = {};
+    for (const dia of dias) {
+      const r = await this.garantirExtrasFixosDia(semanaId, dia, options);
+      criados += r.criados || 0;
+      atualizados += r.atualizados || 0;
+      ignorados += r.ignorados || 0;
+      porDia[dia] = r;
+    }
+    return { semanaId, criados, atualizados, ignorados, porDia };
+  },
+
+  async marcarExtraFixoNaoVaiAlmocar(extra, options = {}) {
+    if (!extra) throw new Error("Extra não informado.");
+    const R = this._R?.();
+    const slug = R?.slugExtraFixoPorRegistro ? R.slugExtraFixoPorRegistro(extra) : "";
+    const def = this._extraFixoDef(slug) || this._extraFixoDefs().find(d => this._extraFixoBateRegistro(extra, this.pick(extra, "Semana_id", "Semana"), this.pick(extra, "Dia"), d));
+    const id = this.pick(extra, "id", "ID");
+    if (!id) throw new Error("Extra sem ID.");
+
+    const obs = String(this.pick(extra, "Observacao", "Observação", "observacao") || "");
+    const marcador = def?.slug ? this._marcadorExtraFixo(def.slug) : "FixoOperacional";
+    const fields = {
+      Status: "Não vai almoçar",
+      Observacao: [obs, marcador, `Não vai almoçar registrado por ${options.usuario || this.getUserName()} em ${new Date().toLocaleString("pt-BR")}.`]
+        .filter(Boolean).join(" | ")
+    };
+    const atualizado = await this.updateItem("Extras", id, fields);
+    const extraAtualizado = { ...extra, ...fields, id };
+    if (def) await this._salvarPedidoEspelhoExtraFixo(extraAtualizado, def, options);
+    this.clearListCache?.("Extras");
+    this.clearListCache?.("Pedidos");
+    return atualizado;
+  },
+
+  async reativarExtraFixo(extra, options = {}) {
+    if (!extra) throw new Error("Extra não informado.");
+    const R = this._R?.();
+    const slug = R?.slugExtraFixoPorRegistro ? R.slugExtraFixoPorRegistro(extra) : "";
+    const def = this._extraFixoDef(slug) || this._extraFixoDefs().find(d => this._extraFixoBateRegistro(extra, this.pick(extra, "Semana_id", "Semana"), this.pick(extra, "Dia"), d));
+    const id = this.pick(extra, "id", "ID");
+    if (!id) throw new Error("Extra sem ID.");
+
+    const obs = String(this.pick(extra, "Observacao", "Observação", "observacao") || "");
+    const fields = {
+      Status: "Confirmado",
+      Opcao: def?.opcao || this.pick(extra, "Opcao", "Opção") || "principal",
+      Observacao: [obs, def?.slug ? this._marcadorExtraFixo(def.slug) : "FixoOperacional", `Reativado por ${options.usuario || this.getUserName()} em ${new Date().toLocaleString("pt-BR")}.`]
+        .filter(Boolean).join(" | ")
+    };
+    const atualizado = await this.updateItem("Extras", id, fields);
+    const extraAtualizado = { ...extra, ...fields, id };
+    if (def) await this._salvarPedidoEspelhoExtraFixo(extraAtualizado, def, options);
+    this.clearListCache?.("Extras");
+    this.clearListCache?.("Pedidos");
+    return atualizado;
+  },
+
+  async cancelarExtraComPedido(extra, motivo = "Extra cancelado.") {
+    if (!extra) return false;
+    const extraId = this.pick(extra, "id", "ID");
+    const semanaId = this.pick(extra, "Semana_id", "Semana");
+    const dia = this.pick(extra, "Dia", "dia");
+    const nome = this.pick(extra, "Nome", "Title", "Colaborador_nome") || "Extra";
+    const tipo = this.pick(extra, "tipo", "Tipo", "Origem") || "extra";
+    const opcao = this.pick(extra, "Opcao", "opcao") || "principal";
+    const obs = String(this.pick(extra, "Observacao", "Observação", "observacao") || "");
+
+    if (extraId) {
+      await this.updateItem("Extras", extraId, {
+        Status: "Cancelado",
+        Observacao: [obs, `Cancelado: ${motivo}`, `Por ${this.getUserName()} em ${new Date().toLocaleString("pt-BR")}.`]
+          .filter(Boolean).join(" | ")
+      });
+    }
+
+    if (semanaId) {
+      const pedidos = (await this.getPedidos(semanaId, { force: true }).catch(() => [])) || [];
+      const alvos = pedidos.filter(p => this._pedidoExtraBate(p, semanaId, dia, nome, tipo, opcao, String(extraId || "")));
+      for (const p of alvos) {
+        const pid = this.pick(p, "id", "ID");
+        if (!pid) continue;
+        await this.updateItem("Pedidos", pid, {
+          Status: "Cancelado",
+          Confirmado: false,
+          Origem: "Extra cancelado",
+          Observacao: [this.pick(p, "Observacao", "Observação", "observacao") || "", `Cancelado junto ao extra. ${motivo}`].filter(Boolean).join(" | "),
+          Alterado_Por: this.getUserName()
+        });
+      }
+    }
+
+    this.clearListCache?.("Extras");
+    this.clearListCache?.("Pedidos");
+    return true;
   },
 
   // ============================================================
@@ -4081,8 +4365,12 @@ const SP = {
         Confirmado: true,
         Origem: pick(i, "Origem") || "Fechamento Oficial",
         Categoria: pick(i, "Categoria") || "colaborador",
-        Conta_Desconto: true,
-        Regra_Desconto: "Fechamento oficial: item conta produção e desconto conforme regra Homy."
+        Conta_Desconto: null,
+        Regra_Desconto: "Fechamento oficial: desconto calculado pela regra central Homy."
+      }))
+      .map(i => ({
+        ...i,
+        Conta_Desconto: R?.contaParaDesconto ? R.contaParaDesconto(i) : !this.isExtraPedido(i)
       }));
 
     const resumoPorData = new Map();
