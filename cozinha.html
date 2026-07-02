@@ -4,58 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Cozinha · Homy Química</title>
-<!-- PWA Cozinha Homy -->
-<link rel="manifest" href="manifest-cozinha.json?v=pwa-homy-final-20260612-v3">
-<link rel="icon" type="image/png" sizes="64x64" href="assets/pwa/icon-cozinha-64.png?v=pwa-homy-final-20260612-v3">
-<link rel="apple-touch-icon" sizes="180x180" href="assets/pwa/icon-cozinha-180.png?v=pwa-homy-final-20260612-v3">
-<meta name="theme-color" content="#8E050A">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Cozinha Homy">
-<script>
-  (function() {
-    function isStandaloneApp() {
-      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-             window.navigator.standalone === true;
-    }
-    function isMobileOrTablet() {
-      return window.innerWidth <= 1180 ||
-             (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
-             (navigator.maxTouchPoints || 0) > 0;
-    }
-    if (isStandaloneApp() && isMobileOrTablet()) {
-      document.documentElement.classList.add('homy-app-standalone');
-    }
-  })();
-</script>
-<style>
-  #homyAppSplash {
-    position: fixed;
-    inset: 0;
-    z-index: 999999;
-    display: none;
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    background-color: #8E050A;
-    background-image: url('assets/pwa/splash-cozinha-1080x1920.jpg?v=pwa-homy-final-20260612-v3');
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: contain;
-    transition: opacity .35s ease, visibility .35s ease;
-  }
-
-  html.homy-app-standalone #homyAppSplash {
-    display: block;
-  }
-
-  #homyAppSplash.is-hidden {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-  }
-</style>
+<meta name="theme-color" content="#040c1a">
+<link rel="icon" type="image/png" href="favicon.png?v=fix-msal">
+<title>Cozinha · Homy Química</title>
+<!-- v: base-operacional-cozinha-v11-0-20260702 -->
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -90,32 +43,6 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 #telaAcessoNegado .msg{font-size:0.95rem;color:var(--muted);line-height:1.6;max-width:360px}
 #telaAcessoNegado .btn-voltar-neg{display:inline-block;margin-top:0.5rem;padding:0.75rem 1.5rem;border-radius:12px;background:rgba(26,100,200,0.2);border:1px solid rgba(80,150,255,0.3);color:#9bd2ff;text-decoration:none;font-weight:700;font-size:0.9rem}
 
-/* TELA DE LOGIN DA COZINHA */
-#telaLoginCozinha{
-  display:none;
-  position:fixed;inset:0;z-index:55;
-  background:var(--bg);
-  flex-direction:column;align-items:center;justify-content:center;
-  gap:1.2rem;padding:2rem;text-align:center;
-}
-#telaLoginCozinha .icon{font-size:3.5rem}
-#telaLoginCozinha .titulo{font-family:"Barlow Condensed",sans-serif;font-size:1.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase}
-#telaLoginCozinha .msg{font-size:0.95rem;color:var(--muted);line-height:1.6;max-width:420px}
-.auth-actions{display:flex;align-items:center;justify-content:center;gap:.8rem;flex-wrap:wrap;margin-top:.3rem}
-.btn-auth-primary,.btn-auth-secondary{
-  border-radius:12px;padding:.78rem 1.25rem;font-family:"Barlow",sans-serif;
-  font-size:.88rem;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;
-}
-.btn-auth-primary{border:1px solid rgba(64,208,144,.35);background:rgba(64,208,144,.16);color:#64e0a6}
-.btn-auth-primary:hover{background:rgba(64,208,144,.24);transform:translateY(-1px)}
-.btn-auth-primary:disabled{opacity:.55;cursor:not-allowed;transform:none}
-.btn-auth-secondary{border:1px solid rgba(80,150,255,.3);background:rgba(26,100,200,.18);color:#9bd2ff}
-.btn-auth-secondary:hover{background:rgba(26,100,200,.28)}
-.login-status{min-height:1rem;font-size:.82rem;color:rgba(143,170,210,.72);max-width:440px;line-height:1.45}
-.login-status.error{color:#ff8c80}
-.acesso-email{font-size:.78rem;color:rgba(143,170,210,.7);word-break:break-all;max-width:440px}
-
-
 .app{position:relative;z-index:1;min-height:100vh;padding-bottom:2rem}
 
 .header{
@@ -148,191 +75,18 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
 .weekday{font-family:"Barlow Condensed";font-size:1.15rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase}
 .fulldate{font-size:0.78rem;color:var(--muted);letter-spacing:0.06em}
 
-.content{max-width:1180px;margin:0 auto;padding:1rem 1rem 0}
+.content{max-width:700px;margin:0 auto;padding:1rem 1rem 0}
 
-
-/* MINI DASHBOARD DA COZINHA — conferência rápida da Vascon */
-.cozinha-dashboard{
-  margin-bottom:1rem;
-  border-radius:16px;
-  border:1px solid rgba(60,140,255,0.16);
-  background:rgba(255,255,255,0.026);
-  padding:0.95rem;
-  box-shadow:0 2px 12px rgba(0,0,0,0.18);
-}
-.cozinha-dashboard-head{
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
-  gap:0.8rem;
-  margin-bottom:0.75rem;
-}
-.cozinha-dashboard-title{
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:1rem;
-  font-weight:700;
-  letter-spacing:0.1em;
-  text-transform:uppercase;
-  color:#fff;
-  display:flex;
-  align-items:center;
-  gap:0.45rem;
-}
-.cozinha-dashboard-sub{
-  margin-top:0.18rem;
-  font-size:0.72rem;
-  color:rgba(143,170,210,0.58);
-  line-height:1.35;
-}
-.cozinha-dashboard-sync{
-  font-size:0.62rem;
-  font-weight:800;
-  letter-spacing:0.09em;
-  text-transform:uppercase;
-  border-radius:999px;
-  padding:5px 9px;
-  color:rgba(64,208,144,0.96);
-  background:rgba(64,208,144,0.08);
-  border:1px solid rgba(64,208,144,0.22);
-  white-space:nowrap;
-}
-.cozinha-stats-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(122px,1fr));
-  gap:0.62rem;
-}
-.cozinha-stat-card{
-  min-height:88px;
-  border-radius:14px;
-  border:1px solid rgba(255,255,255,0.085);
-  background:rgba(255,255,255,0.04);
-  padding:0.78rem 0.82rem;
-  display:flex;
-  flex-direction:column;
-  justify-content:space-between;
-  gap:0.35rem;
-}
-.cozinha-stat-icon{font-size:1.15rem;line-height:1}
-.cozinha-stat-value{
-  font-family:"Barlow Condensed",sans-serif;
-  font-size:1.65rem;
-  font-weight:700;
-  line-height:1;
-  color:#fff;
-}
-.cozinha-stat-label{
-  font-size:0.58rem;
-  font-weight:700;
-  letter-spacing:0.11em;
-  text-transform:uppercase;
-  color:rgba(143,170,210,0.66);
-}
-
-.cozinha-stat-card{cursor:pointer;position:relative;user-select:none}
-.cozinha-stat-card:hover{background:rgba(80,150,255,0.12);border-color:rgba(80,150,255,0.32);transform:translateY(-1px)}
-.cozinha-stat-card:active{transform:scale(.985)}
-.cozinha-stat-card::after{content:"Toque para ver";position:absolute;right:.55rem;top:.45rem;font-size:.48rem;letter-spacing:.08em;text-transform:uppercase;color:rgba(143,170,210,.38);opacity:0;transition:opacity .15s}
-.cozinha-stat-card:hover::after{opacity:1}
-.resumo-lista-modal{max-height:min(62vh,520px);overflow:auto;display:flex;flex-direction:column;gap:.55rem;padding-right:.2rem}
-.resumo-modal-title{font-family:"Barlow Condensed";font-size:1.25rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff;margin-bottom:.2rem}
-.resumo-modal-sub{font-size:.78rem;color:var(--muted);margin-bottom:1rem}
-.resumo-row{display:flex;align-items:center;gap:.75rem;border:1px solid var(--border);background:rgba(255,255,255,.045);border-radius:14px;padding:.75rem .8rem}
-.resumo-row.done{opacity:.65;border-color:rgba(64,208,144,.18);background:rgba(64,208,144,.05)}
-.resumo-row .info{flex:1;min-width:0}.resumo-row .name{white-space:normal}.resumo-row .desc{font-size:.72rem}
-.resumo-row-actions{display:flex;gap:.45rem;align-items:center;flex-shrink:0}
-.btn-mini-confirm{border:1px solid rgba(64,208,144,.34);background:rgba(64,208,144,.13);color:var(--green);border-radius:10px;padding:.48rem .62rem;font-size:.74rem;font-weight:700;cursor:pointer;font-family:"Barlow",sans-serif}
-.btn-mini-confirm:disabled{opacity:.5;cursor:default}.resumo-empty{padding:1rem;text-align:center;color:var(--muted);font-size:.9rem}
-
-@media(max-width:720px){
-  .cozinha-dashboard{padding:0.82rem;margin-bottom:0.85rem}
-  .cozinha-dashboard-head{align-items:flex-start;flex-direction:column;gap:0.45rem}
-  .cozinha-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:0.5rem}
-  .cozinha-stat-card{min-height:82px;padding:0.72rem}
-  .cozinha-stat-value{font-size:1.5rem}
-}
-@media(max-width:390px){
-  .cozinha-stats-grid{grid-template-columns:1fr}
-}
-
-/* cardápio do dia — cards iguais ao Cardápio do Dia */
+/* cardápio do dia */
 .cardapio{
-  display:grid;grid-template-columns:auto minmax(0,1fr);align-items:flex-start;gap:0.9rem;
-  padding:1rem;border-radius:16px;
+  display:flex;align-items:center;gap:0.9rem;
+  padding:0.85rem 1rem;border-radius:14px;
   background:rgba(40,100,200,0.08);border:1px solid rgba(60,140,255,0.14);
   margin-bottom:1rem;
-  box-shadow:0 2px 12px rgba(0,0,0,0.18);
-  width:100%;
 }
-.cardapio-icon{font-size:1.7rem;flex-shrink:0;margin-top:0.25rem}
-.label{font-size:0.66rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:0.65rem}
-.cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4;width:100%;min-width:0}
-
-.cozinha-cardapio-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(185px,1fr));
-  gap:0.75rem;
-  width:100%;
-  min-width:0;
-}
-.cozinha-op-card{
-  min-height:118px;
-  border-radius:15px;
-  border:1px solid rgba(255,255,255,0.10);
-  background:rgba(255,255,255,0.045);
-  overflow:hidden;
-  padding:0.85rem 0.9rem;
-  display:flex;
-  flex-direction:column;
-  gap:0.55rem;
-  box-shadow:0 2px 10px rgba(0,0,0,0.18);
-}
-.cozinha-op-top{display:flex;align-items:flex-start;gap:0.55rem;flex-wrap:wrap}
-.cozinha-op-tag{
-  font-size:0.58rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;
-  padding:4px 8px;border-radius:6px;line-height:1;flex-shrink:0;
-  background:rgba(26,58,110,0.7);color:rgba(140,200,255,0.95);border:1px solid rgba(60,140,255,0.3);
-}
-.cozinha-op-tag.tag-principal{background:rgba(26,58,110,0.75);color:rgba(140,200,255,0.95);border-color:rgba(60,140,255,0.34)}
-.cozinha-op-tag.tag-light{background:rgba(16,110,90,0.55);color:rgba(80,220,160,0.95);border-color:rgba(16,160,120,0.35)}
-.cozinha-op-tag.tag-carne{background:rgba(192,40,28,0.45);color:rgba(255,160,140,0.95);border-color:rgba(192,40,28,0.38)}
-.cozinha-op-tag.tag-massa{background:rgba(100,60,10,0.65);color:rgba(255,200,100,0.95);border-color:rgba(180,120,20,0.35)}
-.cozinha-op-tag.tag-lanche{background:rgba(80,20,140,0.65);color:rgba(200,160,255,0.95);border-color:rgba(140,80,220,0.4)}
-.cozinha-op-name{font-size:0.95rem;font-weight:700;color:#fff;line-height:1.25;flex:1;min-width:120px}
-.cozinha-op-list{display:flex;flex-direction:column;gap:0.25rem;margin-top:0.05rem}
-.cozinha-op-detail{font-size:0.78rem;color:rgba(185,210,245,0.74);line-height:1.35;display:flex;gap:0.38rem;align-items:flex-start}
-.cozinha-op-detail::before{content:"·";color:rgba(192,40,28,0.78);font-size:1rem;line-height:1;flex-shrink:0;margin-top:0.1rem}
-.cozinha-op-aviso{
-  margin-top:auto;
-  padding:0.5rem 0.6rem;
-  border-radius:9px;
-  background:rgba(255,180,0,0.07);
-  border:1px solid rgba(255,200,80,0.15);
-  font-size:0.72rem;
-  color:rgba(255,215,130,0.85);
-  line-height:1.45;
-}
-.cozinha-cardapio-vazio{
-  padding:0.75rem 0.9rem;
-  border-radius:12px;
-  background:rgba(255,180,0,0.06);
-  border:1px solid rgba(255,200,80,0.14);
-  color:rgba(255,215,130,0.9);
-}
-@media(min-width:900px){
-  .cozinha-cardapio-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
-}
-@media(min-width:1200px){
-  .cozinha-cardapio-grid{grid-template-columns:repeat(auto-fit,minmax(185px,1fr))}
-}
-@media(max-width:720px){
-  .content{max-width:100%;padding:0.9rem 0.8rem 0}
-  .cardapio{grid-template-columns:1fr;gap:0.65rem}
-  .cozinha-cardapio-grid{grid-template-columns:1fr}
-}
-@media(min-width:721px) and (max-width:899px){
-  .content{max-width:94vw}
-  .cozinha-cardapio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
+.cardapio-icon{font-size:1.7rem;flex-shrink:0}
+.label{font-size:0.66rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:0.15rem}
+.cardapio-text{font-size:0.9rem;font-weight:500;color:var(--text);line-height:1.4}
 
 /* busca */
 .search{position:relative;margin-bottom:0.9rem}
@@ -425,122 +179,26 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   transition:background 0.18s;
 }
 .btn-confirm:hover{background:rgba(64,208,144,0.28)}
+.btn-no-retirada{width:100%;padding:1rem;border-radius:14px;border:none;background:rgba(220,150,40,0.16);color:#ffd28a;border:1.5px solid rgba(220,150,40,0.35);font-size:1rem;font-weight:700;cursor:pointer;font-family:"Barlow",sans-serif;}
+.btn-no-retirada:hover{background:rgba(220,150,40,0.25)}
+.motivo-input{width:100%;padding:.85rem;border-radius:12px;border:1px solid var(--border);background:rgba(255,255,255,.045);color:var(--text);font-family:"Barlow",sans-serif;outline:none;}
+.item.no-retirada{background:rgba(220,150,40,0.07);border-color:rgba(220,150,40,0.25);opacity:.82}.item.no-retirada .badge{background:rgba(220,150,40,0.13);color:#ffd28a;border-color:rgba(220,150,40,0.25)}
 .btn-cancel{
   width:100%;padding:0.75rem;border-radius:12px;border:none;
   background:rgba(255,255,255,0.04);color:var(--muted);
   font-size:0.88rem;cursor:pointer;font-family:"Barlow",sans-serif;
 }
-
-
-/* POPUP DE CONFIRMAÇÃO DE RETIRADA */
-.modal-overlay{
-  align-items:center!important;
-  justify-content:center!important;
-  padding:1rem;
-}
-.modal{
-  max-width:460px!important;
-  border-radius:22px!important;
-  padding:1.25rem 1.2rem 1.25rem!important;
-  transform:scale(.94) translateY(10px)!important;
-  box-shadow:0 24px 80px rgba(0,0,0,.72), inset 0 1px 0 rgba(255,255,255,.06);
-}
-.modal-overlay.open .modal{transform:scale(1) translateY(0)!important}
-.modal-handle{display:none!important}
-.modal-question{
-  display:flex;align-items:center;gap:.7rem;margin-bottom:1rem;
-  font-family:"Barlow Condensed",sans-serif;font-size:1.3rem;font-weight:700;
-  letter-spacing:.06em;text-transform:uppercase;color:#fff;
-}
-.modal-question-icon{font-size:1.55rem}
-.modal-box{
-  border:1px solid rgba(60,140,255,.18);
-  background:rgba(255,255,255,.045);
-  border-radius:16px;
-  padding:.95rem 1rem;
-  margin-bottom:1rem;
-}
-.modal-nome{font-size:1.05rem!important;margin-bottom:.25rem!important}
-.modal-opcao{margin-bottom:0!important}
-.item.done{pointer-events:none;filter:none!important;opacity:.62!important}
-.item.done .name{text-decoration:line-through;text-decoration-thickness:1px;text-decoration-color:rgba(64,208,144,.65)}
-.item.done .badge{font-weight:800}
-
-
-.btn-confirm:disabled{opacity:.65;cursor:wait;filter:grayscale(.25)}
-
 </style>
 </head>
 <body>
 
-<!-- Splash visual do app Cozinha: aparece somente quando aberto como app instalado no celular/tablet -->
-<div id="homyAppSplash" aria-hidden="true"></div>
-
-<script>
-  (function() {
-    function isStandaloneApp() {
-      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-             window.navigator.standalone === true;
-    }
-    function isMobileOrTablet() {
-      return window.innerWidth <= 1180 ||
-             (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
-             (navigator.maxTouchPoints || 0) > 0;
-    }
-    function shouldShowSplash() {
-      return isStandaloneApp() && isMobileOrTablet();
-    }
-    function removeSplashNow() {
-      const splash = document.getElementById('homyAppSplash');
-      if (splash) splash.remove();
-    }
-
-    if (!shouldShowSplash()) {
-      removeSplashNow();
-      return;
-    }
-
-    window.addEventListener('load', () => {
-      setTimeout(() => {
-        const splash = document.getElementById('homyAppSplash');
-        if (splash) {
-          splash.classList.add('is-hidden');
-          setTimeout(() => splash.remove(), 450);
-        }
-      }, 900);
-    });
-  })();
-</script>
-
-
 <canvas id="techCanvas"></canvas>
-
-<div id="telaLoginCozinha">
-  <div class="icon">🍽️</div>
-  <div class="titulo">Acesso da Cozinha</div>
-  <div class="msg">
-    Entre com a conta autorizada da cozinha:<br>
-    <strong>recepcao.hq@homyquimica.com.br</strong>
-  </div>
-  <div class="auth-actions">
-    <button id="btnEntrarCozinha" class="btn-auth-primary" type="button" onclick="entrarCozinhaComConta()">🔐 Entrar com conta da cozinha</button>
-    <a class="btn-auth-secondary" href="index.html">Voltar ao início</a>
-  </div>
-  <div id="loginCozinhaStatus" class="login-status"></div>
-</div>
 
 <div id="telaAcessoNegado">
   <div class="icon">🔒</div>
   <div class="titulo">Acesso Restrito</div>
-  <div class="msg">
-    Não foi possível acessar esta página com a conta informada.<br>
-    Esta área é exclusiva para <strong>recepcao.hq@homyquimica.com.br</strong>.
-  </div>
-  <div class="acesso-email" id="emailNegadoCozinha"></div>
-  <div class="auth-actions">
-    <button class="btn-auth-primary" type="button" onclick="entrarCozinhaComConta()">Trocar conta</button>
-    <a class="btn-auth-secondary" href="index.html">Voltar ao início</a>
-  </div>
+  <div class="msg">Esta área é exclusiva para o e-mail da cozinha.<br>Acesse com a conta <strong>recepcao.hq@homyquimica.com.br</strong>.</div>
+  <a class="btn-voltar-neg" href="index.html">Voltar ao início</a>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -558,7 +216,7 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
           </div>
         </div>
       </div>
-      <button class="sync" id="btnSyncCozinha" onclick="forcarSincronizarCozinha()">↻ Atualizar</button>
+      <button class="sync" onclick="sincronizar()">↻ Atualizar</button>
     </div>
     <div class="datebar">
       <div class="weekday" id="weekday">—</div>
@@ -567,27 +225,6 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   </header>
 
   <main class="content">
-
-    <section class="cozinha-dashboard" aria-label="Resumo para conferência da cozinha">
-      <div class="cozinha-dashboard-head">
-        <div>
-          <div class="cozinha-dashboard-title">📊 Resumo para conferência</div>
-          <div class="cozinha-dashboard-sub">Totais do dia sincronizados com Admin, Pedidos e Check-ins.</div>
-        </div>
-        <div class="cozinha-dashboard-sync" id="cozDashAtualizado">Tempo real</div>
-      </div>
-      <div class="cozinha-stats-grid">
-        <div class="cozinha-stat-card" data-grupo="confirmados" onclick="abrirResumoCardCozinha('confirmados')"><div class="cozinha-stat-icon">✅</div><div class="cozinha-stat-value" id="cozDashConfirmados">0</div><div class="cozinha-stat-label">Confirmados</div></div>
-        <div class="cozinha-stat-card" data-grupo="principal" onclick="abrirResumoCardCozinha('principal')"><div class="cozinha-stat-icon">🥗</div><div class="cozinha-stat-value" id="cozDashPrincipal">0</div><div class="cozinha-stat-label">Principal</div></div>
-        <div class="cozinha-stat-card" data-grupo="light" onclick="abrirResumoCardCozinha('light')"><div class="cozinha-stat-icon">🍃</div><div class="cozinha-stat-value" id="cozDashLight">0</div><div class="cozinha-stat-label">Light</div></div>
-        <div class="cozinha-stat-card" data-grupo="carne" onclick="abrirResumoCardCozinha('carne')"><div class="cozinha-stat-icon">🥩</div><div class="cozinha-stat-value" id="cozDashCarne">0</div><div class="cozinha-stat-label">Carne</div></div>
-        <div class="cozinha-stat-card" data-grupo="massa" onclick="abrirResumoCardCozinha('massa')"><div class="cozinha-stat-icon">🍝</div><div class="cozinha-stat-value" id="cozDashMassa">0</div><div class="cozinha-stat-label">Massa</div></div>
-        <div class="cozinha-stat-card" data-grupo="lanche" onclick="abrirResumoCardCozinha('lanche')"><div class="cozinha-stat-icon">🍔</div><div class="cozinha-stat-value" id="cozDashLanche">0</div><div class="cozinha-stat-label">Lanche</div></div>
-        <div class="cozinha-stat-card" data-grupo="marmitas" onclick="abrirResumoCardCozinha('marmitas')"><div class="cozinha-stat-icon">🍱</div><div class="cozinha-stat-value" id="cozDashMarmitas">0</div><div class="cozinha-stat-label">Marmitas</div></div>
-        <div class="cozinha-stat-card" data-grupo="a-retirar" onclick="abrirResumoCardCozinha('a-retirar')"><div class="cozinha-stat-icon">📦</div><div class="cozinha-stat-value" id="cozDashPendentes">0</div><div class="cozinha-stat-label">A retirar</div></div>
-      </div>
-    </section>
-
     <section class="cardapio">
       <div class="cardapio-icon">🍱</div>
       <div>
@@ -619,30 +256,16 @@ html,body{width:100%;height:100%;background:var(--bg);font-family:"Barlow",sans-
   </main>
 </div>
 
-
-<!-- Modal lista por card do resumo -->
-<div class="modal-overlay" id="modalResumoOverlay">
-  <div class="modal">
-    <div class="modal-handle"></div>
-    <div class="resumo-modal-title" id="modalResumoTitulo">Resumo</div>
-    <div class="resumo-modal-sub" id="modalResumoSub">Colaboradores desta opção.</div>
-    <div class="resumo-lista-modal" id="modalResumoLista"></div>
-    <div class="modal-actions" style="margin-top:1rem">
-      <button class="btn-cancel" onclick="fecharResumoCardCozinha()">Fechar</button>
-    </div>
-  </div>
-</div>
-
 <!-- Modal confirmação -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
-    <div class="modal-question"><span class="modal-question-icon">✅</span><span>Confirmar retirada?</span></div>
-    <div class="modal-box">
-      <div class="modal-nome" id="modalNome">—</div>
-      <div class="modal-opcao" id="modalOpcao">—</div>
-    </div>
+    <div class="modal-handle"></div>
+    <div class="modal-nome" id="modalNome">—</div>
+    <div class="modal-opcao" id="modalOpcao">—</div>
     <div class="modal-actions">
-      <button class="btn-confirm" id="btnConfirmarRetirada" onclick="confirmarRetirada()">✓ Sim, confirmar retirada</button>
+      <button class="btn-confirm" onclick="confirmarRetirada()">✓ Confirmar retirada</button>
+      <input class="motivo-input" id="motivoNaoRetirada" placeholder="Motivo se não retirou: passou mal, foi embora, outro...">
+      <button class="btn-no-retirada" onclick="registrarNaoRetirada()">🚫 Registrar não retirada</button>
       <button class="btn-cancel" onclick="fecharModal()">Cancelar</button>
     </div>
   </div>
@@ -659,15 +282,18 @@ window.HOMY_SP_READY = (function(){
       document.head.appendChild(s);
     });
   }
-  return loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js")
+  return loadScript("refeitorio-regras.js?v=base-operacional-v11-0-20260702")
+    .catch(function(){ return loadScript("./refeitorio-regras.js?v=base-operacional-v11-0-20260702"); })
+    .catch(function(){ return loadScript("../refeitorio-regras.js?v=base-operacional-v11-0-20260702"); })
+    .then(function(){ return loadScript("https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"); })
     .catch(function(){
       return loadScript("https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js");
     })
     .then(function(){
       if (!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=fix-semana-operacional-ausencias-20260624")
-        .catch(function(){ return loadScript("./sharepoint.js?v=fix-semana-operacional-ausencias-20260624"); })
-        .catch(function(){ return loadScript("../sharepoint.js?v=fix-semana-operacional-ausencias-20260624"); });
+      return loadScript("sharepoint.js?v=base-operacional-v11-0-20260702")
+        .catch(function(){ return loadScript("./sharepoint.js?v=base-operacional-v11-0-20260702"); })
+        .catch(function(){ return loadScript("../sharepoint.js?v=base-operacional-v11-0-20260702"); });
     })
     .then(function(){
       if (!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
@@ -685,31 +311,10 @@ const EMAIL_COZINHA = "recepcao.hq@homyquimica.com.br";
 let pedidosHoje  = [];
 let checkinsHoje = [];
 let pedidoSelecionado = null;
-let cozinhaSyncTimer = null;
-let cozinhaSyncEmAndamento = false;
-let cozinhaSyncUltimoInicio = 0;
-let cozinhaSyncChannel = null;
-let checkinsConfirmadosLocal = new Set();
 
 // ---- helpers ----
 function normalizar(v){ return String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
 function itemValor(obj,...keys){ for(const k of keys){ if(obj && obj[k] != null) return obj[k]; } return ""; }
-function dataISOCozinha(v){
-  if(!v) return "";
-  const s = String(v);
-  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
-  const d = new Date(s);
-  if(isNaN(d)) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,"0");
-  const dia = String(d.getDate()).padStart(2,"0");
-  return `${y}-${m}-${dia}`;
-}
-function dataRefCozinha(semanaId, dia){
-  try { if(window.SP?.getDataRefBySemanaDia) return window.SP.getDataRefBySemanaDia(semanaId, dia); } catch(_) {}
-  return new Date().toISOString().slice(0,10);
-}
-function esc(v){ return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
 function getNome(p){ return itemValor(p,"Colaborador_nome","Title","Nome"); }
 function getOpcao(p){ return itemValor(p,"Opcao","opcao","Nome_Prato"); }
 function getPedidoId(p){ return String(p.id||p.ID||""); }
@@ -720,92 +325,16 @@ function iniciais(nome){
   return (p[0][0] + (p.length > 1 ? p[p.length-1][0] : "")).toUpperCase();
 }
 
-function chaveCheckinLocal(semanaId, dia, pedido){
-  const cid = String(getColaboradorId(pedido) || "").trim();
-  const pid = String(getPedidoId(pedido) || "").trim();
-  const nome = normalizar(getNome(pedido));
-  return [semanaId, normalizar(dia), cid || pid || nome].join("|");
+function classificacaoRetirada(p){
+  const R = window.HomyRefeitorioRegras;
+  if (R && R.classificarRetiradaCozinha) return R.classificarRetiradaCozinha(p, checkinsHoje);
+  const cid = String(getColaboradorId(p));
+  const found = checkinsHoje.find(c => String(itemValor(c,"Colaborador_id")) === cid);
+  if (!found) return { status:"pendente", retirou:null, label:"Pendente" };
+  return found.Retirou === true ? { status:"retirou", retirou:true, label:"Retirou" } : { status:"nao_retirou", retirou:false, label:"Não retirou" };
 }
-
-function carregarCheckinsLocais(semanaId, dia){
-  try {
-    const raw = localStorage.getItem("homy_cozinha_checkins_confirmados") || "[]";
-    const arr = JSON.parse(raw);
-    checkinsConfirmadosLocal = new Set((Array.isArray(arr) ? arr : []).filter(k =>
-      String(k).startsWith(`${semanaId}|${normalizar(dia)}|`)
-    ));
-  } catch(e) {
-    checkinsConfirmadosLocal = new Set();
-  }
-}
-
-function salvarCheckinLocal(semanaId, dia, pedido){
-  const chave = chaveCheckinLocal(semanaId, dia, pedido);
-  checkinsConfirmadosLocal.add(chave);
-  try {
-    const raw = localStorage.getItem("homy_cozinha_checkins_confirmados") || "[]";
-    const arr = JSON.parse(raw);
-    const set = new Set(Array.isArray(arr) ? arr : []);
-    set.add(chave);
-    localStorage.setItem("homy_cozinha_checkins_confirmados", JSON.stringify(Array.from(set).slice(-500)));
-  } catch(e) {
-    console.warn("Não foi possível manter confirmação local:", e);
-  }
-}
-
-function emitirEventoSync(tipo, detalhe = {}){
-  const payload = { tipo, detalhe, ts: Date.now() };
-  try { localStorage.setItem("homy_cozinha_checkin_sync", JSON.stringify(payload)); } catch (_) {}
-  try { localStorage.setItem("homy_refeitorio_sync", JSON.stringify(payload)); } catch (_) {}
-  try {
-    if (!cozinhaSyncChannel) cozinhaSyncChannel = new BroadcastChannel("homy-refeitorio-sync");
-    cozinhaSyncChannel.postMessage(payload);
-  } catch (_) {}
-}
-
-function marcarPedidoEntregueLocal(semanaId, dia, pedido){
-  if (!pedido) return;
-  pedido._retirouLocal = true;
-  salvarCheckinLocal(semanaId, dia, pedido);
-
-  const cid = String(getColaboradorId(pedido) || "").trim();
-  const nome = String(getNome(pedido) || "").trim();
-  const pid = String(getPedidoId(pedido) || "").trim();
-  checkinsHoje.push({
-    Pedido_id: pid,
-    Colaborador_id: cid,
-    Colaborador_nome: nome,
-    Dia: dia,
-    Semana_id: semanaId,
-    Retirou: true,
-    _local: true
-  });
-}
-
-function isCheckinFeito(p){
-  if (p?._retirouLocal) return true;
-
-  const semanaId = semanaIdAtual();
-  const dia = diaAtual();
-  if (checkinsConfirmadosLocal.has(chaveCheckinLocal(semanaId, dia, p))) return true;
-
-  const cid = String(getColaboradorId(p) || "").trim();
-  const pid = String(getPedidoId(p) || "").trim();
-  const nome = normalizar(getNome(p));
-
-  return checkinsHoje.some(c => {
-    const cCid = String(itemValor(c,"Colaborador_id","colaborador_id") || "").trim();
-    const cPid = String(itemValor(c,"Pedido_id","pedido_id","PedidoId") || "").trim();
-    const cNome = normalizar(itemValor(c,"Colaborador_nome","colaborador_nome","Nome","Title") || "");
-    const retirouValor = itemValor(c,"Retirou","retirou","Confirmado","confirmado");
-    const retirou = window.SP?.isTrue ? window.SP.isTrue(retirouValor) : (retirouValor === true || String(retirouValor).toLowerCase() === "true" || String(retirouValor).toLowerCase() === "sim");
-    return retirou && (
-      (pid && cPid && cPid === pid) ||
-      (cid && cCid && cCid === cid) ||
-      (nome && cNome && cNome === nome)
-    );
-  });
-}
+function isCheckinFeito(p){ return classificacaoRetirada(p).retirou === true; }
+function isNaoRetirado(p){ return classificacaoRetirada(p).status === "nao_retirou"; }
 
 function isAusente(p){
   // a lista já vem filtrada com ausências via getPedidos; status Ausente ou Não vai almoçar
@@ -814,137 +343,10 @@ function isAusente(p){
          status === "ferias" || status === "férias" || status === "afastado" || status === "atestado";
 }
 
-// Identifica extras administrativos.
-// Na cozinha eles DEVEM aparecer quando existirem; quem não mostra extras é a tela de marcar refeição.
-function isPedidoExtraCozinha(p){
-  const origem = normalizar(itemValor(p,"Origem","origem"));
-  const tipo   = normalizar(itemValor(p,"tipo","Tipo"));
-  const nome   = normalizar(getNome(p));
-  const titulo = normalizar(itemValor(p,"Title","Nome"));
-
-  return origem.includes("extra") || origem.includes("investigador") || origem.includes("guarda") ||
-         origem.includes("prestador") || origem.includes("fornecedor") || origem.includes("representante") || origem.includes("motorista") || origem.includes("visitante") ||
-         tipo.includes("extra")   || tipo.includes("investigador")   || tipo.includes("guarda")   ||
-         tipo.includes("prestador") || tipo.includes("fornecedor") || tipo.includes("representante") || tipo.includes("motorista") || tipo.includes("visitante") ||
-         nome.includes("refeicao extra") || nome.includes("investigador") || nome.includes("guarda") ||
-         nome.includes("prestador") || nome.includes("fornecedor") || nome.includes("representante") || nome.includes("motorista") ||
-         titulo.includes("refeicao extra") || titulo.includes("investigador") || titulo.includes("guarda") ||
-         titulo.includes("prestador") || titulo.includes("fornecedor") || titulo.includes("representante") || titulo.includes("motorista");
-}
-
-// Mantido por compatibilidade com versões anteriores.
+// verifica se pedido é extra interno (não aparece para cozinha como separado)
 function pedidoConta(p){
-  return true;
-}
-
-function isExtraCanceladoCozinha(e){
-  const status = normalizar(itemValor(e,"Status","status"));
-  return ["cancelado", "bloqueado", "excluido", "excluído", "inativo"].includes(status);
-}
-
-async function carregarExtrasCozinhaSeguros(semanaId, dia){
-  const tentativas = [
-    () => window.SP.getExtras?.(semanaId, dia),
-    () => window.SP.getExtras?.(semanaId),
-    () => window.SP.getItems?.("Extras")
-  ];
-
-  for (const fn of tentativas) {
-    try {
-      const r = await fn();
-      if (Array.isArray(r)) {
-        return r.filter(e =>
-          String(itemValor(e,"Semana_id","semanaId") || "") === String(semanaId) &&
-          normalizar(itemValor(e,"Dia","dia") || "") === normalizar(dia) &&
-          !isExtraCanceladoCozinha(e)
-        );
-      }
-    } catch(e) {
-      console.warn("Extras ignorados na cozinha:", e.message || e);
-    }
-  }
-
-  return [];
-}
-
-function extraParaPedidoCozinha(extra, semanaId, dia){
-  const id = String(extra?.id || extra?.ID || "").trim();
-  const nome = String(itemValor(extra,"Nome","Title") || "Refeição Extra").trim();
-  const tipo = String(itemValor(extra,"tipo","Tipo","Origem","origem") || "extra").trim();
-  const opcao = String(itemValor(extra,"Opcao","opcao") || "principal").trim();
-  const obs = String(itemValor(extra,"Observacao","observacao") || "").trim();
-  const colabId = id ? `extra-${id}` : `extra-${normalizar(tipo)}-${normalizar(nome)}-${normalizar(dia)}`;
-
-  return {
-    id: colabId,
-    ID: colabId,
-    Title: nome,
-    Semana_id: semanaId,
-    Colaborador_id: colabId,
-    Colaborador_nome: nome,
-    Dia: dia,
-    Opcao: opcao || "principal",
-    Nome_Prato: "Cardápio do Dia",
-    Status: "Confirmado",
-    Confirmado: true,
-    Origem: tipo || "extra",
-    tipo: tipo || "extra",
-    Observacao: obs,
-    _extraCozinha: true
-  };
-}
-
-function chavePedidoCozinha(p){
-  const dia = normalizar(itemValor(p,"Dia","dia"));
-  const cid = normalizar(getColaboradorId(p));
-  const nome = normalizar(getNome(p));
   const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
-  const id = normalizar(getPedidoId(p));
-
-  if (cid && cid.startsWith("extra-")) return `extra:${cid}:${dia}`;
-  if (isPedidoExtraCozinha(p)) return `extra:${dia}:${nome}:${origem}`;
-  return `pedido:${id || cid || nome}:${dia}`;
-}
-
-function chaveHumanaExtraCozinha(p){
-  const dia = normalizar(itemValor(p,"Dia","dia"));
-  const nome = normalizar(getNome(p));
-  const tipoRaw = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
-  let tipo = tipoRaw;
-  if (nome.includes("guarda") || tipoRaw.includes("guarda")) tipo = "guarda";
-  else if (nome.includes("investigador") || tipoRaw.includes("investigador")) tipo = "investigador";
-  else if (nome.includes("prestador") || tipoRaw.includes("prestador")) tipo = "prestador";
-  else if (nome.includes("fornecedor") || tipoRaw.includes("fornecedor")) tipo = "fornecedor";
-  else if (nome.includes("representante") || tipoRaw.includes("representante")) tipo = "representante";
-  else if (nome.includes("motorista") || tipoRaw.includes("motorista")) tipo = "motorista";
-  else if (nome.includes("visitante") || tipoRaw.includes("visitante")) tipo = "visitante";
-  else if (nome.includes("refeicao extra") || tipoRaw.includes("extra")) tipo = "extra";
-  return `${dia}|${tipo}|${nome || tipo}`;
-}
-
-function juntarPedidosEExtrasCozinha(pedidos, extras){
-  const mapa = new Map();
-  const extrasHumanosJaVindosDePedidos = new Set();
-
-  (pedidos || []).forEach(p => {
-    const k = chavePedidoCozinha(p);
-    if (!mapa.has(k)) mapa.set(k, p);
-    if (isPedidoExtraCozinha(p)) extrasHumanosJaVindosDePedidos.add(chaveHumanaExtraCozinha(p));
-  });
-
-  (extras || []).forEach(e => {
-    const p = extraParaPedidoCozinha(e, semanaIdAtual(), diaAtual());
-    const chaveHumana = chaveHumanaExtraCozinha(p);
-    if (extrasHumanosJaVindosDePedidos.has(chaveHumana)) return;
-
-    const k = chavePedidoCozinha(p);
-    if (!mapa.has(k)) {
-      mapa.set(k, p);
-      extrasHumanosJaVindosDePedidos.add(chaveHumana);
-    }
-  });
-
-  return Array.from(mapa.values());
+  return true; // cozinha vê tudo (extras também), para montar os pratos
 }
 
 function diaAtual(){
@@ -969,361 +371,51 @@ function atualizarData(){
   document.getElementById("fulldate").textContent = d.getDate() + " de " + meses[d.getMonth()];
 }
 
-function detalhesCardapio(item){
-  const bruto = itemValor(item, "Detalhes", "detalhes", "Descricao", "Descrição", "Observacao", "observacao") || "";
-  return String(bruto)
-    .split(/\r?\n|•|;/g)
-    .map(x => x.replace(/^[-–—·\s]+/, "").trim())
-    .filter(Boolean);
-}
-
-function avisoOpcaoCardapio(opcao){
-  const op = normalizar(opcao);
-  if (op === "light") return "A opção Light substitui o prato principal completo.";
-  if (op === "carne") return "A opção Carne substitui a carne do prato principal.";
-  if (op === "massa") return "A opção Massa substitui a carne do prato principal.";
-  if (op === "lanche") return "Opção disponível conforme regra do cardápio.";
-  return "";
-}
-
 async function carregarCardapio(semanaId, dia){
-  const el = document.getElementById("cardapioHoje");
   try {
     const items = await window.SP.getCardapio(semanaId);
-    const hoje  = (items || []).filter(i => normalizar(itemValor(i,"Dia","dia")) === normalizar(dia));
-    const ordem = ["principal", "light", "carne", "massa", "lanche"];
-    const labels = { principal:"Principal", light:"Light", carne:"Carne", massa:"Massa", lanche:"Lanche" };
-
-    if (!hoje.length) {
-      el.innerHTML = `<div class="cozinha-cardapio-vazio">Cardápio não cadastrado para hoje.</div>`;
-      return;
-    }
-
-    const porOpcao = ordem
-      .map(op => hoje.find(i => normalizar(itemValor(i,"Opcao","opcao")) === op))
-      .filter(Boolean);
-
-    const outros = hoje.filter(i => !ordem.includes(normalizar(itemValor(i,"Opcao","opcao"))));
-    const final = porOpcao.concat(outros);
-
-    el.innerHTML = `<div class="cozinha-cardapio-grid">${final.map(i => {
-      const op = normalizar(itemValor(i,"Opcao","opcao")) || "opcao";
-      const label = labels[op] || itemValor(i,"Opcao","opcao") || "Opção";
-      const nome = itemValor(i,"Nome_Prato","nome_prato","Title") || "Prato cadastrado";
-      const detalhes = detalhesCardapio(i);
-      const aviso = avisoOpcaoCardapio(op);
-      const detalhesHtml = detalhes.length
-        ? `<div class="cozinha-op-list">${detalhes.map(d => `<div class="cozinha-op-detail">${esc(d)}</div>`).join("")}</div>`
-        : "";
-      const avisoHtml = aviso ? `<div class="cozinha-op-aviso">ℹ️ ${esc(aviso)}</div>` : "";
-
-      return `<article class="cozinha-op-card">
-        <div class="cozinha-op-top">
-          <span class="cozinha-op-tag tag-${esc(op)}">${esc(label)}</span>
-          <div class="cozinha-op-name">${esc(nome)}</div>
-        </div>
-        ${detalhesHtml}
-        ${avisoHtml}
-      </article>`;
-    }).join("")}</div>`;
+    const hoje  = items.filter(i => normalizar(itemValor(i,"Dia","dia")) === normalizar(dia));
+    const principal = hoje.find(i => normalizar(itemValor(i,"Opcao","opcao")) === "principal");
+    const nome = principal ? itemValor(principal,"Nome_Prato","nome_prato","Title") : null;
+    document.getElementById("cardapioHoje").textContent = nome || (hoje.length ? "Cardápio disponível" : "Cardápio não cadastrado");
   } catch(e) {
-    console.warn("Cardápio cozinha:", e);
-    if (el) el.innerHTML = `<div class="cozinha-cardapio-vazio">Cardápio indisponível.</div>`;
+    document.getElementById("cardapioHoje").textContent = "Cardápio indisponível";
   }
 }
 
-
-function formatarMotivoAusenciaCozinha(motivo){
-  const n = normalizar(motivo);
-  if(n === "nao_vai_almocar" || n === "nao vai almocar" || n === "não vai almoçar") return "Não vai almoçar";
-  if(n === "ferias" || n === "férias") return "Férias";
-  if(n === "afastado") return "Afastado";
-  if(n === "atestado") return "Atestado";
-  if(n === "licenca" || n === "licença") return "Licença";
-  return String(motivo || "Ausente");
-}
-
-function dataRefDiaCozinha(semanaId, dia){
-  try {
-    if (window.SP?.getDataRefBySemanaDia) return window.SP.getDataRefBySemanaDia(semanaId, dia);
-  } catch(_) {}
-  return new Date().toISOString().slice(0,10);
-}
-
-function ausenciaAtivaCozinha(a){
-  const ativo = itemValor(a,"Ativo","ativo");
-  const status = normalizar(itemValor(a,"Status","status","Status_Ausencia","statusAusencia"));
-  // "Período encerrado" não significa apagar o histórico: se a data do dia
-  // estiver dentro do intervalo da ausência, ela ainda vale para aquele dia.
-  if([
-    "inativo","cancelado","encerrado",
-    "duplicado inativado","duplicidade inativada","false","nao","não","0"
-  ].includes(status)) return false;
-  if(ativo === "") return true;
-  return window.SP?.isTrue ? window.SP.isTrue(ativo) : !!ativo;
-}
-
-function ausenciaParaPedidoCozinha(a, semanaId, dia){
-  const cid = String(itemValor(a,"Colaborador_id","colaborador_id","ColaboradorId") || "").trim();
-  const nome = String(itemValor(a,"Colaborador_nome","Colaborador","Nome","Title") || "Ausente").trim();
-  const motivo = formatarMotivoAusenciaCozinha(itemValor(a,"Motivo","motivo","Status","status") || "Ausente");
-  const id = `ausencia-${cid || normalizar(nome)}-${normalizar(dia)}`;
-  return {
-    id,
-    ID: id,
-    Title: nome,
-    Semana_id: semanaId,
-    Colaborador_id: cid || `ausencia-${normalizar(nome)}`,
-    Colaborador_nome: nome,
-    Dia: dia,
-    Opcao: "principal",
-    Nome_Prato: motivo,
-    Status: motivo,
-    Confirmado: true,
-    Origem: "Refeitório",
-    Centro_Custo: itemValor(a,"Centro_Custo","CentroCusto","Setor","Departamento") || "",
-    Observacao: itemValor(a,"Observacao","Observação","Obs") || "Ausência registrada no refeitório.",
-    _ausente: true,
-    _ausenciaCozinha: true
-  };
-}
-
-function incluirAusenciasSemPedidoCozinha(lista, ausencias, semanaId, dia){
-  const dataRef = dataRefDiaCozinha(semanaId, dia);
-  const existentes = new Set((lista || []).map(p => {
-    const cid = String(getColaboradorId(p) || "").trim();
-    const nome = normalizar(getNome(p));
-    return cid ? `id:${cid}` : `nome:${nome}`;
-  }));
-  const out = [...(lista || [])];
-
-  (ausencias || []).forEach(a => {
-    if(!ausenciaAtivaCozinha(a)) return;
-    const ativo = itemValor(a,"Ativo","ativo");
-    if (ativo !== "" && window.SP?.isTrue && !window.SP.isTrue(ativo)) return;
-    const ini = dataISOCozinha(itemValor(a,"Data_Inicio","Inicio","DataInicio"));
-    const fim = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || ini;
-    if(!ini || !fim || dataRef < ini || dataRef > fim) return;
-
-    const cid = String(itemValor(a,"Colaborador_id","colaborador_id","ColaboradorId") || "").trim();
-    const nome = normalizar(itemValor(a,"Colaborador_nome","Colaborador","Nome","Title") || "");
-    const key = cid ? `id:${cid}` : `nome:${nome}`;
-    if(existentes.has(key)) return;
-
-    out.push(ausenciaParaPedidoCozinha(a, semanaId, dia));
-    existentes.add(key);
-  });
-  return out;
-}
-
-
-function colabKeyCozinha(obj){
-  const id = String(itemValor(obj,"Colaborador_id","ColaboradorId","colaboradorId") || getColaboradorId(obj) || "").trim();
-  if(id && !normalizar(id).startsWith("extra-")) return `id:${id}`;
-  const nome = normalizar(itemValor(obj,"Colaborador_nome","Colaborador","Nome","Title") || getNome(obj));
-  return nome ? `nome:${nome}` : "";
-}
-
-function pedidoAdicionalCozinha(p){
-  const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
-  const obs = normalizar(itemValor(p,"Observacao","Observação","observacao"));
-  const cid = normalizar(getColaboradorId(p));
-  return origem.includes("segunda refeicao") || origem.includes("segunda refeição") ||
-         origem.includes("transferencia para hoje") || origem.includes("transferência para hoje") ||
-         origem.includes("refeicao adicional") || origem.includes("refeição adicional") ||
-         obs.includes("adicionalid:") || obs.includes("colaboradorbaseid:") ||
-         cid.includes("-adicional-");
-}
-
-function pedidoAusenciaCozinha(p){
-  const status = normalizar(itemValor(p,"Status","status"));
-  const origem = normalizar(itemValor(p,"Origem","origem","tipo","Tipo"));
-  return isAusente(p) || origem.includes("ausencia") || origem.includes("ausência");
-}
-
-function ausenciaVigenteParaKeyCozinha(ausencias, colabKey, dataRef){
-  const candidatas = (ausencias || []).filter(a => {
-    if(!ausenciaAtivaCozinha(a)) return false;
-    const key = colabKeyCozinha({
-      Colaborador_id: itemValor(a,"Colaborador_id","colaborador_id","ColaboradorId"),
-      Colaborador_nome: itemValor(a,"Colaborador_nome","Colaborador","Nome","Title")
-    });
-    if(key !== colabKey) return false;
-    const ini = dataISOCozinha(itemValor(a,"Data_Inicio","Inicio","DataInicio"));
-    const fim = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || ini;
-    return !!ini && !!fim && dataRef >= ini && dataRef <= fim;
-  });
-  if(!candidatas.length) return null;
-  candidatas.sort((a,b) => {
-    const af = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || "";
-    const bf = dataISOCozinha(itemValor(b,"Data_Fim","Fim","DataFim")) || "";
-    if(af !== bf) return bf.localeCompare(af);
-    return Number(itemValor(b,"id","ID") || 0) - Number(itemValor(a,"id","ID") || 0);
-  });
-  return candidatas[0];
-}
-
-function scorePedidoCozinha(p){
-  const status = normalizar(itemValor(p,"Status","status"));
-  const confirmado = window.SP?.isTrue ? window.SP.isTrue(itemValor(p,"Confirmado","confirmado")) : !!itemValor(p,"Confirmado","confirmado");
-  let score = 0;
-  if(["cancelado","bloqueado"].includes(status)) score -= 100;
-  if(confirmado || ["confirmado","travado","extra","aprovado"].includes(status)) score += 50;
-  if(pedidoAusenciaCozinha(p)) score -= 20;
-  const ts = new Date(itemValor(p,"Modified","modified","Data_Hora","Created","created") || 0).getTime() || Number(itemValor(p,"id","ID") || 0) || 0;
-  return score * 10000000000000 + ts;
-}
-
-function deduplicarFluxoCozinha(lista, ausencias, semanaId, dia){
-  const dataRef = dataRefDiaCozinha(semanaId, dia);
-  const resultado = [];
-  const vistosEspeciais = new Set();
-  const grupos = new Map();
-
-  for(const p of (lista || [])){
-    if(isPedidoExtraCozinha(p) || pedidoAdicionalCozinha(p)){
-      const k = chavePedidoCozinha(p);
-      if(!vistosEspeciais.has(k)){
-        vistosEspeciais.add(k);
-        resultado.push(p);
-      }
-      continue;
-    }
-
-    const key = colabKeyCozinha(p);
-    if(!key){ resultado.push(p); continue; }
-    if(!grupos.has(key)) grupos.set(key, []);
-    grupos.get(key).push(p);
-  }
-
-  for(const [key, grupo] of grupos.entries()){
-    const ausencia = ausenciaVigenteParaKeyCozinha(ausencias, key, dataRef);
-    if(ausencia){
-      const base = grupo.find(p => pedidoAusenciaCozinha(p)) || grupo.sort((a,b)=>scorePedidoCozinha(b)-scorePedidoCozinha(a))[0];
-      const motivo = formatarMotivoAusenciaCozinha(itemValor(ausencia,"Motivo","motivo","Status","status") || "Ausente");
-      resultado.push({ ...base, Status: motivo, Nome_Prato: motivo, _ausente: true, _ausenciaCozinha: true });
-      continue;
-    }
-
-    const normais = grupo.filter(p => !pedidoAusenciaCozinha(p) && !["cancelado","bloqueado"].includes(normalizar(itemValor(p,"Status","status"))));
-    if(normais.length){
-      normais.sort((a,b)=>scorePedidoCozinha(b)-scorePedidoCozinha(a));
-      resultado.push(normais[0]);
-      continue;
-    }
-
-    // Só restou pedido antigo de ausência, mas a ausência não está vigente para hoje.
-    // Para a cozinha não pode aparecer como ausente; o retorno deve contar como principal.
-    const base = grupo.sort((a,b)=>scorePedidoCozinha(b)-scorePedidoCozinha(a))[0];
-    resultado.push({
-      ...base,
-      Status: "Confirmado",
-      Confirmado: true,
-      Opcao: itemValor(base,"Opcao","opcao") || "principal",
-      Nome_Prato: normalizar(itemValor(base,"Nome_Prato","nome_prato")).includes("ferias") ? "Prato Principal" : (itemValor(base,"Nome_Prato","nome_prato") || "Prato Principal"),
-      Origem: "Retorno automático de ausência",
-      _ausente: false,
-      _ausenciaCozinha: false
-    });
-  }
-
-  return resultado;
-}
-
-async function carregarAusenciasSeguras(){
-  const tentativas = [
-    () => window.SP.getAusenciasRefeitorio?.(),
-    () => window.SP.getAusencias?.(true),
-    () => window.SP.getItems?.("Ausencias_Refeitorio"),
-    () => window.SP.getItems?.("Ausências_Refeitório"),
-    () => window.SP.getItems?.("Ausencias"),
-    () => window.SP.getItems?.("Ausências")
-  ];
-
-  for (const fn of tentativas) {
-    try {
-      const r = await fn();
-      if (Array.isArray(r)) return r;
-    } catch(e) {
-      console.warn("Ausências ignoradas na cozinha:", e.message || e);
-    }
-  }
-
-  return [];
-}
-
-async function sincronizar(silencioso = false, force = false){
-  const agora = Date.now();
-  if (cozinhaSyncEmAndamento) return;
-  if (!force && silencioso && cozinhaSyncUltimoInicio && (agora - cozinhaSyncUltimoInicio) < 12000) return;
-  cozinhaSyncUltimoInicio = agora;
-  cozinhaSyncEmAndamento = true;
+async function sincronizar(){
   const lista = document.getElementById("lista");
-  const sync = document.getElementById("cozDashAtualizado");
-  if (sync && !silencioso) sync.textContent = "Atualizando...";
-  if (!silencioso && lista && !pedidosHoje.length) {
-    lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
-  }
+  if (lista) lista.innerHTML = `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Atualizando...</div></div>`;
 
   try {
     const semanaId = semanaIdAtual();
     const dia      = diaAtual();
-    carregarCheckinsLocais(semanaId, dia);
 
     await carregarCardapio(semanaId, dia);
 
-    // A lista de ausências NÃO pode impedir a cozinha de abrir.
-    // Reparos pesados rodam em segundo plano para não travar a tela.
-    if (typeof window.SP.repararIntegridadeSemana === "function") {
-      window.SP.repararIntegridadeSemana(semanaId).then(r => {
-        if (r?.mudouDados) setTimeout(() => sincronizar(true, true).catch(console.warn), 900);
-      }).catch(e => console.warn("Reparo de integridade ignorado na cozinha:", e));
-    }
-    const pedidos = await window.SP.getPedidos(semanaId, { reparar: false, force });
-    const extras = await carregarExtrasCozinhaSeguros(semanaId, dia);
-    const ausencias = await carregarAusenciasSeguras();
+    // Carrega pedidos e ausências em paralelo
+    const [pedidos, ausencias] = await Promise.all([
+      window.SP.getPedidos(semanaId),
+      window.SP.getAusencias ? window.SP.getAusencias(true) : Promise.resolve([])
+    ]);
 
-    const pedidosFiltrados = (pedidos || []).filter(p => {
-      const okDia = normalizar(itemValor(p,"Dia","dia")) === normalizar(dia);
-      const nome  = String(getNome(p) || "").trim();
-      const opcao = String(itemValor(p,"Opcao","opcao") || "").trim();
-      const status = normalizar(itemValor(p,"Status","status") || "");
-      const prato = String(itemValor(p,"Nome_Prato","nome_prato") || "").trim();
-      const quebrado = (!nome && !opcao) || (normalizar(nome) === "pedido" && !prato);
-      const cancelado = ["cancelado", "bloqueado"].includes(status);
-      return okDia && !quebrado && !cancelado;
-    });
+    // Filtra pedidos do dia
+    pedidosHoje = pedidos.filter(p => normalizar(itemValor(p,"Dia","dia")) === normalizar(dia));
 
-    pedidosHoje = juntarPedidosEExtrasCozinha(pedidosFiltrados, extras);
-
-    const dataRef = dataRefCozinha(semanaId, dia);
+    // Marca ausentes
+    const hoje = new Date().toISOString().slice(0,10);
     pedidosHoje = pedidosHoje.map(p => {
       const cid = String(getColaboradorId(p));
-      const nome = normalizar(getNome(p));
-      const ausenciaEncontrada = (ausencias || []).find(a => {
-        if (!ausenciaAtivaCozinha(a)) return false;
-        const ativo = itemValor(a,"Ativo","ativo");
-        if (ativo !== "" && window.SP?.isTrue && !window.SP.isTrue(ativo)) return false;
-        const aCid = String(itemValor(a,"Colaborador_id","colaborador_id") || "");
-        const aNome = normalizar(itemValor(a,"Colaborador_nome","Nome","Title") || "");
-        const mesmoColab = (cid && aCid && aCid === cid) || (nome && aNome && aNome === nome);
-        if (!mesmoColab) return false;
-        const ini = dataISOCozinha(itemValor(a,"Data_Inicio","Inicio","DataInicio"));
-        const fim = dataISOCozinha(itemValor(a,"Data_Fim","Fim","DataFim")) || ini;
+      const ausente = ausencias.some(a => {
+        if (String(itemValor(a,"Colaborador_id")) !== cid) return false;
+        const ini = itemValor(a,"Data_Inicio");
+        const fim = itemValor(a,"Data_Fim");
         if (!ini || !fim) return false;
-        return dataRef >= ini && dataRef <= fim;
+        return hoje >= ini.slice(0,10) && hoje <= fim.slice(0,10);
       });
-      if (ausenciaEncontrada) {
-        const motivo = formatarMotivoAusenciaCozinha(itemValor(ausenciaEncontrada,"Motivo","motivo","Status","status") || "Ausente");
-        return { ...p, Status: motivo, Nome_Prato: motivo, _ausente: true };
-      }
+      if (ausente) return { ...p, Status: "Ausente", _ausente: true };
       return p;
     });
-
-    // Se a ausência existe na lista Ausencias do Refeitorio mas ainda não tem pedido espelho,
-    // a cozinha também precisa enxergar o colaborador naquele dia.
-    pedidosHoje = incluirAusenciasSemPedidoCozinha(pedidosHoje, ausencias, semanaId, dia);
-    pedidosHoje = deduplicarFluxoCozinha(pedidosHoje, ausencias, semanaId, dia);
 
     try {
       checkinsHoje = await window.SP.getCheckIn(semanaId, dia);
@@ -1332,151 +424,45 @@ async function sincronizar(silencioso = false, force = false){
       checkinsHoje = [];
     }
 
+    const R = window.HomyRefeitorioRegras;
+    if (R && R.contaParaRetirada) pedidosHoje = pedidosHoje.filter(p => R.contaParaRetirada(p));
+
     renderLista();
   } catch(e) {
     console.error(e);
-    if (!silencioso && lista) lista.innerHTML = `
+    if (lista) lista.innerHTML = `
       <div class="empty">
         <div class="empty-icon">⚠️</div>
         <div class="empty-title">Não foi possível conectar</div>
-        <div class="empty-sub">${esc(e.message || e)}</div>
+        <div class="empty-sub">${e.message || e}</div>
         <button class="connect" onclick="conectar()">Conectar novamente</button>
       </div>`;
-  } finally {
-    cozinhaSyncEmAndamento = false;
   }
 }
 
 async function conectar(){
-  await entrarCozinhaComConta();
-}
-
-async function forcarSincronizarCozinha(){
-  const btn = document.getElementById("btnSyncCozinha") || document.querySelector(".sync");
-  const old = btn ? btn.textContent : "";
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Atualizando..."; }
   try {
-    await sincronizar(false, true);
-    mostrarToast("Lista atualizada");
-  } catch (e) {
-    console.warn("Atualização manual da cozinha:", e);
-    mostrarToast("Não foi possível atualizar agora");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = old || "↻ Atualizar"; }
+    await window.SP.login();
+    await sincronizar();
+  } catch(e) {
+    alert("Não foi possível conectar: " + (e.message || e));
   }
 }
-
 
 function limparBusca(){
   document.getElementById("busca").value = "";
   renderLista();
 }
 
-
-function grupoOrdenacaoCozinha(p){
-  const nome = normalizar(getNome(p));
-  const tipo = normalizar(itemValor(p,"tipo","Tipo"));
-  const origem = normalizar(itemValor(p,"Origem","origem"));
-
-  // Regra da cozinha:
-  // 1) colaboradores e extras com nome real ficam em ordem alfabética juntos;
-  // 2) no fim aparecem Guarda, Investigadores e Refeição Extra automática.
-  const autoExtra = nome === "refeicao extra" ||
-                    nome === "refeicao extra automatica" ||
-                    tipo.includes("extra automat") ||
-                    origem.includes("extra automat");
-  const guarda = nome === "guarda" || /^guarda\s*\d*$/.test(nome) ||
-                 tipo.includes("guarda") || origem.includes("guarda");
-  const investigador = /^investigador(?:\s*\d+)?$/.test(nome) ||
-                       tipo.includes("investigador") || origem.includes("investigador");
-
-  if (guarda) return 2;
-  if (investigador) return 3;
-  if (autoExtra) return 4;
-  return 1;
-}
-
-function numeroEspecialCozinha(p){
-  const nome = normalizar(getNome(p));
-  const m = nome.match(/(\d+)\s*$/);
-  return m ? Number(m[1]) : 0;
-}
-
-function ordenarListaCozinha(a,b){
-  const ga = grupoOrdenacaoCozinha(a);
-  const gb = grupoOrdenacaoCozinha(b);
-  if (ga !== gb) return ga - gb;
-
-  if (ga === 2 || ga === 3 || ga === 4) {
-    const na = numeroEspecialCozinha(a);
-    const nb = numeroEspecialCozinha(b);
-    if (na !== nb) return na - nb;
-  }
-
-  const nomeA = String(getNome(a) || "").localeCompare(String(getNome(b) || ""), "pt-BR", { sensitivity:"base", numeric:true });
-  if (nomeA !== 0) return nomeA;
-  return String(getColaboradorId(a) || "").localeCompare(String(getColaboradorId(b) || ""), "pt-BR", { numeric:true });
-}
-
-
-function isMarmitaCozinha(p){
-  const nome = normalizar(getNome(p));
-  const tipo = normalizar(itemValor(p,"tipo","Tipo") || "");
-  const origem = normalizar(itemValor(p,"Origem","origem") || "");
-
-  const isGuarda = nome === "guarda" || /^guarda\s*\d*$/.test(nome) ||
-                   tipo.includes("guarda") || origem.includes("guarda");
-
-  const isInvestigador = /^investigador(?:\s*\d+)?$/.test(nome) ||
-                         tipo.includes("investigador") || origem.includes("investigador");
-
-  return isGuarda || isInvestigador;
-}
-
-function setTxtCozinha(id, valor){
-  const el = document.getElementById(id);
-  if (el) el.textContent = String(valor ?? 0);
-}
-
-function atualizarResumoCozinha(){
-  const validos = (pedidosHoje || []).filter(p => !(isAusente(p) || p?._ausente));
-  const entregues = validos.filter(isCheckinFeito).length;
-  const resumo = { principal:0, light:0, carne:0, massa:0, lanche:0, marmitas:0 };
-
-  validos.forEach(p => {
-    const op = normalizar(getOpcao(p));
-    if (Object.prototype.hasOwnProperty.call(resumo, op)) resumo[op]++;
-
-    // Regra Homy: marmita no resumo da cozinha conta somente Guarda e Investigadores.
-    // Prestadores, visitantes, representantes e extra automático continuam apenas nas opções.
-    if (isMarmitaCozinha(p)) resumo.marmitas++;
-  });
-
-  setTxtCozinha("cozDashConfirmados", validos.length);
-  setTxtCozinha("cozDashPrincipal", resumo.principal);
-  setTxtCozinha("cozDashLight", resumo.light);
-  setTxtCozinha("cozDashCarne", resumo.carne);
-  setTxtCozinha("cozDashMassa", resumo.massa);
-  setTxtCozinha("cozDashLanche", resumo.lanche);
-  setTxtCozinha("cozDashMarmitas", resumo.marmitas);
-  setTxtCozinha("cozDashPendentes", Math.max(validos.length - entregues, 0));
-
-  const sync = document.getElementById("cozDashAtualizado");
-  if (sync) {
-    const agora = new Date();
-    sync.textContent = "Atualizado " + String(agora.getHours()).padStart(2,"0") + ":" + String(agora.getMinutes()).padStart(2,"0");
-  }
-}
-
 function renderLista(){
   const lista = document.getElementById("lista");
   const termo = normalizar(document.getElementById("busca").value);
-  const filtrados = pedidosHoje.filter(p => normalizar(getNome(p)).includes(termo)).sort(ordenarListaCozinha);
+  const filtrados = pedidosHoje.filter(p => normalizar(getNome(p)).includes(termo));
   const entregues = pedidosHoje.filter(isCheckinFeito).length;
+  const naoRetirados = pedidosHoje.filter(isNaoRetirado).length;
 
-  document.getElementById("cntDone").textContent  = `${entregues} entregues`;
+  document.getElementById("cntDone").textContent  = `${entregues} entregues · ${naoRetirados} não retirados`;
   document.getElementById("cntTotal").textContent = `${pedidosHoje.length} total`;
-  atualizarResumoCozinha();
 
   if (!pedidosHoje.length) {
     lista.innerHTML = `
@@ -1498,114 +484,31 @@ function renderLista(){
 
   lista.innerHTML = filtrados.map(p => {
     const done    = isCheckinFeito(p);
+    const noRet   = isNaoRetirado(p);
     const ausente = isAusente(p) || p._ausente;
     const nome    = getNome(p);
     const opcao   = getOpcao(p);
-    const cls     = done ? "done" : ausente ? "ausente" : "";
-    const badgeLabel = done ? "Entregue" : ausente ? "🚫 Ausente" : "Pendente";
+    const cls     = done ? "done" : noRet ? "no-retirada" : ausente ? "ausente" : "";
+    const badgeLabel = done ? "Entregue" : noRet ? "Não retirou" : ausente ? "🚫 Ausente" : "Pendente";
     const onclick = (!done && !ausente) ? `onclick="abrirModal('${getPedidoId(p)}')"` : "";
     return `
       <article class="item ${cls}" ${onclick}>
-        <div class="avatar">${esc(iniciais(nome))}</div>
+        <div class="avatar">${iniciais(nome)}</div>
         <div class="info">
-          <div class="name">${esc(nome)}</div>
-          <div class="desc">${esc(opcao)}</div>
+          <div class="name">${nome}</div>
+          <div class="desc">${opcao}</div>
         </div>
-        <div class="badge">${esc(badgeLabel)}</div>
+        <div class="badge">${badgeLabel}</div>
       </article>`;
   }).join("");
-}
-
-
-function pedidosResumoCozinha(grupo){
-  const validos = (pedidosHoje || []).filter(p => !(isAusente(p) || p?._ausente));
-  const g = normalizar(grupo);
-  let lista = validos;
-
-  if (["principal","light","carne","massa","lanche"].includes(g)) {
-    lista = validos.filter(p => normalizar(getOpcao(p)) === g);
-  } else if (g === "marmitas") {
-    lista = validos.filter(isMarmitaCozinha);
-  } else if (g === "a-retirar") {
-    lista = validos.filter(p => !isCheckinFeito(p));
-  } else if (g === "confirmados") {
-    lista = validos;
-  }
-
-  return lista.sort(ordenarListaCozinha);
-}
-
-function tituloResumoCozinha(grupo){
-  const mapa = {
-    "confirmados":"Confirmados",
-    "principal":"Principal",
-    "light":"Light",
-    "carne":"Carne",
-    "massa":"Massa",
-    "lanche":"Lanche",
-    "marmitas":"Marmitas",
-    "a-retirar":"A retirar"
-  };
-  return mapa[grupo] || "Resumo";
-}
-
-function abrirResumoCardCozinha(grupo){
-  const overlay = document.getElementById("modalResumoOverlay");
-  const listaEl = document.getElementById("modalResumoLista");
-  const tituloEl = document.getElementById("modalResumoTitulo");
-  const subEl = document.getElementById("modalResumoSub");
-  if (!overlay || !listaEl) return;
-
-  const lista = pedidosResumoCozinha(grupo);
-  const titulo = tituloResumoCozinha(grupo);
-  if (tituloEl) tituloEl.textContent = titulo;
-  if (subEl) subEl.textContent = `${lista.length} item(ns) • toque em Confirmar para registrar retirada sem procurar na lista geral.`;
-
-  if (!lista.length) {
-    listaEl.innerHTML = `<div class="resumo-empty">Nenhum item encontrado para ${esc(titulo)}.</div>`;
-  } else {
-    listaEl.innerHTML = lista.map(p => {
-      const done = isCheckinFeito(p);
-      const nome = getNome(p);
-      const opcao = getOpcao(p);
-      const prato = itemValor(p,"Nome_Prato","Prato","Title") || "—";
-      const id = esc(getPedidoId(p));
-      return `<article class="resumo-row ${done ? "done" : ""}">
-        <div class="avatar">${esc(iniciais(nome))}</div>
-        <div class="info">
-          <div class="name">${esc(nome)}</div>
-          <div class="desc">${esc(opcao)} • ${esc(prato)}</div>
-        </div>
-        <div class="resumo-row-actions">
-          ${done ? `<span class="badge">Entregue</span>` : `<button class="btn-mini-confirm" onclick="confirmarPeloResumoCozinha('${id}')">Confirmar</button>`}
-        </div>
-      </article>`;
-    }).join("");
-  }
-
-  overlay.classList.add("open");
-}
-
-function fecharResumoCardCozinha(){
-  const overlay = document.getElementById("modalResumoOverlay");
-  if (overlay) overlay.classList.remove("open");
-}
-
-async function confirmarPeloResumoCozinha(pedidoId){
-  const pedido = (pedidosHoje || []).find(p => String(getPedidoId(p)) === String(pedidoId));
-  if (!pedido) return;
-  pedidoSelecionado = pedido;
-  await confirmarRetirada();
-  fecharResumoCardCozinha();
 }
 
 function abrirModal(id){
   pedidoSelecionado = pedidosHoje.find(p => getPedidoId(p) === String(id));
   if (!pedidoSelecionado) return;
   document.getElementById("modalNome").textContent  = getNome(pedidoSelecionado);
-  document.getElementById("modalOpcao").textContent = `Opção: ${getOpcao(pedidoSelecionado) || "—"}`;
-  const btn = document.getElementById("btnConfirmarRetirada");
-  if (btn) { btn.disabled = false; btn.textContent = "✓ Sim, confirmar retirada"; }
+  document.getElementById("modalOpcao").textContent = getOpcao(pedidoSelecionado);
+  const motivo = document.getElementById("motivoNaoRetirada"); if (motivo) motivo.value = "";
   document.getElementById("modalOverlay").classList.add("open");
 }
 
@@ -1614,94 +517,39 @@ function fecharModal(){
   document.getElementById("modalOverlay").classList.remove("open");
 }
 
-async function salvarCheckInCozinha(semanaId, pedido, dia, quem){
-  if (!window.SP) throw new Error("sharepoint.js não carregou.");
-
-  const cid  = String(getColaboradorId(pedido) || "").trim();
-  const nome = String(getNome(pedido) || "").trim();
-
-  if (!cid || !nome) {
-    throw new Error("Pedido sem colaborador válido para registrar retirada.");
-  }
-
-  // Compatibilidade com versões diferentes do sharepoint.js.
-  // Algumas versões têm saveCheckIn/registrarCheckIn; outras têm apenas CRUD genérico.
-  if (typeof window.SP.saveCheckIn === "function") {
-    return window.SP.saveCheckIn(semanaId, cid, nome, dia, quem);
-  }
-
-  if (typeof window.SP.registrarCheckIn === "function") {
-    return window.SP.registrarCheckIn(semanaId, cid, nome, dia, quem);
-  }
-
-  if (typeof window.SP.createItem !== "function") {
-    throw new Error("sharepoint.js não possui createItem para gravar CheckIn.");
-  }
-
-  let existentes = [];
-  try {
-    if (typeof window.SP.getCheckIn === "function") {
-      existentes = await window.SP.getCheckIn(semanaId, dia);
-    } else if (typeof window.SP.getItems === "function") {
-      const todos = await window.SP.getItems("CheckIn");
-      existentes = (todos || []).filter(i =>
-        String(itemValor(i,"Semana_id","semana_id") || "") === String(semanaId) &&
-        normalizar(itemValor(i,"Dia","dia") || "") === normalizar(dia)
-      );
-    }
-  } catch(e) {
-    console.warn("CheckIn existente ignorado; será criado novo registro:", e.message || e);
-    existentes = [];
-  }
-
-  const encontrado = (existentes || []).find(i =>
-    String(itemValor(i,"Colaborador_id","colaborador_id") || "") === String(cid)
-  );
-
-  const fields = {
-    Title:                 `${semanaId}-${cid}-${dia}`,
-    Semana_id:             semanaId,
-    Colaborador_id:        String(cid),
-    Colaborador_nome:      nome,
-    Dia:                   dia,
-    Retirou:               true,
-    Data_Hora_Retirada:    new Date().toISOString(),
-    Confirmado_Por:        quem
-  };
-
-  if (encontrado?.id && typeof window.SP.updateItem === "function") {
-    return window.SP.updateItem("CheckIn", encontrado.id, fields);
-  }
-
-  return window.SP.createItem("CheckIn", fields);
-}
-
 async function confirmarRetirada(){
   if (!pedidoSelecionado) return;
-
-  const btn = document.getElementById("btnConfirmarRetirada");
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Confirmando..."; }
-
   try {
     const semanaId = semanaIdAtual();
     const dia      = diaAtual();
+    const cid      = getColaboradorId(pedidoSelecionado);
+    const nome     = getNome(pedidoSelecionado);
     const quem     = window.SP.getUserName ? window.SP.getUserName() : "Cozinha";
-    const pedido   = pedidoSelecionado;
-
-    await salvarCheckInCozinha(semanaId, pedido, dia, quem);
-
-    // SharePoint confirmou: agora a interface trava imediatamente o colaborador.
-    marcarPedidoEntregueLocal(semanaId, dia, pedido);
-    emitirEventoSync("checkin", { semanaId, dia, colaboradorId: getColaboradorId(pedido), nome: getNome(pedido) });
+    await window.SP.registrarCheckIn(semanaId, cid, nome, dia, quem);
     fecharModal();
     mostrarToast("Retirada confirmada");
-    renderLista();
-
-    // Sincroniza em segundo plano sem desfazer o travamento visual.
-    setTimeout(() => sincronizar(true).catch(console.warn), 900);
+    await sincronizar();
   } catch(e) {
-    if (btn) { btn.disabled = false; btn.textContent = "✓ Sim, confirmar retirada"; }
     alert("Erro ao confirmar retirada: " + (e.message || e));
+  }
+}
+
+async function registrarNaoRetirada(){
+  if (!pedidoSelecionado) return;
+  try {
+    const semanaId = semanaIdAtual();
+    const dia      = diaAtual();
+    const cid      = getColaboradorId(pedidoSelecionado);
+    const nome     = getNome(pedidoSelecionado);
+    const quem     = window.SP.getUserName ? window.SP.getUserName() : "Cozinha";
+    const motivo   = document.getElementById("motivoNaoRetirada")?.value || "Não retirou a refeição.";
+    if (window.SP.registrarNaoRetirou) await window.SP.registrarNaoRetirou(semanaId, cid, nome, dia, quem, motivo);
+    else await window.SP.registrarNaoRetirouCheckIn(semanaId, cid, nome, dia, quem, motivo);
+    fecharModal();
+    mostrarToast("Não retirada registrada. Desconto segue a regra Homy.");
+    await sincronizar();
+  } catch(e) {
+    alert("Erro ao registrar não retirada: " + (e.message || e));
   }
 }
 
@@ -1757,151 +605,41 @@ function iniciarFundoTecnologico(){
 }
 
 // ================================================================
-// GATE DE ACESSO — permite escolher conta, mas só autoriza recepção
+// GATE DE ACESSO — só deixa entrar recepcao.hq@homyquimica.com.br
 // ================================================================
-function esconderTelasAcesso(){
-  const login = document.getElementById("telaLoginCozinha");
-  const neg   = document.getElementById("telaAcessoNegado");
-  const app   = document.getElementById("appCozinha");
-  if (login) login.style.display = "none";
-  if (neg)   neg.style.display = "none";
-  if (app)   app.style.display = "none";
-}
-
-function mostrarTelaLoginCozinha(msg, isError = false){
-  esconderTelasAcesso();
-  const login = document.getElementById("telaLoginCozinha");
-  const status = document.getElementById("loginCozinhaStatus");
-  if (status) {
-    status.textContent = msg || "Selecione a conta da cozinha para continuar.";
-    status.classList.toggle("error", !!isError);
-  }
-  if (login) login.style.display = "flex";
-}
-
-function mostrarTelaNegado(email){
-  esconderTelasAcesso();
-  const neg = document.getElementById("telaAcessoNegado");
-  const emailEl = document.getElementById("emailNegadoCozinha");
-  if (emailEl) {
-    emailEl.textContent = email ? `Conta utilizada: ${email}` : "Conta utilizada: não identificada";
-  }
-  if (neg) neg.style.display = "flex";
-}
-
-function emailAtualSP(){
-  return String(window.SP?.getUserEmail?.() || window.SP?._account?.username || "").toLowerCase().trim();
-}
-
-function ativarSyncTempoRealCozinha(){
-  if (cozinhaSyncTimer) clearInterval(cozinhaSyncTimer);
-  cozinhaSyncTimer = setInterval(() => sincronizar(true).catch(console.warn), 30000);
-
-  window.addEventListener("focus", () => sincronizar(true, true).catch(console.warn));
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) sincronizar(true, true).catch(console.warn);
-  });
-  window.addEventListener("online", () => sincronizar(true, true).catch(console.warn));
-  window.addEventListener("storage", e => {
-    if (e.key === "homy_cozinha_checkin_sync" || e.key === "homy_refeitorio_sync") {
-      sincronizar(true, true).catch(console.warn);
-    }
-  });
-  try {
-    if (!cozinhaSyncChannel) cozinhaSyncChannel = new BroadcastChannel("homy-refeitorio-sync");
-    cozinhaSyncChannel.onmessage = ev => {
-      if (["checkin", "pedido", "extra", "integridade"].includes(ev?.data?.tipo)) sincronizar(true, true).catch(console.warn);
-    };
-  } catch (_) {}
-}
-
-async function iniciarAppCozinhaAutorizado(){
-  esconderTelasAcesso();
-  const app = document.getElementById("appCozinha");
-  if (app) app.style.display = "block";
-
-  atualizarData();
-  await sincronizar();
-  ativarSyncTempoRealCozinha();
-}
-
-async function entrarCozinhaComConta(){
-  const btn = document.getElementById("btnEntrarCozinha");
-  const status = document.getElementById("loginCozinhaStatus");
-
-  try {
-    if (btn) { btn.disabled = true; btn.textContent = "⏳ Abrindo Microsoft..."; }
-    if (status) { status.textContent = "Escolha a conta recepcao.hq@homyquimica.com.br."; status.classList.remove("error"); }
-
-    if (window.HOMY_SP_READY) await window.HOMY_SP_READY;
-    if (!window.SP) throw new Error("sharepoint.js não carregou.");
-
-    await window.SP.init();
-
-    // Força o seletor de conta, mesmo quando já existe sessão de TI/Admin no navegador.
-    let result = null;
-    if (window.SP._msalInstance?.loginPopup) {
-      result = await window.SP._msalInstance.loginPopup({
-        scopes: window.SP.scopes,
-        prompt: "select_account"
-      });
-      if (result?.account) {
-        window.SP._account = result.account;
-        window.SP._msalInstance.setActiveAccount(result.account);
-      }
-    } else {
-      await window.SP.login();
-    }
-
-    const email = emailAtualSP();
-    if (email !== EMAIL_COZINHA) {
-      mostrarTelaNegado(email);
-      return;
-    }
-
-    await iniciarAppCozinhaAutorizado();
-
-  } catch(e) {
-    console.error("Login cozinha:", e);
-    mostrarTelaLoginCozinha("Não foi possível acessar. Tente entrar novamente com recepcao.hq@homyquimica.com.br.", true);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "🔐 Entrar com conta da cozinha"; }
-  }
-}
-
 async function iniciarCozinha(){
   const lista = document.getElementById("lista");
   try {
     if (window.HOMY_SP_READY) await window.HOMY_SP_READY;
     if (!window.SP) throw new Error("sharepoint.js não carregou.");
 
-    await window.SP.init();
+    // Garante login
+    const logado = await window.SP.init();
+    if (!logado) await window.SP.login();
 
-    const email = emailAtualSP();
-
-    // Se já está com a conta da recepção em cache, entra direto.
-    if (email === EMAIL_COZINHA) {
-      await iniciarAppCozinhaAutorizado();
+    // Verifica email
+    const email = (window.SP.getUserEmail ? window.SP.getUserEmail() : "").toLowerCase().trim();
+    if (email !== EMAIL_COZINHA) {
+      // Acesso negado — mostra tela de bloqueio
+      document.getElementById("appCozinha").style.display = "none";
+      const neg = document.getElementById("telaAcessoNegado");
+      neg.style.display = "flex";
       return;
     }
 
-    // Se está com outra conta em cache, não bloqueia definitivamente: oferece troca de conta.
-    if (email) {
-      mostrarTelaLoginCozinha(`Sessão atual: ${email}. Para acessar a cozinha, entre com recepcao.hq@homyquimica.com.br.`);
-      return;
-    }
-
-    // Sem sessão: mostra botão de login.
-    mostrarTelaLoginCozinha("Selecione a conta recepcao.hq@homyquimica.com.br para continuar.");
+    // Acesso permitido
+    document.getElementById("appCozinha").style.display = "block";
+    atualizarData();
+    await sincronizar();
+    setInterval(sincronizar, 30000);
 
   } catch(e) {
     console.error("Erro ao iniciar cozinha:", e);
-    esconderTelasAcesso();
     if (lista) lista.innerHTML = `
       <div class="empty">
         <div class="empty-icon">⚠️</div>
         <div class="empty-title">Não foi possível conectar</div>
-        <div class="empty-sub">${esc(e.message || e)}</div>
+        <div class="empty-sub">${e.message || e}</div>
         <button class="connect" onclick="location.reload()">Recarregar</button>
       </div>`;
     document.getElementById("appCozinha").style.display = "block";
