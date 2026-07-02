@@ -1,9 +1,9 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-centralizada-v10-21-20260701
+// v: base-operacional-v11-0-20260702
 //
 // Objetivo:
-// - Centralizar as regras de produção, ausência, extras, cozinha e cardápio do dia.
+// - Centralizar as regras de produção, desconto, ausência, retirada, extras, cozinha, integridade e cardápio do dia.
 // - Não acessa SharePoint diretamente.
 // - Não grava dados.
 // - Pode ser usado por Admin, Cozinha, Cardápio do Dia e testes.
@@ -314,6 +314,97 @@
 
     if (Regras.STATUS_PRODUCAO.includes(status)) return true;
     return Regras.isTrue(Regras.pick(pedido, "Confirmado", "confirmado"));
+  };
+
+
+  // ============================================================
+  // REGRA OFICIAL HOMY — PRODUÇÃO, DESCONTO E COZINHA v11.0
+  // ============================================================
+  // Regra validada com a operação Homy:
+  // - Aviso de "não vai almoçar" só isenta desconto quando registrado dentro do prazo operacional.
+  // - Após o prazo, se havia refeição confirmada/travada, a refeição conta produção e desconto.
+  // - A Cozinha registra retirada/não retirada, mas não decide desconto.
+  // - Fechamento Oficial/Snapshot_JSON é a verdade absoluta após o fechamento do dia.
+
+  Regras.HORA_LIMITE_AVISO_NAO_ALMOCO_PADRAO = "09:00";
+
+  Regras.pedidoStatusNaoDesconta = function pedidoStatusNaoDesconta(pedido) {
+    const status = Regras.norm(Regras.getStatus(pedido));
+    return status === "cancelado" || status === "bloqueado" ||
+           status === "ferias" || status === "férias" ||
+           status === "ausente" || status === "afastado" ||
+           status === "afastamento" || status === "atestado" ||
+           status === "licenca" || status === "licença" ||
+           status === "banco horas" || status === "banco_horas" ||
+           status === "homy office" || status === "homy_office" ||
+           status === "falta" ||
+           status === "nao vai almocar" || status === "nao_vai_almocar" || status === "não vai almoçar";
+  };
+
+  Regras.contaParaDesconto = function contaParaDesconto(pedido, contexto = {}) {
+    if (!pedido) return false;
+
+    // Dado legado não gera desconto porque não é escolha real nem travamento oficial.
+    if (Regras.isRetornoAutomaticoAusencia(pedido)) return false;
+
+    // Cancelado/ausência/não vai almoçar registrado pela Luana não desconta.
+    if (Regras.pedidoStatusNaoDesconta(pedido)) return false;
+
+    // A regra de desconto acompanha a produção: quem gerou refeição após o prazo é descontado.
+    // A retirada na Cozinha é informativa e não cancela desconto.
+    return Regras.pedidoConfirmadoProducao(pedido);
+  };
+
+  Regras.contaParaProducao = function contaParaProducao(pedido, contexto = {}) {
+    return Regras.pedidoConfirmadoProducao(pedido);
+  };
+
+  Regras.contaParaRetirada = function contaParaRetirada(pedido, contexto = {}) {
+    // Cozinha só lista itens produtivos do dia; ausências e não-vai-almoçar não aparecem como retirada.
+    return Regras.pedidoConfirmadoProducao(pedido);
+  };
+
+  Regras.classificarRetiradaCozinha = function classificarRetiradaCozinha(pedido, checkins = []) {
+    const colaboradorId = String(Regras.pick(pedido, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+    const nomeNorm = Regras.norm(Regras.getNome(pedido));
+    const registros = (checkins || []).filter(c => {
+      const cid = String(Regras.pick(c, "Colaborador_id", "ColaboradorId", "colaboradorId") || "").trim();
+      const cnome = Regras.norm(Regras.pick(c, "Colaborador_nome", "Nome", "Title") || "");
+      return (colaboradorId && cid === colaboradorId) || (!colaboradorId && nomeNorm && cnome === nomeNorm);
+    });
+
+    registros.sort((a, b) => String(Regras.pick(b, "Modified", "Data_Hora_Retirada", "Created") || "").localeCompare(String(Regras.pick(a, "Modified", "Data_Hora_Retirada", "Created") || "")));
+    const atual = registros[0] || null;
+    if (!atual) return { status: "pendente", retirou: null, label: "Pendente", desconta: Regras.contaParaDesconto(pedido), registro: null };
+    if (Regras.isTrue(Regras.pick(atual, "Retirou", "retirou"))) return { status: "retirou", retirou: true, label: "Retirou", desconta: Regras.contaParaDesconto(pedido), registro: atual };
+    return { status: "nao_retirou", retirou: false, label: "Não retirou", desconta: Regras.contaParaDesconto(pedido), registro: atual };
+  };
+
+  Regras.fonteVerdadeOperacionalDia = function fonteVerdadeOperacionalDia({ fechamento = null } = {}) {
+    if (fechamento && Regras.statusFechamentoAtivo && Regras.statusFechamentoAtivo(fechamento)) {
+      return { fonte: "Fechamento Oficial", fechado: true, usaSnapshot: true, editavel: false };
+    }
+    return { fonte: "Operação viva", fechado: false, usaSnapshot: false, editavel: true };
+  };
+
+  Regras.podeReabrirFechamento = function podeReabrirFechamento(fechamento, motivo) {
+    const m = String(motivo || "").trim();
+    if (!fechamento) return { ok: false, motivo: "Não há fechamento para reabrir." };
+    if (!m || m.length < 10) return { ok: false, motivo: "Informe justificativa operacional com pelo menos 10 caracteres." };
+    return { ok: true, motivo: "Reabertura permitida com auditoria obrigatória." };
+  };
+
+  Regras.integridadeUsaReferenciaLuana = function integridadeUsaReferenciaLuana(semanaId) {
+    // Apenas semanas históricas de implantação/teste podem usar referência manual da Luana.
+    // A operação consolidada deve comparar contra Fechamento Oficial/Snapshot_JSON.
+    const semana = String(semanaId || "");
+    return semana === "2026-W25" || semana === "2026-W26";
+  };
+
+  Regras.integridadeFonteComparacao = function integridadeFonteComparacao({ semanaId, fechamento = null, snapshot = null } = {}) {
+    if (fechamento || snapshot) return "Fechamento Oficial / Snapshot_JSON";
+    if (Regras.integridadeUsaReferenciaLuana(semanaId)) return "Referência Luana histórica";
+    return "Operação viva calculada pela regra central";
   };
 
   Regras.motivoExclusaoProducao = function motivoExclusaoProducao(pedido) {
