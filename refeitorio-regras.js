@@ -1,6 +1,6 @@
 // ============================================================
 // refeitorio-regras.js — Camada central de regras do Refeitório Homy
-// v: base-operacional-v11-0-20260702
+// v: base-operacional-v11-1-20260702
 //
 // Objetivo:
 // - Centralizar as regras de produção, desconto, ausência, retirada, extras, cozinha, integridade e cardápio do dia.
@@ -350,8 +350,12 @@
     // Cancelado/ausência/não vai almoçar registrado pela Luana não desconta.
     if (Regras.pedidoStatusNaoDesconta(pedido)) return false;
 
-    // A regra de desconto acompanha a produção: quem gerou refeição após o prazo é descontado.
-    // A retirada na Cozinha é informativa e não cancela desconto.
+    // Extras, visitantes, guarda e investigadores contam produção/rateio quando ativos,
+    // mas não são colaboradores do quadro para desconto em folha.
+    if (Regras.isExtra(pedido)) return false;
+
+    // A regra de desconto acompanha a produção do colaborador: quem gerou refeição
+    // após o prazo é descontado. A retirada na Cozinha é informativa e não cancela desconto.
     return Regras.pedidoConfirmadoProducao(pedido);
   };
 
@@ -459,6 +463,85 @@
            origem.includes("terceiro") || origem.includes("fornecedor") || origem.includes("representante") ||
            origem.includes("motorista") || Regras.isGuarda(obj) || Regras.isInvestigador(obj) ||
            nome.includes("refeicao extra") || cid.startsWith("extra-");
+  };
+
+
+  // ============================================================
+  // EXTRAS FIXOS OPERACIONAIS v11.1
+  // ============================================================
+  // Regra: fixos operacionais são idempotentes. A ação da tela deve garantir
+  // um único registro por semana + dia + slug. Se não houver marmita para o
+  // fixo, ele fica como "Não vai almoçar"; não deve ser excluído.
+  Regras.EXTRAS_FIXOS_OPERACIONAIS = Object.freeze([
+    Object.freeze({ slug: "refeicao-extra", nome: "Refeição Extra", tipo: "extra automatica", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Refeição extra automática do dia", ordem: 1 }),
+    Object.freeze({ slug: "guarda", nome: "Guarda", tipo: "guarda", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Guarda — Centro de custo 120602 - PORTARIA", ordem: 2 }),
+    Object.freeze({ slug: "investigador-1", nome: "Investigador 1", tipo: "investigador", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Investigador — Centro de custo 120602 - PORTARIA", ordem: 3 }),
+    Object.freeze({ slug: "investigador-2", nome: "Investigador 2", tipo: "investigador", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Investigador — Centro de custo 120602 - PORTARIA", ordem: 4 }),
+    Object.freeze({ slug: "investigador-3", nome: "Investigador 3", tipo: "investigador", opcao: "principal", centroCusto: "120602 - PORTARIA", observacao: "Investigador — Centro de custo 120602 - PORTARIA", ordem: 5 })
+  ]);
+
+  Regras.extrasFixosOperacionais = function extrasFixosOperacionais() {
+    return Regras.EXTRAS_FIXOS_OPERACIONAIS.map(x => ({ ...x }));
+  };
+
+  Regras.extraFixoPorSlug = function extraFixoPorSlug(slug) {
+    const alvo = Regras.norm(slug);
+    return Regras.extrasFixosOperacionais().find(x => Regras.norm(x.slug) === alvo) || null;
+  };
+
+  Regras.slugExtraFixoPorRegistro = function slugExtraFixoPorRegistro(obj) {
+    if (!obj) return "";
+    const obs = Regras.norm(Regras.pick(obj, "Observacao", "Observação", "observacao", "Obs") || "");
+    const m = obs.match(/fixooperacional\s*:\s*([a-z0-9-]+)/i);
+    if (m?.[1]) return Regras.norm(m[1]);
+
+    const nome = Regras.norm(Regras.getNome(obj));
+    const tipo = Regras.norm(Regras.getOrigem(obj) || Regras.pick(obj, "tipo", "Tipo") || "");
+
+    for (const def of Regras.EXTRAS_FIXOS_OPERACIONAIS) {
+      if (nome === Regras.norm(def.nome)) return def.slug;
+    }
+
+    if (nome === "guarda" || tipo.includes("guarda")) return "guarda";
+    const inv = nome.match(/^investigador\s*([123])$/);
+    if (inv) return `investigador-${inv[1]}`;
+    if (nome.includes("refeicao extra") || tipo.includes("extra automat")) return "refeicao-extra";
+    return "";
+  };
+
+  Regras.isExtraFixoOperacional = function isExtraFixoOperacional(obj) {
+    return !!Regras.slugExtraFixoPorRegistro(obj);
+  };
+
+  Regras.chaveExtraFixo = function chaveExtraFixo(semanaId, dia, defOuSlug) {
+    const def = typeof defOuSlug === "string" ? Regras.extraFixoPorSlug(defOuSlug) : defOuSlug;
+    const slug = def?.slug || String(defOuSlug || "");
+    return [String(semanaId || "").trim(), Regras.norm(dia), "fixo", Regras.norm(slug)].join("|");
+  };
+
+  Regras.chaveExtraFixoRegistro = function chaveExtraFixoRegistro(obj, semanaId = "") {
+    const slug = Regras.slugExtraFixoPorRegistro(obj);
+    if (!slug) return "";
+    const semana = String(Regras.pick(obj, "Semana_id", "Semana", "semanaId") || semanaId || "").trim();
+    const dia = Regras.norm(Regras.pick(obj, "Dia", "dia") || Regras.getDia(obj));
+    return Regras.chaveExtraFixo(semana, dia, slug);
+  };
+
+  Regras.statusExtraNaoVaiAlmocar = function statusExtraNaoVaiAlmocar(obj) {
+    const st = Regras.norm(Regras.getStatus(obj));
+    const prato = Regras.norm(Regras.pick(obj, "Nome_Prato", "Prato", "NomePrato"));
+    return st.includes("nao vai almocar") || st.includes("não vai almoçar") || prato.includes("nao vai almocar") || prato.includes("não vai almoçar");
+  };
+
+  Regras.extraFixoPodeExcluir = function extraFixoPodeExcluir(obj) {
+    return !Regras.isExtraFixoOperacional(obj);
+  };
+
+  Regras.extraFixoContaProducao = function extraFixoContaProducao(obj) {
+    if (!Regras.isExtraFixoOperacional(obj)) return Regras.pedidoConfirmadoProducao(obj);
+    if (Regras.statusExtraNaoVaiAlmocar(obj)) return false;
+    if (Regras.statusBloqueiaProducao(Regras.getStatus(obj))) return false;
+    return Regras.pedidoConfirmadoProducao(obj) || Regras.norm(Regras.getStatus(obj)) === "confirmado";
   };
 
   Regras.isMarmitaCozinha = function isMarmitaCozinha(obj) {
