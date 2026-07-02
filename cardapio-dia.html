@@ -9,7 +9,7 @@
 <link rel="shortcut icon" href="favicon.ico?v=homy-tech-20260601">
 <link rel="apple-touch-icon" href="favicon.png?v=homy-tech-20260601">
 <title>Cardápio do Dia · Homy</title>
-<!-- v: cardapio-dia-v10-16-20260701 -->
+<!-- v: cardapio-dia-v11-0-20260701 -->
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -255,11 +255,11 @@ window.HOMY_SP_READY = (function(){
     })
     .then(function(){
       if(!window.msal) throw new Error("MSAL não ficou disponível no navegador.");
-      return loadScript("refeitorio-regras.js?v=cardapio-dia-v10-16-20260701");
+      return loadScript("refeitorio-regras.js?v=base-operacional-v11-0-20260702");
     })
     .then(function(){
       if(!window.HomyRefeitorioRegras) throw new Error("refeitorio-regras.js não ficou disponível no navegador.");
-      return loadScript("sharepoint.js?v=base-centralizada-v10-12-20260630");
+      return loadScript("sharepoint.js?v=base-operacional-v11-0-20260702");
     })
     .then(function(){
       if(!window.SP) throw new Error("sharepoint.js não ficou disponível no navegador.");
