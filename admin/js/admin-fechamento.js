@@ -1,6 +1,6 @@
 // ============================================================
 // admin-fechamento.js — Fechamento Oficial do Dia · Admin Homy
-// v: base-limpa-fechamento-v10-4-20260629
+// v: base-operacional-fechamento-v11-0-20260702
 //
 // Carregar depois de admin-operacao-dia.js.
 // Não substitui a Operação do Dia; apenas injeta os controles de fechamento.
