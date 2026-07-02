@@ -1,6 +1,6 @@
 // ============================================================
 // admin-integridade.js — Integridade dos Dados · Admin Homy
-// v: base-centralizada-integridade-v10-18-20260701
+// v: base-operacional-integridade-v11-0-20260702
 //
 // Objetivo:
 // - Ler dados reais do SharePoint via SP/sharepoint.js.
